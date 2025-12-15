@@ -1,3 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* 文庫本テーマのカラーパレット */
+  
+  /* 背景色：古紙のような優しい生成り色 */
+  --color-bunko-paper: #faf7e6;
+  
+  /* 文字色：真っ黒ではなく、墨のような深いグレー */
+  --color-bunko-ink: #333333;
+  
+  /* アクセント：落ち着いた朱肉のような赤 */
+  --color-bunko-red: #c93a40;
+  
+  /* 補助：少し薄いグレー（日付などに使用） */
+  --color-bunko-gray: #7d7d7d;
+}
+
+/* 背景と文字色を全体に適用 */
+body {
+  background-color: var(--color-bunko-paper);
+  color: var(--color-bunko-ink);
+}
+
 @import "tailwindcss";
 
 :root {
@@ -23,4 +49,54 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+@keyframes fadeIn {
+  /* transform: scale(...) を削除しました！これが位置ズレの原因でした */
+  from { 
+    opacity: 0; 
+    margin-top: 10px; /* 下からふわっと出る演出に変更 */
+  }
+  to { 
+    opacity: 1; 
+    margin-top: 0;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* Mapbox ポップアップのアニメーション */
+.mapboxgl-popup {
+  /* ここも transform が競合しないように animation を適用 */
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+/* ポップアップの閉じるボタン（×）のデザイン */
+.mapboxgl-popup-close-button {
+  font-size: 16px;
+  color: #888;
+  background: white;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
+  right: 4px;
+  top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  outline: none;
+  z-index: 10; /* ボタンを確実に前面に */
+}
+.mapboxgl-popup-close-button:hover {
+  background: #f0f0f0;
+  color: #d32f2f;
+}
+
+/* iPhone X以降の下部バー対策 */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
 }
