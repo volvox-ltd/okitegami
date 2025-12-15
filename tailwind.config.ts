@@ -15,6 +15,7 @@ const config: Config = {
           ink: 'var(--color-bunko-ink)',
           red: 'var(--color-bunko-red)',
           gray: 'var(--color-bunko-gray)',
+          orange: 'var(--color-bunko-orange)',
         }
       },
       fontFamily: {

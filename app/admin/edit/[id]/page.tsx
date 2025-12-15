@@ -1,5 +1,5 @@
 'use client';
-
+import { compressImage } from '@/utils/compressImage';
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Map, { Marker, NavigationControl } from 'react-map-gl';
@@ -98,14 +98,23 @@ export default function EditPage() {
            }
         }
 
-        // 新しい画像をアップロード
-        const fileExt = newImageFile.name.split('.').pop();
+        // ★★★ ここから修正：圧縮処理を追加 ★★★
+        
+        // 1. 画像を圧縮する
+        const compressedFile = await compressImage(newImageFile);
+
+        // 2. 圧縮後のファイルを使ってアップロード
+        // (compressedFile.name は元の名前を引き継いでいます)
+        const fileExt = compressedFile.name.split('.').pop();
         const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
+        
         const { error: uploadError } = await supabase.storage
           .from('letter-images')
-          .upload(fileName, newImageFile);
+          .upload(fileName, compressedFile); // ← ここを compressedFile に変更
         
         if (uploadError) throw uploadError;
+
+        // ★★★ 修正ここまで ★★★
 
         // 新しいURLを取得
         const { data: urlData } = supabase.storage
