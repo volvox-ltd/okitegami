@@ -134,8 +134,8 @@ export default function PostPage() {
       </div>
 
       <div className="flex-1 bg-white rounded-t-3xl -mt-4 z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] p-6 overflow-y-auto">
-        <h2 className="text-lg font-bold text-gray-800 mb-4 font-serif flex items-center gap-2">
-          <IconUserLetter className="w-6 h-6" /> 手紙をしたためる
+        <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <IconUserLetter className="w-6 h-6" /> 手紙を書く
         </h2>
         
         <div className="space-y-4">

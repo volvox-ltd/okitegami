@@ -1,23 +1,16 @@
-export default function IconAbout({ className = "" }: { className?: string }) {
+type Props = {
+  className?: string;
+};
+
+export default function IconAbout({ className = "w-6 h-6" }: Props) {
   return (
     <svg 
-      id="_レイヤー_2" 
-      data-name="レイヤー 2" 
       xmlns="http://www.w3.org/2000/svg" 
-      viewBox="0 0 349.09 47.25"
+      viewBox="0 0 115 151" 
       className={className}
+      fill="currentColor"
     >
-      <defs>
-        <style>{`
-          .cls-1 { fill: #1b462a; }
-        `}</style>
-      </defs>
-      <g id="_レイヤー_2-2" data-name="レイヤー 2">
-        <g>
-          <path className="cls-1" d="M0,5.25l10,26S115-3.75,172,47.25c0,0-41-66-172-42Z"/>
-          <path className="cls-1" d="M349.09,5.25l-10,26S234.09-3.75,177.09,47.25c0,0,41-66,172-42Z"/>
-        </g>
-      </g>
+      <path d="M10,117s-7-17.07,0-25.04l4,2.04s-7-10,3-17c0,0,3-15,16-24,0,0-2,4-2,10,0,0,6-27,54-50,0,0-1,1-2,3,0,0,9-9,32-16,0,0-28,23-40,30l9-3s-24.42,26-32.21,31.5l15.21-9.5s-8,11-16,24-15,18-15,18c0,0,4-2,10-7,0,0-16,20-24,26l8-5s-8,10-16,15c0,0-9,25-14,31,0,0,21-74,55-109,0,0-33,33-45,75Z"/>
     </svg>
   );
 }

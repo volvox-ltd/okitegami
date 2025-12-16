@@ -1,17 +1,17 @@
-export default function IconShelf({ className = "" }: { className?: string }) {
+type Props = {
+  className?: string;
+};
+
+export default function IconMyPage({ className = "w-6 h-6" }: Props) {
   return (
     <svg 
-      id="Layer_1" 
       xmlns="http://www.w3.org/2000/svg" 
-      viewBox="0 0 800 800"
+      viewBox="0 0 606 677.97" 
       className={className}
+      fill="currentColor"
     >
-      <defs>
-        <style>{`
-          .st0 { fill: #1b462a; }
-        `}</style>
-      </defs>
-      <path className="st0" d="M0,134.8v530.4h800V134.8H0ZM127.3,613H52.2v-299.8h75.1v299.8ZM268.5,613h-89v-230.2h89v230.2ZM395.8,613h-75.1v-285.2h75.1v285.2ZM447.9,613v-109.8l49.7,109.8h-49.7ZM554.9,613l-85.7-189.4,68.4-31,99.7,220.3h-82.4ZM747.8,613h-53.2l-130.9-289.4-115.7,52.4v-100.4h-179.5v55h-89v-69.6H52.2v-74.1h695.7v426h0Z"/>
+      <path d="M302.99,333.33c92.05,0,166.67-74.62,166.67-166.67S395.04,0,302.99,0s-166.67,74.62-166.67,166.67,74.62,166.67,166.67,166.67Z"/>
+      <path d="M303,376.67C136,376.67,0,503.21,0,659.14c0,10.55,7.33,18.83,16.67,18.83h572.67c9.33,0,16.67-8.29,16.67-18.83,0-155.92-136-282.47-303-282.47Z"/>
     </svg>
   );
 }

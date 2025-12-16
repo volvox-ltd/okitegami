@@ -6,6 +6,9 @@ import Map, { Marker, NavigationControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { createClient } from '@supabase/supabase-js';
 
+// マーカーアイコン用（なければ通常のピン📍でも動きます）
+import IconAdminLetter from '@/components/IconAdminLetter';
+
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -15,33 +18,47 @@ export default function EditPage() {
   const router = useRouter();
   const { id } = useParams();
   
-  // フォームの状態
+  // 基本フォーム
   const [title, setTitle] = useState('');
   const [spotName, setSpotName] = useState('');
   const [content, setContent] = useState('');
   const [lat, setLat] = useState(35.6288);
   const [lng, setLng] = useState(139.6842);
   
-  // 画像関連の状態
-  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null); // 現在の画像URL
-  const [newImageFile, setNewImageFile] = useState<File | null>(null);         // 新しい画像ファイル
-  const [isImageDeleted, setIsImageDeleted] = useState(false);                 // 画像削除フラグ
+  // 手紙の画像
+  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null);
+  const [newImageFile, setNewImageFile] = useState<File | null>(null);
+  const [isImageDeleted, setIsImageDeleted] = useState(false);
+
+  // ★追加：公開設定（合言葉）
+  const [isPrivate, setIsPrivate] = useState(false);
+  const [password, setPassword] = useState('');
+
+  // ★追加：切手関連
+  const [currentStamp, setCurrentStamp] = useState<{id: number, name: string, image_url: string} | null>(null);
+  const [isStampDeleted, setIsStampDeleted] = useState(false); // 既存の切手を外すフラグ
+  const [isCreatingNewStamp, setIsCreatingNewStamp] = useState(false); // 新しい切手を作るフラグ
+  const [newStampName, setNewStampName] = useState('');
+  const [newStampFile, setNewStampFile] = useState<File | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 地図の表示位置
+  // 地図
   const [viewState, setViewState] = useState({
     latitude: 35.6288,
     longitude: 139.6842,
     zoom: 15
   });
 
-  // 既存データの読み込み
+  const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+
+  // データの読み込み
   useEffect(() => {
     const fetchLetter = async () => {
       if(!id) return;
-      const { data, error } = await supabase
+      
+      const { data: letter, error } = await supabase
         .from('letters')
         .select('*')
         .eq('id', id)
@@ -50,81 +67,124 @@ export default function EditPage() {
       if (error) {
         alert('読み込みエラー');
         router.push('/admin');
-      } else if (data) {
-        setTitle(data.title);
-        setSpotName(data.spot_name);
-        setContent(data.content || '');
-        setLat(data.lat);
-        setLng(data.lng);
-        setCurrentImageUrl(data.image_url); // 現在の画像URLをセット
+        return;
+      }
+
+      if (letter) {
+        setTitle(letter.title);
+        setSpotName(letter.spot_name);
+        setContent(letter.content || '');
+        setLat(letter.lat);
+        setLng(letter.lng);
+        setCurrentImageUrl(letter.image_url);
         
-        setViewState(prev => ({ ...prev, latitude: data.lat, longitude: data.lng }));
+        // 合言葉の設定
+        if (letter.password) {
+          setIsPrivate(true);
+          setPassword(letter.password);
+        }
+
+        // 切手の取得（紐付いている場合）
+        if (letter.attached_stamp_id) {
+          const { data: stampData } = await supabase
+            .from('stamps')
+            .select('*')
+            .eq('id', letter.attached_stamp_id)
+            .single();
+          if (stampData) {
+            setCurrentStamp(stampData);
+          }
+        }
+        
+        setViewState(prev => ({ ...prev, latitude: letter.lat, longitude: letter.lng }));
         setIsLoading(false);
       }
     };
     fetchLetter();
   }, [id, router]);
 
-  const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
-
-  // 上書き保存の処理（ここが複雑です！）
+  // 更新処理
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // バリデーション
+    if (isPrivate && !password) return alert('合言葉を入力してください');
+    if (isCreatingNewStamp && (!newStampName || !newStampFile)) return alert('新しい切手の名前と画像を指定してください');
+
     setIsSubmitting(true);
 
     try {
-      // 最終的にデータベースに保存する画像URL（初期値は現在のもの）
+      // -------------------------------
+      // 1. 手紙のメイン画像処理
+      // -------------------------------
       let finalImageUrl = currentImageUrl;
 
-      // --- 画像処理のロジック ---
-
-      // パターンA: 「画像を削除」ボタンが押されていた場合
-      if (isImageDeleted && currentImageUrl) {
-        // Storageから古い画像を削除する
-        const oldFileName = currentImageUrl.split('/').pop(); // URLの末尾からファイル名を取得
-        if (oldFileName) {
-          await supabase.storage.from('letter-images').remove([oldFileName]);
+      // 削除フラグがある場合
+      if (isImageDeleted) {
+        if (currentImageUrl) {
+          const oldName = currentImageUrl.split('/').pop();
+          if (oldName) await supabase.storage.from('letter-images').remove([oldName]);
         }
-        finalImageUrl = null; // DBにはnullを保存する
+        finalImageUrl = null;
       }
 
-      // パターンB: 新しい画像が選択された場合（差し替え または 新規追加）
+      // 新しい画像がある場合（圧縮処理含む）
       if (newImageFile) {
-        // もし古い画像があって、まだ削除フラグが立っていなければ、容量節約のために古いものを消す
+        // 古い画像があれば消す
         if (currentImageUrl && !isImageDeleted) {
-           const oldFileName = currentImageUrl.split('/').pop();
-           if (oldFileName) {
-             await supabase.storage.from('letter-images').remove([oldFileName]);
-           }
+           const oldName = currentImageUrl.split('/').pop();
+           if (oldName) await supabase.storage.from('letter-images').remove([oldName]);
         }
 
-        // ★★★ ここから修正：圧縮処理を追加 ★★★
+        const compressed = await compressImage(newImageFile);
+        const fileName = `letter_${Date.now()}.jpg`;
         
-        // 1. 画像を圧縮する
-        const compressedFile = await compressImage(newImageFile);
+        const { error: upErr } = await supabase.storage.from('letter-images').upload(fileName, compressed, { contentType: 'image/jpeg' });
+        if (upErr) throw upErr;
 
-        // 2. 圧縮後のファイルを使ってアップロード
-        // (compressedFile.name は元の名前を引き継いでいます)
-        const fileExt = compressedFile.name.split('.').pop();
-        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from('letter-images')
-          .upload(fileName, compressedFile); // ← ここを compressedFile に変更
-        
-        if (uploadError) throw uploadError;
-
-        // ★★★ 修正ここまで ★★★
-
-        // 新しいURLを取得
-        const { data: urlData } = supabase.storage
-          .from('letter-images')
-          .getPublicUrl(fileName);
-        
+        const { data: urlData } = supabase.storage.from('letter-images').getPublicUrl(fileName);
         finalImageUrl = urlData.publicUrl;
       }
 
-      // --- データベース更新 ---
+      // -------------------------------
+      // 2. 切手の処理
+      // -------------------------------
+      let finalStampId = currentStamp ? currentStamp.id : null;
+
+      // A. 既存の切手を削除する場合
+      if (isStampDeleted) {
+        finalStampId = null;
+      }
+
+      // B. 新しい切手を作成して紐付ける場合
+      if (isCreatingNewStamp && newStampName && newStampFile) {
+        const compressedStamp = await compressImage(newStampFile);
+        const stampFileName = `stamp_${Date.now()}.jpg`;
+
+        const { error: sUpErr } = await supabase.storage.from('stamp-images').upload(stampFileName, compressedStamp, { contentType: 'image/jpeg' });
+        if (sUpErr) throw sUpErr;
+
+        const { data: sUrlData } = supabase.storage.from('stamp-images').getPublicUrl(stampFileName);
+        
+        // stampsテーブルに登録
+        const { data: newStamp, error: sDbErr } = await supabase
+          .from('stamps')
+          .insert({
+            name: newStampName,
+            image_url: sUrlData.publicUrl,
+            description: `${spotName}の記念切手`
+          })
+          .select()
+          .single();
+        
+        if (sDbErr) throw sDbErr;
+        
+        finalStampId = newStamp.id; // 新しい切手IDを採用
+      }
+
+      // -------------------------------
+      // 3. データベース更新
+      // -------------------------------
       const { error } = await supabase
         .from('letters')
         .update({
@@ -133,7 +193,9 @@ export default function EditPage() {
           content,
           lat,
           lng,
-          image_url: finalImageUrl // 決定した画像URLを保存
+          image_url: finalImageUrl,
+          password: isPrivate ? password : null, // 合言葉
+          attached_stamp_id: finalStampId        // 切手ID
         })
         .eq('id', id);
 
@@ -150,105 +212,188 @@ export default function EditPage() {
   };
 
   if (!mapToken) return <div>Map Token Error</div>;
-  if (isLoading) return <div className="p-10">データを読み込んでいます...</div>;
+  if (isLoading) return <div className="p-10 text-center">データを読み込んでいます...</div>;
 
   return (
-    <main className="min-h-screen bg-gray-50 flex flex-col md:flex-row">
+    <main className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans">
       {/* 左側：編集フォーム */}
       <div className="w-full md:w-1/3 p-6 bg-white shadow-lg z-10 overflow-y-auto border-r border-orange-200 h-screen">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-xl font-bold text-gray-800">📝 手紙の編集</h1>
-          <button type="button" onClick={() => router.back()} className="text-sm text-gray-500 hover:underline">キャンセル</button>
+        <div className="flex justify-between items-center mb-6 border-b pb-4">
+          <h1 className="text-xl font-bold text-bunko-ink flex items-center gap-2">
+            <IconAdminLetter className="w-6 h-6" /> 編集
+          </h1>
+          <button type="button" onClick={() => router.back()} className="text-xs text-gray-500 hover:underline">キャンセル</button>
         </div>
         
-        <form onSubmit={handleUpdate} className="space-y-4">
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">タイトル</label>
-            <input 
-              type="text" className="w-full p-2 border rounded focus:ring-2 focus:ring-orange-300 outline-none"
-              value={title} onChange={(e) => setTitle(e.target.value)} required
-            />
+        <form onSubmit={handleUpdate} className="space-y-6">
+          
+          {/* 基本情報 */}
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1">タイトル</label>
+              <input 
+                type="text" className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-orange-300 outline-none"
+                value={title} onChange={(e) => setTitle(e.target.value)} required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1">場所の名前</label>
+              <input 
+                type="text" className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-orange-300 outline-none"
+                value={spotName} onChange={(e) => setSpotName(e.target.value)} required
+              />
+            </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">場所の名前</label>
-            <input 
-              type="text" className="w-full p-2 border rounded focus:ring-2 focus:ring-orange-300 outline-none"
-              value={spotName} onChange={(e) => setSpotName(e.target.value)} required
-            />
-          </div>
-
-          {/* ↓↓ 画像編集エリア ↓↓ */}
-          <div className="border p-3 rounded bg-gray-50 relative">
-            <label className="block text-sm font-bold text-gray-700 mb-2">写真の管理</label>
+          {/* 画像編集エリア */}
+          <div className="border p-4 rounded bg-gray-50 relative">
+            <label className="block text-xs font-bold text-gray-500 mb-2">手紙の写真</label>
             
-            {/* 現在の画像のプレビュー（削除フラグが立っていない時だけ表示） */}
+            {/* 現在の画像 */}
             {currentImageUrl && !isImageDeleted && !newImageFile && (
               <div className="mb-3 relative inline-block">
-                <img src={currentImageUrl} alt="Current" className="h-32 w-auto object-cover rounded border" />
+                <img src={currentImageUrl} alt="Current" className="h-24 w-auto object-cover rounded border" />
                 <button
-                  type="button" // これが重要！submitを防ぐ
+                  type="button"
                   onClick={() => setIsImageDeleted(true)}
                   className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-md hover:bg-red-600"
-                  title="この画像を削除する"
+                  title="削除"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
-                <p className="text-xs text-gray-500 mt-1">現在設定中の画像</p>
               </div>
             )}
 
-            {/* 削除予定のメッセージ */}
+            {/* 削除予告 */}
             {isImageDeleted && currentImageUrl && !newImageFile &&(
-              <div className="text-sm text-red-600 mb-3 bg-red-50 p-2 rounded">
-                ※ 保存すると、現在の画像は削除されます。
-                <button type="button" onClick={() => setIsImageDeleted(false)} className="ml-2 underline text-gray-600 text-xs">元に戻す</button>
+              <div className="text-xs text-red-600 mb-3 bg-red-50 p-2 rounded flex justify-between">
+                <span>画像を削除します</span>
+                <button type="button" onClick={() => setIsImageDeleted(false)} className="underline text-gray-600">元に戻す</button>
               </div>
             )}
 
-            {/* 新しい画像の選択 */}
+            {/* 新しい画像 */}
             <input 
-              type="file" 
-              accept="image/*"
-              className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-orange-100 file:text-orange-700 hover:file:bg-orange-200 cursor-pointer"
+              type="file" accept="image/*"
+              className="w-full text-xs text-gray-500"
               onChange={(e) => {
                 if (e.target.files?.[0]) {
                   setNewImageFile(e.target.files[0]);
-                  setIsImageDeleted(false); // 新しいファイルが選ばれたら削除フラグはリセット
+                  setIsImageDeleted(false);
                 }
               }}
             />
-            {newImageFile && <p className="text-xs text-green-600 mt-1">新しい画像が選択されています: {newImageFile.name}</p>}
-            <p className="text-xs text-gray-400 mt-2">※新しいファイルを選択すると、古い画像と差し替わります。</p>
+            {newImageFile && <p className="text-[10px] text-green-600 mt-1">新しい画像を選択中</p>}
           </div>
-          {/* ↑↑ 画像編集エリアここまで ↑↑ */}
-
 
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">手紙の内容</label>
+            <label className="block text-xs font-bold text-gray-500 mb-1">手紙の内容</label>
             <textarea 
-              className="w-full p-2 border rounded h-32 focus:ring-2 focus:ring-orange-300 outline-none"
+              className="w-full p-2 border rounded h-32 text-sm focus:ring-2 focus:ring-orange-300 outline-none"
               value={content} onChange={(e) => setContent(e.target.value)} required
             />
           </div>
 
-          <div className="bg-yellow-50 p-3 rounded text-xs text-gray-600 border border-yellow-200">
+          {/* ★追加：切手管理エリア */}
+          <div className="border border-yellow-200 p-4 rounded bg-yellow-50 relative">
+            <label className="block text-xs font-bold text-yellow-800 mb-2">🎁 切手の設定</label>
+
+            {/* A. 既存の切手がある場合 */}
+            {currentStamp && !isStampDeleted && (
+              <div className="flex items-center gap-3 mb-2 bg-white p-2 rounded border border-yellow-100">
+                <img src={currentStamp.image_url} alt="stamp" className="w-10 h-auto border" />
+                <div className="flex-1">
+                  <p className="text-xs font-bold">{currentStamp.name}</p>
+                  <p className="text-[10px] text-gray-400">現在設定中</p>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => setIsStampDeleted(true)}
+                  className="text-xs bg-red-100 text-red-500 px-2 py-1 rounded hover:bg-red-200"
+                >
+                  外す
+                </button>
+              </div>
+            )}
+
+            {/* B. 切手が削除予定の場合 */}
+            {isStampDeleted && (
+              <div className="text-xs text-red-600 mb-3 bg-white p-2 rounded border border-red-100 flex justify-between">
+                 <span>この切手を外します</span>
+                 <button type="button" onClick={() => setIsStampDeleted(false)} className="underline">元に戻す</button>
+              </div>
+            )}
+
+            {/* C. 新しい切手の追加 (既存がない、または削除予定の場合に表示) */}
+            {(!currentStamp || isStampDeleted) && (
+              <div className="mt-2">
+                <label className="flex items-center gap-2 cursor-pointer mb-2">
+                   <input 
+                     type="checkbox" 
+                     checked={isCreatingNewStamp} 
+                     onChange={() => setIsCreatingNewStamp(!isCreatingNewStamp)} 
+                     className="accent-orange-600"
+                   />
+                   <span className="text-xs font-bold">新しい切手を作成して付ける</span>
+                </label>
+
+                {isCreatingNewStamp && (
+                  <div className="pl-4 border-l-2 border-yellow-300 space-y-2">
+                    <input 
+                       type="text" placeholder="切手の名前" 
+                       className="w-full p-2 border rounded text-xs"
+                       value={newStampName} onChange={e => setNewStampName(e.target.value)}
+                     />
+                     <input 
+                       type="file" accept="image/*"
+                       className="w-full text-xs text-gray-500"
+                       onChange={(e) => e.target.files?.[0] && setNewStampFile(e.target.files[0])}
+                     />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ★追加：公開設定 */}
+          <div className="bg-orange-50 p-3 rounded border border-orange-200">
+             <label className="block text-xs font-bold text-gray-600 mb-2">公開設定</label>
+             <div className="flex gap-4 mb-2">
+               <label className="flex items-center gap-2 cursor-pointer">
+                 <input type="radio" checked={!isPrivate} onChange={() => setIsPrivate(false)} className="accent-orange-600"/>
+                 <span className="text-xs">誰でもOK</span>
+               </label>
+               <label className="flex items-center gap-2 cursor-pointer">
+                 <input type="radio" checked={isPrivate} onChange={() => setIsPrivate(true)} className="accent-orange-600"/>
+                 <span className="text-xs">合言葉</span>
+               </label>
+             </div>
+             {isPrivate && (
+               <input 
+                 type="text" value={password} onChange={(e) => setPassword(e.target.value)}
+                 className="w-full bg-white border border-gray-300 rounded p-2 text-xs"
+                 placeholder="合言葉を入力"
+               />
+             )}
+          </div>
+
+          <div className="bg-gray-100 p-2 rounded text-xs text-gray-500">
             <p className="font-bold mb-1">📍 場所の変更</p>
-            <p>地図をクリックすると、マーカーの位置（設置場所）も変更されます。</p>
+            <p>地図上のマーカーをドラッグするか、地図をクリックして変更できます。</p>
           </div>
 
           <button 
             type="submit" disabled={isSubmitting}
-            className="w-full bg-green-600 text-white font-bold py-3 rounded hover:bg-green-700 transition-colors disabled:bg-gray-400"
+            className="w-full bg-green-600 text-white font-bold py-3 rounded hover:bg-green-700 transition-colors disabled:bg-gray-400 shadow-md"
           >
             {isSubmitting ? '保存中...' : '変更を保存する'}
           </button>
         </form>
       </div>
 
-      {/* 右側：地図（変更なし） */}
+      {/* 右側：地図 */}
       <div className="w-full md:w-2/3 h-[50vh] md:h-screen relative">
         <Map
           {...viewState}
@@ -273,14 +418,16 @@ export default function EditPage() {
               setLng(e.lngLat.lng);
             }}
           >
-            <div className="text-4xl drop-shadow-lg animate-bounce">
-              📍
+            <div className="animate-bounce">
+               <IconAdminLetter className="w-12 h-12 drop-shadow-lg" />
             </div>
           </Marker>
+          
+          {/* 現在の写真のプレビューマーカー */}
           {currentImageUrl && (
              <Marker latitude={lat} longitude={lng} anchor="top" offset={[0, 10]}>
-               <div className="bg-white p-1 shadow rounded">
-                  <img src={currentImageUrl} className="w-16 h-auto rounded" alt="mini preview" />
+               <div className="bg-white p-1 shadow rounded border border-gray-200">
+                  <img src={currentImageUrl} className="w-12 h-auto rounded" alt="mini preview" />
                </div>
              </Marker>
           )}

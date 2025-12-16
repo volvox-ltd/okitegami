@@ -19,7 +19,8 @@ type Letter = {
   image_url?: string;
   is_official?: boolean;
   user_id?: string;
-  password?: string | null; // ★追加：パスワード
+  password?: string | null;
+  attached_stamp_id?: number | null; // ★切手IDを追加
 };
 
 type Props = {
@@ -34,7 +35,6 @@ const CHARS_PER_PAGE = 180;
 export default function LetterModal({ letter, currentUser, onClose, onDeleted }: Props) {
   const [isVisible, setIsVisible] = useState(false);
   
-  // ★ロック機能用の状態
   const [isLocked, setIsLocked] = useState(false);
   const [inputPassword, setInputPassword] = useState('');
   const [unlockError, setUnlockError] = useState(false);
@@ -43,34 +43,66 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
   const [pages, setPages] = useState<any[]>([]);
   const [isFavorited, setIsFavorited] = useState(false);
 
-  // 自分の投稿かどうか
+  // ★切手演出用のState
+  const [gotStamp, setGotStamp] = useState<any>(null);
+
   const isMyPost = currentUser && currentUser.id === letter.user_id;
 
   useEffect(() => {
     setIsVisible(true);
     
-    // ★ロック判定
-    // パスワードがあり、かつ自分の投稿ではない場合、ロックする
+    // ロック判定
     if (letter.password && !isMyPost) {
       setIsLocked(true);
     } else {
       setIsLocked(false);
+      // ロックがない場合はすぐに切手チェック
+      checkStamp();
     }
 
     checkFavorite();
-  }, [letter, currentUser]); // currentUserが変わった時も再判定
+  }, [letter, currentUser]);
 
-  // ロック解除を試みる
-  const handleUnlock = () => {
-    if (inputPassword === letter.password) {
-      setIsLocked(false); // 解除！
-      setUnlockError(false);
-    } else {
-      setUnlockError(true); // ブブー！
+  // ★切手取得ロジック
+  const checkStamp = async () => {
+    // ログイン済み & 切手付き & 自分の投稿ではない場合
+    if (currentUser && letter.attached_stamp_id && !isMyPost) {
+      try {
+        // 重複エラーは無視してinsertを試みる
+        const { error } = await supabase.from('user_stamps').insert({
+          user_id: currentUser.id,
+          stamp_id: letter.attached_stamp_id
+        });
+
+        // 成功（=初めてゲット）したら演出データを取得
+        if (!error) {
+          const { data: stampData } = await supabase
+            .from('stamps')
+            .select('*')
+            .eq('id', letter.attached_stamp_id)
+            .single();
+          
+          if (stampData) {
+            setGotStamp(stampData);
+          }
+        }
+      } catch (e) {
+        // すでに持っている場合はここで無視
+      }
     }
   };
 
-  // ... (お気に入りなどの既存ロジックはそのまま) ...
+  const handleUnlock = () => {
+    if (inputPassword === letter.password) {
+      setIsLocked(false);
+      setUnlockError(false);
+      // ロック解除成功時に切手チェック
+      checkStamp();
+    } else {
+      setUnlockError(true);
+    }
+  };
+
   const checkFavorite = async () => {
     if (!currentUser) return;
     const { data } = await supabase.from('favorites').select('id').eq('user_id', currentUser.id).eq('letter_id', letter.id).single();
@@ -122,6 +154,25 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
     <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose}></div>
 
+      {/* ★切手ゲット時の演出オーバーレイ */}
+      {gotStamp && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none">
+          <div className="bg-white/95 p-6 rounded-lg shadow-2xl flex flex-col items-center animate-bounce-in pointer-events-auto border-4 border-yellow-400 max-w-xs">
+            <h3 className="font-bold text-orange-600 mb-2 font-serif text-lg tracking-widest">切手を拾いました！</h3>
+            <div className="w-24 h-32 border-4 border-white shadow-md rotate-3 mb-4 bg-white">
+              <img src={gotStamp.image_url} className="w-full h-full object-cover" />
+            </div>
+            <p className="font-bold text-sm text-gray-800 mb-4">{gotStamp.name}</p>
+            <button 
+              onClick={() => setGotStamp(null)}
+              className="bg-green-700 text-white text-xs font-bold px-6 py-2 rounded-full shadow hover:bg-green-800 transition-colors"
+            >
+              閉じる
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className={`relative w-full max-w-md h-[600px] shadow-2xl rounded-2xl transform transition-all duration-300 border-4 ${borderColor} ${bgColor} flex flex-col ${isVisible ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}`}>
         
         {/* ヘッダー */}
@@ -138,7 +189,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
           <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 p-2 -mr-2">✕</button>
         </div>
 
-        {/* 自分の投稿なら編集削除 / 他人の投稿ならお気に入り (ロック中は非表示) */}
+        {/* 編集/お気に入りボタン (ロック中は非表示) */}
         {!isLocked && (
           <div className="absolute top-20 right-4 z-10 flex gap-2">
             {isMyPost ? (
@@ -161,23 +212,22 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
         {/* コンテンツエリア */}
         <div className="flex-1 relative overflow-hidden p-6 md:p-8 flex items-center justify-center">
           
-          {/* ★ロック中の表示 */}
           {isLocked ? (
             <div className="flex flex-col items-center justify-center w-full h-full animate-fadeIn space-y-4">
               <div className="text-4xl">🔒</div>
-              <p className="font-serif text-gray-600 text-sm">この手紙には合言葉が必要です</p>
+              <p className="font-serif text-gray-600 text-sm tracking-widest">合言葉が必要です</p>
               
               <div className="w-full max-w-[200px]">
                 <input 
                   type="text" 
                   value={inputPassword}
                   onChange={(e) => setInputPassword(e.target.value)}
-                  className="w-full border border-gray-300 rounded p-2 text-center mb-2"
+                  className="w-full border border-gray-300 rounded p-2 text-center mb-2 font-serif placeholder:text-gray-300"
                   placeholder="合言葉"
                 />
                 <button 
                   onClick={handleUnlock}
-                  className="w-full bg-green-600 text-white font-bold py-2 rounded shadow hover:bg-green-700"
+                  className="w-full bg-green-700 text-white font-bold py-2 rounded shadow hover:bg-green-800 text-sm"
                 >
                   開ける
                 </button>
@@ -185,7 +235,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
               </div>
             </div>
           ) : (
-            // ロック解除済み（通常表示）
             <>
               {pageData && pageData.type === 'image' && (
                  <div className="w-full h-full flex items-center justify-center animate-fadeIn p-2">
@@ -227,7 +276,14 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
       </div>
       <style jsx>{`
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes bounceIn {
+          0% { transform: scale(0.3); opacity: 0; }
+          50% { transform: scale(1.05); opacity: 1; }
+          70% { transform: scale(0.9); }
+          100% { transform: scale(1); }
+        }
         .animate-fadeIn { animation: fadeIn 0.5s ease-out forwards; }
+        .animate-bounce-in { animation: bounceIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
       `}</style>
     </div>
   );
