@@ -16,6 +16,7 @@
   
   /* 補助：少し薄いグレー（日付などに使用） */
   --color-bunko-gray: #7d7d7d;
+  --color-bunko-orange: #f97316;
 }
 
 /* 背景と文字色を全体に適用 */

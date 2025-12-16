@@ -1,102 +1,290 @@
-'use client';
+import { useEffect, useState } from 'react';
+import { createClient, User } from '@supabase/supabase-js';
+import Link from 'next/link';
+import IconUserLetter from './IconUserLetter';
+import IconAdminLetter from './IconAdminLetter';
 
-import { useState, useRef, useEffect } from 'react';
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
-type Props = {
-  letter: {
-    title: string;
-    spot_name: string;
-    content: string;
-    image_url?: string;
-  };
-  onClose: () => void;
+type Letter = {
+  id: string;
+  title: string;
+  spot_name: string;
+  content: string;
+  lat: number;
+  lng: number;
+  image_url?: string;
+  is_official?: boolean;
+  user_id?: string;
+  password?: string | null;
+  attached_stamp_id?: number | null; // ★切手IDを追加
 };
 
-export default function LetterModal({ letter, onClose }: Props) {
-  const [currentPage, setCurrentPage] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
-  const contentRef = useRef<HTMLDivElement>(null);
+type Props = {
+  letter: Letter;
+  currentUser: User | null;
+  onClose: () => void;
+  onDeleted?: () => void;
+};
+
+const CHARS_PER_PAGE = 180; 
+
+export default function LetterModal({ letter, currentUser, onClose, onDeleted }: Props) {
+  const [isVisible, setIsVisible] = useState(false);
+  
+  const [isLocked, setIsLocked] = useState(false);
+  const [inputPassword, setInputPassword] = useState('');
+  const [unlockError, setUnlockError] = useState(false);
+
+  const [currentPage, setCurrentPage] = useState(0); 
+  const [pages, setPages] = useState<any[]>([]);
+  const [isFavorited, setIsFavorited] = useState(false);
+
+  // ★切手演出用のState
+  const [gotStamp, setGotStamp] = useState<any>(null);
+
+  const isMyPost = currentUser && currentUser.id === letter.user_id;
 
   useEffect(() => {
-    if (contentRef.current) {
-      const scrollWidth = contentRef.current.scrollWidth;
-      const clientWidth = contentRef.current.clientWidth;
-      setTotalPages(Math.ceil(scrollWidth / clientWidth));
+    setIsVisible(true);
+    
+    // ロック判定
+    if (letter.password && !isMyPost) {
+      setIsLocked(true);
+    } else {
+      setIsLocked(false);
+      // ロックがない場合はすぐに切手チェック
+      checkStamp();
     }
+
+    checkFavorite();
+  }, [letter, currentUser]);
+
+  // ★切手取得ロジック
+  const checkStamp = async () => {
+    // ログイン済み & 切手付き & 自分の投稿ではない場合
+    if (currentUser && letter.attached_stamp_id && !isMyPost) {
+      try {
+        // 重複エラーは無視してinsertを試みる
+        const { error } = await supabase.from('user_stamps').insert({
+          user_id: currentUser.id,
+          stamp_id: letter.attached_stamp_id
+        });
+
+        // 成功（=初めてゲット）したら演出データを取得
+        if (!error) {
+          const { data: stampData } = await supabase
+            .from('stamps')
+            .select('*')
+            .eq('id', letter.attached_stamp_id)
+            .single();
+          
+          if (stampData) {
+            setGotStamp(stampData);
+          }
+        }
+      } catch (e) {
+        // すでに持っている場合はここで無視
+      }
+    }
+  };
+
+  const handleUnlock = () => {
+    if (inputPassword === letter.password) {
+      setIsLocked(false);
+      setUnlockError(false);
+      // ロック解除成功時に切手チェック
+      checkStamp();
+    } else {
+      setUnlockError(true);
+    }
+  };
+
+  const checkFavorite = async () => {
+    if (!currentUser) return;
+    const { data } = await supabase.from('favorites').select('id').eq('user_id', currentUser.id).eq('letter_id', letter.id).single();
+    if (data) setIsFavorited(true);
+  };
+
+  const toggleFavorite = async () => {
+    if (!currentUser) return alert('ログインが必要です');
+    if (isFavorited) {
+      await supabase.from('favorites').delete().eq('user_id', currentUser.id).eq('letter_id', letter.id);
+      setIsFavorited(false);
+    } else {
+      await supabase.from('favorites').insert({ user_id: currentUser.id, letter_id: letter.id });
+      setIsFavorited(true);
+    }
+  };
+
+  useEffect(() => {
+    const newPages = [];
+    if (letter.image_url) newPages.push({ type: 'image', content: letter.image_url });
+    if (!letter.content) newPages.push({ type: 'text', content: '' });
+    else {
+      for (let i = 0; i < letter.content.length; i += CHARS_PER_PAGE) {
+        newPages.push({ type: 'text', content: letter.content.slice(i, i + CHARS_PER_PAGE) });
+      }
+    }
+    setPages(newPages);
   }, [letter]);
 
-  const handleNext = () => {
-    if (currentPage < totalPages - 1) setCurrentPage(p => p + 1);
+  const handleClose = () => { setIsVisible(false); setTimeout(onClose, 300); };
+  const handleNext = () => { if (currentPage < pages.length - 1) setCurrentPage(currentPage + 1); };
+  const handlePrev = () => { if (currentPage > 0) setCurrentPage(currentPage - 1); };
+
+  const handleDelete = async () => {
+    if (!confirm('本当に削除しますか？')) return;
+    const { error } = await supabase.from('letters').delete().eq('id', letter.id);
+    if (error) alert('削除失敗');
+    else { alert('削除しました'); handleClose(); if (onDeleted) onDeleted(); }
   };
 
-  const handlePrev = () => {
-    if (currentPage > 0) setCurrentPage(p => p - 1);
-  };
+  const isOfficial = letter.is_official;
+  const borderColor = isOfficial ? 'border-yellow-600' : 'border-green-700';
+  const bgColor = isOfficial ? 'bg-[#fdfcf5]' : 'bg-white';
+  const textColor = isOfficial ? 'text-[#5d4037]' : 'text-gray-800';
+  const Icon = isOfficial ? IconAdminLetter : IconUserLetter;
+  const pageData = pages[currentPage];
 
   return (
-    <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-      
-      <div className="bg-white w-full max-w-2xl h-[80vh] md:h-[70vh] rounded-md shadow-2xl relative flex flex-col overflow-hidden">
-        
-        {/* ↓↓ 修正箇所：閉じるボタン ↓↓
-           bg-gray-200 (通常時の背景)
-           text-gray-500 (通常時のアイコン色)
-           hover:bg-red-500 (ホバー時の背景：くっきりした赤)
-           hover:text-white (ホバー時のアイコン色：白)
-        */}
-        <button 
-          onClick={onClose}
-          className="absolute top-3 right-3 z-50 bg-gray-200 text-gray-500 hover:bg-red-500 hover:text-white rounded-full p-2 transition-colors shadow-sm"
-          title="閉じる"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+    <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose}></div>
 
-        <div className="flex-1 overflow-hidden relative py-10 px-6 md:px-10">
-          <div 
-            className="h-full transition-transform duration-500 ease-in-out"
-            style={{ transform: `translateX(${currentPage * 100}%)`, width: '100%' }}
-          >
-            <div 
-              ref={contentRef}
-              className="h-full text-bunko-ink leading-loose tracking-widest text-base md:text-lg font-serif"
-              style={{
-                writingMode: 'vertical-rl',
-                columnWidth: 'auto', columnCount: 'auto', columnFill: 'auto',
-                height: '100%', width: '100%',
-              }}
-            >
-              <div className="h-full flex flex-col justify-start ml-8 border-l border-bunko-red/30 pl-6 inline-block align-top">
-                 <h2 className="text-xl md:text-2xl font-bold mb-2">{letter.title}</h2>
-                 <p className="text-sm text-bunko-gray mb-8">{letter.spot_name}</p>
-                 {letter.image_url && (
-                   <img src={letter.image_url} className="w-48 rounded shadow-md object-cover mb-4 grayscale-[0.2] sepia-[0.3]" />
-                 )}
-              </div>
-              <p className="whitespace-pre-wrap inline-block">{letter.content}</p>
-              <p className="mt-8 ml-4 text-sm text-bunko-gray inline-block">木林より</p>
+      {/* ★切手ゲット時の演出オーバーレイ */}
+      {gotStamp && (
+        <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none">
+          <div className="bg-white/95 p-6 rounded-lg shadow-2xl flex flex-col items-center animate-bounce-in pointer-events-auto border-4 border-yellow-400 max-w-xs">
+            <h3 className="font-bold text-orange-600 mb-2 font-serif text-lg tracking-widest">切手を拾いました！</h3>
+            <div className="w-24 h-32 border-4 border-white shadow-md rotate-3 mb-4 bg-white">
+              <img src={gotStamp.image_url} className="w-full h-full object-cover" />
             </div>
+            <p className="font-bold text-sm text-gray-800 mb-4">{gotStamp.name}</p>
+            <button 
+              onClick={() => setGotStamp(null)}
+              className="bg-green-700 text-white text-xs font-bold px-6 py-2 rounded-full shadow hover:bg-green-800 transition-colors"
+            >
+              閉じる
+            </button>
           </div>
         </div>
+      )}
 
-        <div className="bg-[#f9f9f9] p-4 flex justify-between items-center text-bunko-ink font-serif text-sm border-t border-gray-100">
-          <button 
-            onClick={handleNext} disabled={currentPage >= totalPages - 1}
-            className={`px-4 py-2 rounded-full border border-gray-300 hover:bg-gray-100 transition-colors ${currentPage >= totalPages - 1 ? 'opacity-30' : ''}`}
-          >
-            ← 次の頁
-          </button>
-          <span>{currentPage + 1} / {totalPages}</span>
-          <button 
-            onClick={handlePrev} disabled={currentPage === 0}
-            className={`px-4 py-2 rounded-full border border-gray-300 hover:bg-gray-100 transition-colors ${currentPage === 0 ? 'opacity-30' : ''}`}
-          >
-            前の頁 →
-          </button>
+      <div className={`relative w-full max-w-md h-[600px] shadow-2xl rounded-2xl transform transition-all duration-300 border-4 ${borderColor} ${bgColor} flex flex-col ${isVisible ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}`}>
+        
+        {/* ヘッダー */}
+        <div className="h-20 flex items-center justify-between px-6 border-b border-gray-100/50 relative shrink-0">
+          <div className="flex items-center gap-3">
+             <div className="shrink-0 drop-shadow-sm"><Icon className="w-10 h-10" /></div>
+             <div className="overflow-hidden">
+               <h2 className={`font-bold font-serif text-lg leading-tight truncate ${textColor}`}>
+                 {isLocked ? '秘密の手紙' : letter.title}
+               </h2>
+               <p className="text-xs text-gray-400 font-serif mt-1 truncate">📍 {letter.spot_name}</p>
+             </div>
+          </div>
+          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 p-2 -mr-2">✕</button>
         </div>
+
+        {/* 編集/お気に入りボタン (ロック中は非表示) */}
+        {!isLocked && (
+          <div className="absolute top-20 right-4 z-10 flex gap-2">
+            {isMyPost ? (
+              <>
+                <Link href={`/post/edit/${letter.id}`}>
+                  <button className="bg-gray-100 text-gray-600 text-xs px-3 py-1 rounded-full shadow hover:bg-gray-200">編集</button>
+                </Link>
+                <button onClick={handleDelete} className="bg-red-50 text-red-500 text-xs px-3 py-1 rounded-full shadow hover:bg-red-100">削除</button>
+              </>
+            ) : (
+              currentUser && (
+                <button onClick={toggleFavorite} className={`flex items-center gap-1 text-xs px-3 py-1 rounded-full shadow transition-colors ${isFavorited ? 'bg-pink-50 text-pink-500 border border-pink-200' : 'bg-white text-gray-400 border border-gray-200 hover:text-pink-400'}`}>
+                  {isFavorited ? '♥ お気に入り' : '♡ お気に入り'}
+                </button>
+              )
+            )}
+          </div>
+        )}
+
+        {/* コンテンツエリア */}
+        <div className="flex-1 relative overflow-hidden p-6 md:p-8 flex items-center justify-center">
+          
+          {isLocked ? (
+            <div className="flex flex-col items-center justify-center w-full h-full animate-fadeIn space-y-4">
+              <div className="text-4xl">🔒</div>
+              <p className="font-serif text-gray-600 text-sm tracking-widest">合言葉が必要です</p>
+              
+              <div className="w-full max-w-[200px]">
+                <input 
+                  type="text" 
+                  value={inputPassword}
+                  onChange={(e) => setInputPassword(e.target.value)}
+                  className="w-full border border-gray-300 rounded p-2 text-center mb-2 font-serif placeholder:text-gray-300"
+                  placeholder="合言葉"
+                />
+                <button 
+                  onClick={handleUnlock}
+                  className="w-full bg-green-700 text-white font-bold py-2 rounded shadow hover:bg-green-800 text-sm"
+                >
+                  開ける
+                </button>
+                {unlockError && <p className="text-red-500 text-xs text-center mt-2">合言葉が違います</p>}
+              </div>
+            </div>
+          ) : (
+            <>
+              {pageData && pageData.type === 'image' && (
+                 <div className="w-full h-full flex items-center justify-center animate-fadeIn p-2">
+                   <img src={pageData.content} alt="Photo" className="max-w-full max-h-full object-contain rounded shadow-md border-4 border-white transform rotate-1" />
+                 </div>
+              )}
+              {pageData && pageData.type === 'text' && (
+                <div className={`w-full h-full text-base md:text-lg leading-loose font-serif tracking-widest [writing-mode:vertical-rl] flex flex-col flex-wrap content-start items-center ${textColor} animate-fadeIn overflow-hidden`}>
+                  {pageData.content}
+                </div>
+              )}
+            </>
+          )}
+
+        </div>
+
+        {/* フッター (ロック中は非表示) */}
+        {!isLocked && (
+          <div className="h-16 border-t border-gray-100/50 flex items-center justify-between px-6 shrink-0 bg-white/30 backdrop-blur-sm rounded-b-xl">
+            <div className="flex items-center">
+              {currentPage < pages.length - 1 ? (
+                <button onClick={handleNext} className="text-sm font-bold flex items-center gap-1 text-gray-600 hover:text-orange-600 transition-colors pl-2 py-2">
+                  <span className="text-lg">←</span> 次へ
+                </button>
+              ) : (
+                <button onClick={handleClose} className={`px-5 py-2 rounded-full text-white text-xs font-bold shadow-sm transition-transform active:scale-95 ${isOfficial ? 'bg-[#826d36]' : 'bg-green-700'}`}>
+                  読み終わる
+                </button>
+              )}
+            </div>
+            <span className="text-xs text-gray-400 font-serif tracking-widest absolute left-1/2 -translate-x-1/2">- {currentPage + 1} -</span>
+            <div className="flex items-center">
+              <button onClick={handlePrev} disabled={currentPage === 0} className={`text-sm font-bold flex items-center gap-1 transition-colors pr-2 py-2 ${currentPage === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:text-orange-500'}`}>
+                前へ <span className="text-lg">→</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
+      <style jsx>{`
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes bounceIn {
+          0% { transform: scale(0.3); opacity: 0; }
+          50% { transform: scale(1.05); opacity: 1; }
+          70% { transform: scale(0.9); }
+          100% { transform: scale(1); }
+        }
+        .animate-fadeIn { animation: fadeIn 0.5s ease-out forwards; }
+        .animate-bounce-in { animation: bounceIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+      `}</style>
     </div>
   );
 }

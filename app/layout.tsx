@@ -1,30 +1,51 @@
-import type { Metadata } from "next";
-// Google Fonts から「しっぽり明朝」を読み込む
-import { Shippori_Mincho } from "next/font/google";
-import "./globals.css";
+import './globals.css';
+import type { Metadata } from 'next';
+// Google Fontsからフォントを読み込む
+import { Zen_Maru_Gothic, Shippori_Mincho } from 'next/font/google';
 
-// フォントの設定
-const shippori = Shippori_Mincho({ 
-  weight: ['400', '500', '700'], // 必要な太さを指定
+// 1. ゴシック体（基本の文字 / UI / ボタン用）
+const gothic = Zen_Maru_Gothic({
+  weight: ['400', '700'],
   subsets: ['latin'],
-  variable: '--font-shippori',   // これが tailwind.config.ts で使う変数名になります
+  variable: '--font-gothic', // 後でCSS変数として使えるようにする
   display: 'swap',
 });
 
+// 2. 明朝体（タイトル / 手紙の本文用）
+const mincho = Shippori_Mincho({
+  weight: ['400', '700'],
+  subsets: ['latin'],
+  variable: '--font-mincho',
+  display: 'swap',
+});
+
+// ★修正：SNSシェア用の設定 (OGP)
 export const metadata: Metadata = {
-  title: "木林のおきてがみ",
-  description: "街に隠された手紙を探す、小さな冒険。",
+  title: 'おきてがみ',
+  description: '地図に手紙を置くアプリ',
+  openGraph: {
+    title: 'おきてがみ',
+    description: '散歩のついでに、言葉の宝探しをしてみませんか。',
+    siteName: 'おきてがみ',
+    locale: 'ja_JP',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'おきてがみ',
+    description: '散歩のついでに、言葉の宝探しをしてみませんか。',
+  },
+  // アイコン設定はNext.jsが自動検出しますが、念のため明記も可能
 };
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="ja">
-      {/* bodyタグにフォント変数をセット */}
-      <body className={`${shippori.variable} font-serif antialiased`}>
+      <body className={`${gothic.variable} ${mincho.variable} font-sans text-gray-800`}>
         {children}
       </body>
     </html>

@@ -15,11 +15,14 @@ const config: Config = {
           ink: 'var(--color-bunko-ink)',
           red: 'var(--color-bunko-red)',
           gray: 'var(--color-bunko-gray)',
+          orange: 'var(--color-bunko-orange)',
         }
       },
       fontFamily: {
-        // フォントも変数で管理（layout.tsxで定義したものを使います）
-        serif: ['var(--font-shippori)', 'serif'],
+        // layout.tsxで定義した変数(--font-gothic)を、Tailwindの'font-sans'として使う
+        sans: ['var(--font-gothic)', 'sans-serif'],
+        // layout.tsxで定義した変数(--font-mincho)を、Tailwindの'font-serif'として使う
+        serif: ['var(--font-mincho)', 'serif'],
       },
     },
   },
