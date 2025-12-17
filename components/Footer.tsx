@@ -14,7 +14,7 @@ type Props = {
 
 export default function Footer({ currentUser, onResetMap, onAboutClick }: Props) {
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[95%] max-w-lg bg-white/95 backdrop-blur-md border border-gray-100 shadow-xl rounded-2xl h-16 flex justify-around items-center z-40 px-2 pointer-events-auto">
+    <div className="fixed bottom-2 left-1/2 -translate-x-1/2 w-[95%] max-w-lg bg-white/95 backdrop-blur-md border border-gray-100 shadow-xl rounded-2xl h-16 flex justify-around items-center z-40 px-2 pointer-events-auto">
       
       {/* 1. 手紙を探す (地図リセット) */}
       <button 

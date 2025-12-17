@@ -11,14 +11,14 @@ type Props = {
 
 export default function Header({ currentUser, nickname }: Props) {
   return (
-    <div className="absolute top-0 left-0 z-10 w-full p-3 bg-white/90 backdrop-blur-sm shadow-sm flex justify-center items-center pointer-events-none">
+    <div className="absolute top-0 left-0 z-10 w-full p-3 px-4 bg-white/90 backdrop-blur-sm shadow-sm flex justify-start md:justify-center items-center pointer-events-none">
       
       {/* ★変更：ロゴとタイトルを中央寄せのコンテナでまとめる */}
       <div className="flex items-center gap-2 pointer-events-auto">
-        <Logo className="w-8 h-8 text-bunko-ink" />
-        <h1 className="text-center font-serif text-lg tracking-widest text-bunko-ink">
+        <Logo className="w-6 h-6 md:w-8 md:h-8 text-bunko-ink" />
+        <h1 className="font-serif text-sm md:text-lg tracking-widest text-bunko-ink">
           おきてがみ
-          <span className="text-xs ml-2 relative -top-0.5 text-gray-600 font-sans">by 木林文庫 (β版)</span>
+          <span className="text-[10px] md:text-xs ml-2 relative -top-0.5 text-gray-600 font-sans">by 木林文庫 (β版)</span>
         </h1>
       </div>
       

@@ -16,6 +16,8 @@ import IconAdminLetter from '@/components/IconAdminLetter';
 import LetterModal from '@/components/LetterModal';
 import AboutModal from '@/components/AboutModal';
 import NicknameModal from '@/components/NicknameModal';
+// ★追加：チュートリアル用モーダル
+import TutorialModal from '@/components/TutorialModal'; 
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
 
 
@@ -55,6 +57,9 @@ export default function Home() {
   const [readingLetter, setReadingLetter] = useState<Letter | null>(null);
   const [showAbout, setShowAbout] = useState(false);
   const [showUserPosts, setShowUserPosts] = useState(true);
+
+  // ★追加：チュートリアルを表示するかどうかの状態
+  const [showTutorial, setShowTutorial] = useState(false);
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [myNickname, setMyNickname] = useState<string | null>(null);
@@ -128,6 +133,12 @@ export default function Home() {
   };
 
   useEffect(() => {
+    // ★追加：初回訪問かどうかチェック（localStorageを使う）
+    const hasSeenTutorial = localStorage.getItem('hasSeenTutorial');
+    if (!hasSeenTutorial) {
+      setShowTutorial(true);
+    }
+
     fetchLetters();
   }, []);
 
@@ -149,6 +160,12 @@ export default function Home() {
     return () => navigator.geolocation.clearWatch(watchId);
   }, [hasCentered]);
 
+  // ★追加：チュートリアルを閉じた時の処理
+  const handleCloseTutorial = () => {
+    localStorage.setItem('hasSeenTutorial', 'true'); // 見たことを記録
+    setShowTutorial(false);
+  };
+
   const calculateDistance = (targetLat: number, targetLng: number) => {
     if (!userLocation) return null;
     return getDistance(
@@ -161,7 +178,7 @@ export default function Home() {
   if (!mapToken) return <div>Map Token Error</div>;
 
   return (
-    <main className="w-full h-screen relative bg-[#f7f4ea] pb-24">
+    <main className="w-full h-screen relative bg-[#f7f4ea]">
       
       {showNicknameModal && currentUser && (
         <NicknameModal 
@@ -355,6 +372,11 @@ export default function Home() {
         }}
         onAboutClick={() => setShowAbout(true)}
       />
+
+      {/* ★追加：チュートリアルモーダル（条件付き表示） */}
+      {showTutorial && (
+        <TutorialModal onClose={handleCloseTutorial} />
+      )}
 
     </main>
   );

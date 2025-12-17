@@ -7,14 +7,13 @@ import LetterModal from '@/components/LetterModal';
 import IconUserLetter from '@/components/IconUserLetter';
 import IconAdminLetter from '@/components/IconAdminLetter';
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
-
+// ★追加：スケルトンコンポーネントの読み込み
+import SkeletonLetter from '@/components/SkeletonLetter';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
-
-// const EXPIRATION_HOURS = 48; 
 
 type Letter = {
   id: string;
@@ -43,6 +42,9 @@ export default function MyPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   
+  // ★追加：読み込み中かどうかの状態（初期値はtrue）
+  const [isLoading, setIsLoading] = useState(true);
+
   const [activeTab, setActiveTab] = useState<'posts' | 'favorites' | 'stamps'>('posts');
   
   const [myPosts, setMyPosts] = useState<Letter[]>([]);
@@ -59,9 +61,15 @@ export default function MyPage() {
         return;
       }
       setUser(user);
-      fetchMyPosts(user.id);
-      fetchFavorites(user.id);
-      fetchStamps(user.id);
+
+      // ★修正：3つのデータ取得を並列で行い、全部終わったらローディングを完了にする
+      await Promise.all([
+        fetchMyPosts(user.id),
+        fetchFavorites(user.id),
+        fetchStamps(user.id)
+      ]);
+      
+      setIsLoading(false); // ★読み込み完了
     };
     init();
   }, []);
@@ -152,89 +160,103 @@ export default function MyPage() {
       {/* コンテンツエリア */}
       <div className="p-4 space-y-3 min-h-[300px]">
         
-        {/* === 切手帳タブ === */}
-        {activeTab === 'stamps' && (
-          <div className="animate-fadeIn">
-            {/* モバイル3列、PC6列、最大幅設定 */}
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-4 px-2 max-w-5xl mx-auto">
-              {obtainedStamps.map(stamp => (
-                <div key={stamp.id} className="flex flex-col items-center">
-                  <div 
-                    className="aspect-[3/4] w-full rounded border-4 shadow-sm relative overflow-hidden mb-2 transition-all duration-500 border-white bg-white scale-100"
-                    style={{
-                      boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
-                    }}
-                  >
-                    <img 
-                      src={stamp.image_url} 
-                      alt={stamp.name} 
-                      className="w-full h-full object-contain p-1"
-                    />
-                  </div>
-                  <p className="text-[10px] font-bold text-center text-bunko-ink">
-                    {stamp.name}
-                  </p>
-                </div>
-              ))}
-            </div>
-
-            {obtainedStamps.length === 0 && (
-              <div className="text-center py-10 text-gray-400 text-xs">
-                 まだ切手を持っていません。<br/>
-                 特別な手紙を見つけて開封すると...？
-              </div>
-            )}
+        {/* ★追加：ローディング中のスケルトン表示（手紙系のタブのみ） */}
+        {isLoading && activeTab !== 'stamps' && (
+          <div className="space-y-3 max-w-3xl mx-auto">
+            <SkeletonLetter />
+            <SkeletonLetter />
+            <SkeletonLetter />
           </div>
         )}
 
-        {/* === 手紙リスト（自分の投稿 or お気に入り） === */}
-        {activeTab !== 'stamps' && (
-          <div className="animate-fadeIn space-y-3 max-w-3xl mx-auto">
-            {(activeTab === 'posts' ? myPosts : favorites).length === 0 && (
-              <div className="text-center py-12 text-gray-400 text-xs">
-                {activeTab === 'posts' ? 'まだ手紙を置いていません' : 'お気に入りはまだありません'}
+        {/* 読み込み完了後に表示するコンテンツ */}
+        {!isLoading && (
+          <>
+            {/* === 切手帳タブ === */}
+            {activeTab === 'stamps' && (
+              <div className="animate-fadeIn">
+                {/* モバイル3列、PC6列、最大幅設定 */}
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-4 px-2 max-w-5xl mx-auto">
+                  {obtainedStamps.map(stamp => (
+                    <div key={stamp.id} className="flex flex-col items-center">
+                      <div 
+                        className="aspect-[3/4] w-full rounded border-4 shadow-sm relative overflow-hidden mb-2 transition-all duration-500 border-white bg-white scale-100"
+                        style={{
+                          boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
+                        }}
+                      >
+                        <img 
+                          src={stamp.image_url} 
+                          alt={stamp.name} 
+                          className="w-full h-full object-contain p-1"
+                        />
+                      </div>
+                      <p className="text-[10px] font-bold text-center text-bunko-ink">
+                        {stamp.name}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                {obtainedStamps.length === 0 && (
+                  <div className="text-center py-10 text-gray-400 text-xs">
+                    まだ切手を持っていません。<br/>
+                    特別な手紙を見つけて開封すると...？
+                  </div>
+                )}
               </div>
             )}
 
-            {(activeTab === 'posts' ? myPosts : favorites).map((letter) => {
-              const expired = !letter.is_official && isExpired(letter.created_at);
-              
-              return (
-                <div 
-                  key={letter.id}
-                  onClick={() => setSelectedLetter(letter)}
-                  className={`bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4 cursor-pointer transition-transform hover:scale-[1.01] active:scale-[0.99] ${expired ? 'opacity-60 grayscale' : ''}`}
-                >
-                  <div className="shrink-0">
-                    {letter.is_official ? (
-                      <IconAdminLetter className="w-10 h-10" />
-                    ) : (
-                      <IconUserLetter className="w-10 h-10" />
-                    )}
+            {/* === 手紙リスト（自分の投稿 or お気に入り） === */}
+            {activeTab !== 'stamps' && (
+              <div className="animate-fadeIn space-y-3 max-w-3xl mx-auto">
+                {(activeTab === 'posts' ? myPosts : favorites).length === 0 && (
+                  <div className="text-center py-12 text-gray-400 text-xs">
+                    {activeTab === 'posts' ? 'まだ手紙を置いていません' : 'お気に入りはまだありません'}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-bold text-gray-800 text-sm truncate">{letter.title}</h3>
-                      {expired && activeTab === 'posts' && (
-                        <span className="text-[10px] bg-gray-200 text-gray-500 px-2 py-0.5 rounded">掲載終了</span>
-                      )}
-                      {activeTab === 'favorites' && expired && (
-                        <span className="text-[10px] bg-gray-200 text-gray-500 px-2 py-0.5 rounded">終了</span>
-                      )}
+                )}
+
+                {(activeTab === 'posts' ? myPosts : favorites).map((letter) => {
+                  const expired = !letter.is_official && isExpired(letter.created_at);
+                  
+                  return (
+                    <div 
+                      key={letter.id}
+                      onClick={() => setSelectedLetter(letter)}
+                      className={`bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4 cursor-pointer transition-transform hover:scale-[1.01] active:scale-[0.99] ${expired ? 'opacity-60 grayscale' : ''}`}
+                    >
+                      <div className="shrink-0">
+                        {letter.is_official ? (
+                          <IconAdminLetter className="w-10 h-10" />
+                        ) : (
+                          <IconUserLetter className="w-10 h-10" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-bold text-gray-800 text-sm truncate">{letter.title}</h3>
+                          {expired && activeTab === 'posts' && (
+                            <span className="text-[10px] bg-gray-200 text-gray-500 px-2 py-0.5 rounded">掲載終了</span>
+                          )}
+                          {activeTab === 'favorites' && expired && (
+                            <span className="text-[10px] bg-gray-200 text-gray-500 px-2 py-0.5 rounded">終了</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-400 truncate mt-1">📍 {letter.spot_name}</p>
+                        <p className="text-[10px] text-gray-300 mt-1">
+                          {new Date(letter.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
                     </div>
-                    <p className="text-xs text-gray-400 truncate mt-1">📍 {letter.spot_name}</p>
-                    <p className="text-[10px] text-gray-300 mt-1">
-                      {new Date(letter.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* ★追加・修正：フッターメニューエリア（ログアウトの上に配置） */}
+      {/* フッターメニューエリア */}
       <div className="mt-8 mb-4 border-t border-gray-200 pt-6">
         <div className="flex flex-col items-center gap-4 text-xs text-gray-500 font-bold">
           <Link href="/terms" className="hover:text-green-700 transition-colors">
