@@ -235,7 +235,7 @@ export default function Home() {
             >
               <div className="flex flex-col items-center group cursor-pointer">
                 <div className="bg-white/95 backdrop-blur px-2 py-1 rounded-sm shadow-sm text-[10px] mb-1 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap text-bunko-ink border border-bunko-gray/10">
-                   {letter.is_official ? '運営のお便り' : (letter.nickname ? `${letter.nickname}さんの手紙` : '')}
+                   {letter.is_official ? '木林文庫の手紙' : (letter.nickname ? `${letter.nickname}さんの手紙` : '')}
                    {letter.spot_name !== '誰かの置き手紙' && (
                      <span className="block text-[8px] text-gray-400 text-center">{letter.spot_name}</span>
                    )}
@@ -271,7 +271,7 @@ export default function Home() {
             <div className="p-2 min-w-[160px] text-center pt-4">
               <h3 className="font-bold text-sm mb-1 text-bunko-ink">{popupInfo.title}</h3>
               <p className="text-[10px] text-gray-500 mb-1">
-                {popupInfo.is_official ? '運営のお便り' : (popupInfo.nickname ? `${popupInfo.nickname}さんの置き手紙` : '置き手紙')}
+                {popupInfo.is_official ? '木林文庫の手紙' : (popupInfo.nickname ? `${popupInfo.nickname}さんの置き手紙` : '置き手紙')}
               </p>
               {popupInfo.spot_name !== '誰かの置き手紙' && (
                 <p className="text-xs text-bunko-gray mb-3">{popupInfo.spot_name}</p>

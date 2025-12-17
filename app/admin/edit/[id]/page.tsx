@@ -6,7 +6,6 @@ import Map, { Marker, NavigationControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { createClient } from '@supabase/supabase-js';
 
-// マーカーアイコン用（なければ通常のピン📍でも動きます）
 import IconAdminLetter from '@/components/IconAdminLetter';
 
 const supabase = createClient(
@@ -18,33 +17,28 @@ export default function EditPage() {
   const router = useRouter();
   const { id } = useParams();
   
-  // 基本フォーム
   const [title, setTitle] = useState('');
   const [spotName, setSpotName] = useState('');
   const [content, setContent] = useState('');
   const [lat, setLat] = useState(35.6288);
   const [lng, setLng] = useState(139.6842);
   
-  // 手紙の画像
   const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null);
   const [newImageFile, setNewImageFile] = useState<File | null>(null);
   const [isImageDeleted, setIsImageDeleted] = useState(false);
 
-  // ★追加：公開設定（合言葉）
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState('');
 
-  // ★追加：切手関連
   const [currentStamp, setCurrentStamp] = useState<{id: number, name: string, image_url: string} | null>(null);
-  const [isStampDeleted, setIsStampDeleted] = useState(false); // 既存の切手を外すフラグ
-  const [isCreatingNewStamp, setIsCreatingNewStamp] = useState(false); // 新しい切手を作るフラグ
+  const [isStampDeleted, setIsStampDeleted] = useState(false);
+  const [isCreatingNewStamp, setIsCreatingNewStamp] = useState(false);
   const [newStampName, setNewStampName] = useState('');
   const [newStampFile, setNewStampFile] = useState<File | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 地図
   const [viewState, setViewState] = useState({
     latitude: 35.6288,
     longitude: 139.6842,
@@ -53,7 +47,6 @@ export default function EditPage() {
 
   const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
-  // データの読み込み
   useEffect(() => {
     const fetchLetter = async () => {
       if(!id) return;
@@ -78,13 +71,11 @@ export default function EditPage() {
         setLng(letter.lng);
         setCurrentImageUrl(letter.image_url);
         
-        // 合言葉の設定
         if (letter.password) {
           setIsPrivate(true);
           setPassword(letter.password);
         }
 
-        // 切手の取得（紐付いている場合）
         if (letter.attached_stamp_id) {
           const { data: stampData } = await supabase
             .from('stamps')
@@ -103,23 +94,18 @@ export default function EditPage() {
     fetchLetter();
   }, [id, router]);
 
-  // 更新処理
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // バリデーション
     if (isPrivate && !password) return alert('合言葉を入力してください');
     if (isCreatingNewStamp && (!newStampName || !newStampFile)) return alert('新しい切手の名前と画像を指定してください');
 
     setIsSubmitting(true);
 
     try {
-      // -------------------------------
-      // 1. 手紙のメイン画像処理
-      // -------------------------------
+      // 1. 手紙のメイン画像（写真なので圧縮OK）
       let finalImageUrl = currentImageUrl;
 
-      // 削除フラグがある場合
       if (isImageDeleted) {
         if (currentImageUrl) {
           const oldName = currentImageUrl.split('/').pop();
@@ -128,9 +114,7 @@ export default function EditPage() {
         finalImageUrl = null;
       }
 
-      // 新しい画像がある場合（圧縮処理含む）
       if (newImageFile) {
-        // 古い画像があれば消す
         if (currentImageUrl && !isImageDeleted) {
            const oldName = currentImageUrl.split('/').pop();
            if (oldName) await supabase.storage.from('letter-images').remove([oldName]);
@@ -146,27 +130,36 @@ export default function EditPage() {
         finalImageUrl = urlData.publicUrl;
       }
 
-      // -------------------------------
       // 2. 切手の処理
-      // -------------------------------
       let finalStampId = currentStamp ? currentStamp.id : null;
 
-      // A. 既存の切手を削除する場合
       if (isStampDeleted) {
         finalStampId = null;
       }
 
-      // B. 新しい切手を作成して紐付ける場合
       if (isCreatingNewStamp && newStampName && newStampFile) {
-        const compressedStamp = await compressImage(newStampFile);
-        const stampFileName = `stamp_${Date.now()}.jpg`;
+        // ★ここを修正：PNGならそのままアップロード
+        let fileToUpload = newStampFile;
+        let fileExt = 'jpg';
+        let mimeType = 'image/jpeg';
 
-        const { error: sUpErr } = await supabase.storage.from('stamp-images').upload(stampFileName, compressedStamp, { contentType: 'image/jpeg' });
+        if (newStampFile.type === 'image/png') {
+          fileToUpload = newStampFile;
+          fileExt = 'png';
+          mimeType = 'image/png';
+        } else {
+          fileToUpload = await compressImage(newStampFile);
+          fileExt = 'jpg';
+          mimeType = 'image/jpeg';
+        }
+
+        const stampFileName = `stamp_${Date.now()}.${fileExt}`;
+
+        const { error: sUpErr } = await supabase.storage.from('stamp-images').upload(stampFileName, fileToUpload, { contentType: mimeType });
         if (sUpErr) throw sUpErr;
 
         const { data: sUrlData } = supabase.storage.from('stamp-images').getPublicUrl(stampFileName);
         
-        // stampsテーブルに登録
         const { data: newStamp, error: sDbErr } = await supabase
           .from('stamps')
           .insert({
@@ -179,12 +172,10 @@ export default function EditPage() {
         
         if (sDbErr) throw sDbErr;
         
-        finalStampId = newStamp.id; // 新しい切手IDを採用
+        finalStampId = newStamp.id;
       }
 
-      // -------------------------------
       // 3. データベース更新
-      // -------------------------------
       const { error } = await supabase
         .from('letters')
         .update({
@@ -194,8 +185,8 @@ export default function EditPage() {
           lat,
           lng,
           image_url: finalImageUrl,
-          password: isPrivate ? password : null, // 合言葉
-          attached_stamp_id: finalStampId        // 切手ID
+          password: isPrivate ? password : null,
+          attached_stamp_id: finalStampId
         })
         .eq('id', id);
 
@@ -227,7 +218,6 @@ export default function EditPage() {
         
         <form onSubmit={handleUpdate} className="space-y-6">
           
-          {/* 基本情報 */}
           <div className="space-y-3">
             <div>
               <label className="block text-xs font-bold text-gray-500 mb-1">タイトル</label>
@@ -245,11 +235,9 @@ export default function EditPage() {
             </div>
           </div>
 
-          {/* 画像編集エリア */}
           <div className="border p-4 rounded bg-gray-50 relative">
             <label className="block text-xs font-bold text-gray-500 mb-2">手紙の写真</label>
             
-            {/* 現在の画像 */}
             {currentImageUrl && !isImageDeleted && !newImageFile && (
               <div className="mb-3 relative inline-block">
                 <img src={currentImageUrl} alt="Current" className="h-24 w-auto object-cover rounded border" />
@@ -266,7 +254,6 @@ export default function EditPage() {
               </div>
             )}
 
-            {/* 削除予告 */}
             {isImageDeleted && currentImageUrl && !newImageFile &&(
               <div className="text-xs text-red-600 mb-3 bg-red-50 p-2 rounded flex justify-between">
                 <span>画像を削除します</span>
@@ -274,7 +261,6 @@ export default function EditPage() {
               </div>
             )}
 
-            {/* 新しい画像 */}
             <input 
               type="file" accept="image/*"
               className="w-full text-xs text-gray-500"
@@ -296,11 +282,10 @@ export default function EditPage() {
             />
           </div>
 
-          {/* ★追加：切手管理エリア */}
+          {/* 切手管理エリア */}
           <div className="border border-yellow-200 p-4 rounded bg-yellow-50 relative">
             <label className="block text-xs font-bold text-yellow-800 mb-2">🎁 切手の設定</label>
 
-            {/* A. 既存の切手がある場合 */}
             {currentStamp && !isStampDeleted && (
               <div className="flex items-center gap-3 mb-2 bg-white p-2 rounded border border-yellow-100">
                 <img src={currentStamp.image_url} alt="stamp" className="w-10 h-auto border" />
@@ -318,7 +303,6 @@ export default function EditPage() {
               </div>
             )}
 
-            {/* B. 切手が削除予定の場合 */}
             {isStampDeleted && (
               <div className="text-xs text-red-600 mb-3 bg-white p-2 rounded border border-red-100 flex justify-between">
                  <span>この切手を外します</span>
@@ -326,7 +310,6 @@ export default function EditPage() {
               </div>
             )}
 
-            {/* C. 新しい切手の追加 (既存がない、または削除予定の場合に表示) */}
             {(!currentStamp || isStampDeleted) && (
               <div className="mt-2">
                 <label className="flex items-center gap-2 cursor-pointer mb-2">
@@ -351,13 +334,13 @@ export default function EditPage() {
                        className="w-full text-xs text-gray-500"
                        onChange={(e) => e.target.files?.[0] && setNewStampFile(e.target.files[0])}
                      />
+                     <p className="text-[10px] text-gray-400">※PNG画像なら背景透過が維持されます</p>
                   </div>
                 )}
               </div>
             )}
           </div>
 
-          {/* ★追加：公開設定 */}
           <div className="bg-orange-50 p-3 rounded border border-orange-200">
              <label className="block text-xs font-bold text-gray-600 mb-2">公開設定</label>
              <div className="flex gap-4 mb-2">
@@ -419,11 +402,10 @@ export default function EditPage() {
             }}
           >
             <div className="animate-bounce">
-               <IconAdminLetter className="w-12 h-12 drop-shadow-lg" />
+               <IconAdminLetter className="w-10 h-10 drop-shadow-lg" />
             </div>
           </Marker>
           
-          {/* 現在の写真のプレビューマーカー */}
           {currentImageUrl && (
              <Marker latitude={lat} longitude={lng} anchor="top" offset={[0, 10]}>
                <div className="bg-white p-1 shadow rounded border border-gray-200">

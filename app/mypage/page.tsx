@@ -41,7 +41,6 @@ export default function MyPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   
-  // タブは3つ構成に変更
   const [activeTab, setActiveTab] = useState<'posts' | 'favorites' | 'stamps'>('posts');
   
   const [myPosts, setMyPosts] = useState<Letter[]>([]);
@@ -87,11 +86,8 @@ export default function MyPage() {
     }
   };
 
-  // ★追加：切手データの取得
   const fetchStamps = async (userId: string) => {
-    // 1. 全切手を取得
     const { data: allStamps } = await supabase.from('stamps').select('*').order('id');
-    // 2. 自分が持っている切手IDを取得
     const { data: myStamps } = await supabase.from('user_stamps').select('stamp_id').eq('user_id', userId);
     
     if (allStamps && myStamps) {
@@ -113,6 +109,9 @@ export default function MyPage() {
     const diffHours = (new Date().getTime() - new Date(createdAt).getTime()) / (1000 * 60 * 60);
     return diffHours > EXPIRATION_HOURS;
   };
+
+  // 表示する切手をフィルタリング（持っているものだけ）
+  const obtainedStamps = stamps.filter(s => s.has_obtained);
 
   return (
     <div className="min-h-screen bg-[#f7f4ea] pb-24 font-sans text-gray-800">
@@ -154,45 +153,41 @@ export default function MyPage() {
         {/* === 切手帳タブ === */}
         {activeTab === 'stamps' && (
           <div className="animate-fadeIn">
-            <div className="grid grid-cols-3 gap-4 px-2">
-              {stamps.map(stamp => (
+            {/* モバイル3列、PC6列、最大幅設定 */}
+            <div className="grid grid-cols-3 md:grid-cols-6 gap-4 px-2 max-w-5xl mx-auto">
+              {obtainedStamps.map(stamp => (
                 <div key={stamp.id} className="flex flex-col items-center">
                   <div 
-                    className={`
-                      aspect-[3/4] w-full rounded border-4 shadow-sm relative overflow-hidden mb-2 transition-all duration-500
-                      ${stamp.has_obtained ? 'border-white bg-white rotate-1 scale-100' : 'border-gray-200 bg-gray-100 grayscale opacity-40 scale-95'}
-                    `}
+                    className="aspect-[3/4] w-full rounded border-4 shadow-sm relative overflow-hidden mb-2 transition-all duration-500 border-white bg-white scale-100"
                     style={{
-                      boxShadow: stamp.has_obtained ? '0 2px 5px rgba(0,0,0,0.1)' : 'none',
+                      boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
                     }}
                   >
                     <img 
                       src={stamp.image_url} 
                       alt={stamp.name} 
-                      className="w-full h-full object-cover p-1" 
+                      className="w-full h-full object-contain p-1"
                     />
                   </div>
-                  <p className={`text-[10px] font-bold text-center ${stamp.has_obtained ? 'text-bunko-ink' : 'text-gray-300'}`}>
-                    {stamp.has_obtained ? stamp.name : '???'}
+                  <p className="text-[10px] font-bold text-center text-bunko-ink">
+                    {stamp.name}
                   </p>
                 </div>
               ))}
             </div>
-            {stamps.length === 0 && (
-              <div className="text-center py-10 text-gray-400 text-xs">切手データがありません</div>
-            )}
-            {stamps.length > 0 && stamps.every(s => !s.has_obtained) && (
-              <p className="text-center text-xs text-gray-400 mt-8">
-                まだ切手を持っていません。<br/>
-                特別な手紙を見つけて開封すると...？
-              </p>
+
+            {obtainedStamps.length === 0 && (
+              <div className="text-center py-10 text-gray-400 text-xs">
+                 まだ切手を持っていません。<br/>
+                 特別な手紙を見つけて開封すると...？
+              </div>
             )}
           </div>
         )}
 
         {/* === 手紙リスト（自分の投稿 or お気に入り） === */}
         {activeTab !== 'stamps' && (
-          <div className="animate-fadeIn space-y-3">
+          <div className="animate-fadeIn space-y-3 max-w-3xl mx-auto">
             {(activeTab === 'posts' ? myPosts : favorites).length === 0 && (
               <div className="text-center py-12 text-gray-400 text-xs">
                 {activeTab === 'posts' ? 'まだ手紙を置いていません' : 'お気に入りはまだありません'}

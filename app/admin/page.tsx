@@ -29,17 +29,14 @@ type Letter = {
 export default function AdminPage() {
   const router = useRouter();
   
-  // 手紙フォーム用
   const [title, setTitle] = useState('');
   const [spotName, setSpotName] = useState('');
   const [content, setContent] = useState('');
   const [imageFile, setImageFile] = useState<File | null>(null);
   
-  // 公開設定
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState('');
 
-  // 切手作成用フォーム
   const [hasStamp, setHasStamp] = useState(false);
   const [stampName, setStampName] = useState('');
   const [stampFile, setStampFile] = useState<File | null>(null);
@@ -93,7 +90,7 @@ export default function AdminPage() {
     setIsSubmitting(true);
 
     try {
-      // 1. 手紙の画像をアップロード（圧縮あり）
+      // 1. 手紙の画像をアップロード（ここは写真なので圧縮・JPG変換でOK）
       let letterImageUrl = null;
       if (imageFile) {
         const compressedFile = await compressImage(imageFile);
@@ -104,27 +101,41 @@ export default function AdminPage() {
         letterImageUrl = data.publicUrl;
       }
 
-      // 2. 切手画像をアップロード & stampsテーブル登録
+      // 2. 切手画像をアップロード
       let newStampId = null;
       if (hasStamp && stampFile) {
-        const compressedStamp = await compressImage(stampFile);
+        // ★ここを修正：PNGならそのままアップロードして透過を維持する
+        let fileToUpload = stampFile;
+        let fileExt = 'jpg';
+        let mimeType = 'image/jpeg';
+
+        if (stampFile.type === 'image/png') {
+          // PNGの場合：圧縮せずそのまま使う（透過維持のため）
+          fileToUpload = stampFile;
+          fileExt = 'png';
+          mimeType = 'image/png';
+        } else {
+          // それ以外（JPEGなど）：圧縮する
+          fileToUpload = await compressImage(stampFile);
+          fileExt = 'jpg';
+          mimeType = 'image/jpeg';
+        }
         
-        const stampFileName = `stamp_${Date.now()}.jpg`;
+        const stampFileName = `stamp_${Date.now()}.${fileExt}`;
         const { error: stampUpErr } = await supabase.storage
           .from('stamp-images')
-          .upload(stampFileName, compressedStamp, { contentType: 'image/jpeg' });
+          .upload(stampFileName, fileToUpload, { contentType: mimeType });
           
         if (stampUpErr) throw stampUpErr;
         
         const { data: stampUrlData } = supabase.storage.from('stamp-images').getPublicUrl(stampFileName);
-        const stampImageUrl = stampUrlData.publicUrl;
 
         // DB登録
         const { data: stampData, error: stampDbErr } = await supabase
           .from('stamps')
           .insert({
             name: stampName,
-            image_url: stampImageUrl,
+            image_url: stampUrlData.publicUrl,
             description: `${spotName}の記念切手`
           })
           .select()
@@ -242,7 +253,7 @@ export default function AdminPage() {
                    </div>
                    <div>
                      <label className="block text-[10px] text-gray-500 mb-1">
-                       画像 (自動で軽量化されます)
+                       画像 (PNGなら背景透過されます)
                      </label>
                      <input 
                        type="file" accept="image/*"
@@ -312,8 +323,6 @@ export default function AdminPage() {
                     </div>
                   </div>
                 </div>
-                
-                {/* ★編集ボタンと削除ボタン */}
                 <div className="flex gap-2">
                   <Link href={`/admin/edit/${letter.id}`} className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 font-bold">
                     編集
@@ -322,7 +331,6 @@ export default function AdminPage() {
                     削除
                   </button>
                 </div>
-
               </div>
             ))}
           </div>
@@ -345,12 +353,12 @@ export default function AdminPage() {
             latitude={lat} longitude={lng} anchor="bottom" draggable
             onDragEnd={(e) => { setLat(e.lngLat.lat); setLng(e.lngLat.lng); }}
           >
-            <div className="animate-bounce"><IconAdminLetter className="w-12 h-12 drop-shadow-lg" /></div>
+            <div className="animate-bounce"><IconAdminLetter className="w-10 h-10 drop-shadow-lg" /></div>
           </Marker>
           {letters.map(l => (
             <Marker key={l.id} latitude={l.lat} longitude={l.lng} anchor="bottom" onClick={(e) => {e.originalEvent.stopPropagation(); router.push(`/admin/edit/${l.id}`)}}>
               <div className="hover:scale-125 transition-transform cursor-pointer drop-shadow-md relative">
-                {l.is_official ? <IconAdminLetter className="w-10 h-10" /> : <IconUserLetter className="w-8 h-8 opacity-70" />}
+                {l.is_official ? <IconAdminLetter className="w-10 h-10" /> : <IconUserLetter className="w-10 h-10 opacity-70" />}
                 {l.password && <div className="absolute -top-1 -right-1 bg-white rounded-full p-0.5 shadow"><span className="text-[8px]">🔒</span></div>}
                 {l.attached_stamp_id && !l.password && <div className="absolute -top-1 -left-1 bg-white rounded-full p-0.5 shadow"><span className="text-[8px]">🏵️</span></div>}
               </div>

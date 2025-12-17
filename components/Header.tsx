@@ -13,18 +13,16 @@ export default function Header({ currentUser, nickname }: Props) {
   return (
     <div className="absolute top-0 left-0 z-10 w-full p-3 bg-white/90 backdrop-blur-sm shadow-sm flex justify-center items-center pointer-events-none">
       
-      {/* 左端：ロゴ（追加） */}
-      <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-auto">
-        <Logo className="w-12 h-12 text-bunko-ink" />
+      {/* ★変更：ロゴとタイトルを中央寄せのコンテナでまとめる */}
+      <div className="flex items-center gap-2 pointer-events-auto">
+        <Logo className="w-8 h-8 text-bunko-ink" />
+        <h1 className="text-center font-serif text-lg tracking-widest text-bunko-ink">
+          おきてがみ
+          <span className="text-xs ml-2 relative -top-0.5 text-gray-600 font-sans">by 木林文庫 (β版)</span>
+        </h1>
       </div>
-
-      {/* 中央：タイトル */}
-      <h1 className="text-center font-serif text-lg tracking-widest text-bunko-ink pointer-events-auto pl-6">
-        おきてがみ
-        <span className="text-xs ml-2 relative -top-0.5 text-gray-600 font-sans">by 木林文庫 (β版)</span>
-      </h1>
       
-      {/* 右端：ログイン/ユーザー情報 */}
+      {/* 右端：ログイン/ユーザー情報（そのまま） */}
       <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-auto">
         {currentUser ? (
           <Link href="/mypage">
