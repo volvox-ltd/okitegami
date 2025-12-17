@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import IconUserLetter from '@/components/IconUserLetter';
+import { NG_WORDS } from '@/utils/ngWords';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -45,6 +46,20 @@ export default function PostPage() {
     if (isPrivate && !password) return alert('合言葉を入力してください');
 
     setIsLoading(true);
+
+    // ★修正：NGワードチェック機能
+    // タイトル・本文に加えて「場所の名前」もチェック対象に追加
+    const foundNgWord = NG_WORDS.find(word => 
+      title.includes(word) || content.includes(word) || spotName.includes(word)
+    );
+
+    if (foundNgWord) {
+      alert(`不適切な表現が含まれているため投稿できません。\n該当箇所: 「${foundNgWord}」`);
+      
+      // ★修正：ここが setLoading になっていたので setIsLoading に修正
+      setIsLoading(false); 
+      return;
+    }
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
