@@ -243,10 +243,9 @@ export default function MyPage() {
           <Link href="/privacy" className="hover:text-green-700 transition-colors">
             プライバシーポリシー
           </Link>
-          <a href="https://forms.gle/xxxxxxxx" target="_blank" rel="noopener noreferrer" className="hover:text-green-700 transition-colors">
+          <Link href="/contact" className="hover:text-green-700 transition-colors">
             お問い合わせ
-            {/* ※フォームのURLはGoogleフォームなどで作って後で入れればOKです */}
-          </a>
+          </Link>
         </div>
       </div>
 
