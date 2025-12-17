@@ -6,13 +6,15 @@ import Link from 'next/link';
 import LetterModal from '@/components/LetterModal';
 import IconUserLetter from '@/components/IconUserLetter';
 import IconAdminLetter from '@/components/IconAdminLetter';
+import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
+
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const EXPIRATION_HOURS = 72; 
+// const EXPIRATION_HOURS = 48; 
 
 type Letter = {
   id: string;
@@ -107,7 +109,7 @@ export default function MyPage() {
 
   const isExpired = (createdAt: string) => {
     const diffHours = (new Date().getTime() - new Date(createdAt).getTime()) / (1000 * 60 * 60);
-    return diffHours > EXPIRATION_HOURS;
+    return diffHours > LETTER_EXPIRATION_HOURS;
   };
 
   // 表示する切手をフィルタリング（持っているものだけ）
@@ -230,6 +232,22 @@ export default function MyPage() {
             })}
           </div>
         )}
+      </div>
+
+      {/* ★追加・修正：フッターメニューエリア（ログアウトの上に配置） */}
+      <div className="mt-8 mb-4 border-t border-gray-200 pt-6">
+        <div className="flex flex-col items-center gap-4 text-xs text-gray-500 font-bold">
+          <Link href="/terms" className="hover:text-green-700 transition-colors">
+            利用規約
+          </Link>
+          <Link href="/privacy" className="hover:text-green-700 transition-colors">
+            プライバシーポリシー
+          </Link>
+          <a href="https://forms.gle/xxxxxxxx" target="_blank" rel="noopener noreferrer" className="hover:text-green-700 transition-colors">
+            お問い合わせ
+            {/* ※フォームのURLはGoogleフォームなどで作って後で入れればOKです */}
+          </a>
+        </div>
       </div>
 
       {/* ログアウトボタン */}

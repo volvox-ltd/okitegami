@@ -16,6 +16,8 @@ import IconAdminLetter from '@/components/IconAdminLetter';
 import LetterModal from '@/components/LetterModal';
 import AboutModal from '@/components/AboutModal';
 import NicknameModal from '@/components/NicknameModal';
+import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
+
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,7 +40,7 @@ type Letter = {
 };
 
 const UNLOCK_DISTANCE = 100;
-const EXPIRATION_HOURS = 72; 
+// const EXPIRATION_HOURS = 48; 
 
 export default function Home() {
   const ADMIN_EMAILS = [
@@ -216,7 +218,7 @@ export default function Home() {
             const createdAt = new Date(letter.created_at);
             const now = new Date();
             const diffHours = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60);
-            if (diffHours > EXPIRATION_HOURS) return null;
+            if (diffHours > LETTER_EXPIRATION_HOURS) return null;
           }
 
           const isUserPost = !letter.is_official;
