@@ -1,9 +1,9 @@
 'use client';
-
 import { useState } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Logo from '@/components/Logo';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,148 +12,252 @@ const supabase = createClient(
 
 export default function LoginPage() {
   const router = useRouter();
+  const [isLoginMode, setIsLoginMode] = useState(true);
+  
+  const [emailOrNickname, setEmailOrNickname] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [nickname, setNickname] = useState('');
 
-  // Googleログイン処理
-  const handleGoogleLogin = async () => {
-    setIsLoading(true);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        // ログイン後はトップページへ戻る
-        redirectTo: `${window.location.origin}/`,
-      },
-    });
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
-    if (error) {
-      alert(error.message);
-      setIsLoading(false);
-    }
-    // 成功するとGoogleの画面に飛ぶので、ここでの処理は終了
+  const isValidNickname = (name: string) => {
+    return /^[a-zA-Z0-9]{1,20}$/.test(name);
   };
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsLoading(true);
+    setLoading(true);
+    setMessage(null);
 
     try {
-      if (isSignUp) {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-        });
-        if (error) throw error;
-        alert('確認メールを送信しました。メール内のリンクをクリックしてください。');
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) throw error;
-        router.push('/');
+      let loginEmail = emailOrNickname;
+
+      if (!loginEmail.includes('@')) {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('email')
+          .eq('nickname', loginEmail)
+          .single();
+        
+        if (error || !data) {
+          throw new Error('そのニックネームは見つかりませんでした');
+        }
+        loginEmail = data.email;
       }
+
+      const { error } = await supabase.auth.signInWithPassword({
+        email: loginEmail,
+        password,
+      });
+
+      if (error) throw error;
+      
+      router.push('/');
+      router.refresh();
+
     } catch (error: any) {
-      alert(error.message);
+      setMessage(error.message || 'ログインに失敗しました');
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
+  };
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setMessage(null);
+
+    if (!isValidNickname(nickname)) {
+      setMessage('ニックネームは半角英数字20文字以内で入力してください');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data: existingUser } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('nickname', nickname)
+        .maybeSingle();
+
+      if (existingUser) {
+        throw new Error('そのニックネームは既に使用されています');
+      }
+
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { nickname },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+
+      if (error) throw error;
+
+      setMessage('確認メールを送信しました。メール内のリンクをクリックして登録を完了してください。');
+      setEmail('');
+      setPassword('');
+      setNickname('');
+
+    } catch (error: any) {
+      setMessage(error.message || '登録中にエラーが発生しました');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#fdfcf5] p-4 font-sans">
-      <div className="bg-white w-full max-w-md p-8 rounded-sm shadow-xl border border-gray-200">
-        <h1 className="text-2xl font-serif text-center mb-8 text-bunko-ink tracking-widest">
-          {isSignUp ? '新規登録' : 'ログイン'}
-        </h1>
-
-        {/* ★Googleログインボタン */}
-        <button
-          onClick={handleGoogleLogin}
-          disabled={isLoading}
-          className="w-full flex items-center justify-center gap-3 bg-white border border-gray-300 text-gray-700 font-bold py-3 rounded hover:bg-gray-50 transition-colors shadow-sm mb-6"
-        >
-          {/* Googleアイコン (SVG) */}
-          <svg className="w-5 h-5" viewBox="0 0 24 24">
-            <path
-              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-              fill="#4285F4"
-            />
-            <path
-              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-              fill="#34A853"
-            />
-            <path
-              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-              fill="#FBBC05"
-            />
-            <path
-              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-              fill="#EA4335"
-            />
+    <div className="min-h-screen flex flex-col items-center justify-center bg-[#f7f4ea] px-4 font-sans text-gray-800 relative">
+      
+      {/* ★追加：地図に戻るボタン */}
+      <div className="absolute top-4 left-4">
+        <Link href="/" className="flex items-center text-xs font-bold text-gray-500 hover:text-green-700 transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 mr-1">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
           </svg>
-          Googleで{isSignUp ? '登録' : 'ログイン'}
+          地図に戻る
+        </Link>
+      </div>
+
+      <div className="mb-6 flex flex-col items-center">
+        <Logo className="w-16 h-16 text-bunko-ink mb-2" />
+        <h1 className="text-m font-serif tracking-widest text-bunko-ink">おきてがみ</h1>
+      </div>
+
+      <div className="bg-white p-6 md:p-8 rounded-3xl shadow-xl w-full max-w-md border border-gray-100">
+        
+        <div className="flex mb-6 bg-gray-100 p-1 rounded-full">
+          <button
+            className={`flex-1 py-2 rounded-full text-sm font-bold transition-all ${isLoginMode ? 'bg-white shadow text-green-800' : 'text-gray-500'}`}
+            onClick={() => { setIsLoginMode(true); setMessage(null); }}
+          >
+            ログイン
+          </button>
+          <button
+            className={`flex-1 py-2 rounded-full text-sm font-bold transition-all ${!isLoginMode ? 'bg-white shadow text-green-800' : 'text-gray-500'}`}
+            onClick={() => { setIsLoginMode(false); setMessage(null); }}
+          >
+            新規登録
+          </button>
+        </div>
+
+        {message && (
+          <div className={`p-3 rounded-lg text-sm mb-4 ${message.includes('送信しました') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+            {message}
+          </div>
+        )}
+
+        {isLoginMode ? (
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1">メールアドレス または ニックネーム</label>
+              <input
+                type="text"
+                required
+                value={emailOrNickname}
+                onChange={(e) => setEmailOrNickname(e.target.value)}
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all"
+                placeholder="user1234"
+              />
+            </div>
+            <div>
+              <div className="flex justify-between items-center mb-1">
+                <label className="block text-xs font-bold text-gray-500">パスワード</label>
+                <Link href="/forgot-password" className="text-xs text-green-600 hover:underline">
+                  忘れた場合
+                </Link>
+              </div>
+              <input
+                type="password"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all"
+                placeholder="••••••••"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 bg-green-700 text-white rounded-full font-bold shadow-lg shadow-green-700/30 hover:bg-green-800 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:bg-gray-300 disabled:shadow-none"
+            >
+              {loading ? 'ログイン中...' : 'ログイン'}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={handleSignUp} className="space-y-4">
+             <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1">ニックネーム (半角英数20文字以内)</label>
+              <input
+                type="text"
+                required
+                pattern="^[a-zA-Z0-9]{1,20}$"
+                title="半角英数字20文字以内で入力してください"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all"
+                placeholder="okitegami01"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1">メールアドレス</label>
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all"
+                placeholder="example@email.com"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-1">パスワード</label>
+              <input
+                type="password"
+                required
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all"
+                placeholder="6文字以上"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full py-3.5 bg-green-700 text-white rounded-full font-bold shadow-lg shadow-green-700/30 hover:bg-green-800 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:bg-gray-300 disabled:shadow-none"
+            >
+              {loading ? '登録処理中...' : 'メールアドレスで登録'}
+            </button>
+          </form>
+        )}
+
+        <div className="relative my-8">
+          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-200"></div></div>
+          <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-gray-400">または</span></div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleGoogleLogin}
+          className="w-full flex items-center justify-center gap-3 py-3 border border-gray-300 rounded-full hover:bg-gray-50 transition-colors"
+        >
+          <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5" alt="Google" />
+          <span className="text-sm font-bold text-gray-600">Googleで{isLoginMode ? 'ログイン' : '登録'}</span>
         </button>
 
-        <div className="relative mb-6">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-200"></div>
-          </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-white text-gray-500">またはメールアドレスで</span>
-          </div>
-        </div>
-
-        {/* 既存のメールフォーム */}
-        <form onSubmit={handleEmailLogin} className="space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1">メールアドレス</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-green-700 outline-none"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1">パスワード</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full border border-gray-300 rounded p-2 focus:ring-2 focus:ring-green-700 outline-none"
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={isLoading}
-            className="w-full bg-green-700 text-white font-bold py-3 rounded hover:bg-green-800 transition-colors shadow-md"
-          >
-            {isLoading ? '処理中...' : (isSignUp ? '登録する' : 'ログインする')}
-          </button>
-        </form>
-
-        <div className="mt-6 text-center text-sm">
-          <button
-            onClick={() => setIsSignUp(!isSignUp)}
-            className="text-gray-500 underline hover:text-green-700"
-          >
-            {isSignUp
-              ? 'すでにアカウントをお持ちの方はこちら'
-              : '初めての方はこちら（新規登録）'}
-          </button>
-        </div>
-
-        <div className="mt-4 text-center">
-          <Link href="/" className="text-xs text-gray-400 hover:text-gray-600">
-            地図に戻る
-          </Link>
-        </div>
       </div>
     </div>
   );
