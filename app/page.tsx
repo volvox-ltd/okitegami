@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react'; // useMemoを追加
 import Map, { Marker, NavigationControl, Popup, GeolocateControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { createClient, User } from '@supabase/supabase-js';
@@ -16,10 +16,8 @@ import IconAdminLetter from '@/components/IconAdminLetter';
 import LetterModal from '@/components/LetterModal';
 import AboutModal from '@/components/AboutModal';
 import NicknameModal from '@/components/NicknameModal';
-// ★追加：チュートリアル用モーダル
 import TutorialModal from '@/components/TutorialModal'; 
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
-
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -41,8 +39,9 @@ type Letter = {
   password?: string | null;
 };
 
-const UNLOCK_DISTANCE = 100;
-// const EXPIRATION_HOURS = 48; 
+// ★距離設定（メートル）
+const UNLOCK_DISTANCE = 50;      // 読める距離
+const NOTIFICATION_DISTANCE = 300; // 気配を感じる距離
 
 export default function Home() {
   const ADMIN_EMAILS = [
@@ -58,7 +57,6 @@ export default function Home() {
   const [showAbout, setShowAbout] = useState(false);
   const [showUserPosts, setShowUserPosts] = useState(true);
 
-  // ★追加：チュートリアルを表示するかどうかの状態
   const [showTutorial, setShowTutorial] = useState(false);
 
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -133,12 +131,10 @@ export default function Home() {
   };
 
   useEffect(() => {
-    // ★追加：初回訪問かどうかチェック（localStorageを使う）
     const hasSeenTutorial = localStorage.getItem('hasSeenTutorial');
     if (!hasSeenTutorial) {
       setShowTutorial(true);
     }
-
     fetchLetters();
   }, []);
 
@@ -160,9 +156,8 @@ export default function Home() {
     return () => navigator.geolocation.clearWatch(watchId);
   }, [hasCentered]);
 
-  // ★追加：チュートリアルを閉じた時の処理
   const handleCloseTutorial = () => {
-    localStorage.setItem('hasSeenTutorial', 'true'); // 見たことを記録
+    localStorage.setItem('hasSeenTutorial', 'true');
     setShowTutorial(false);
   };
 
@@ -173,6 +168,36 @@ export default function Home() {
       { latitude: targetLat, longitude: targetLng }
     );
   };
+
+  // ★追加：近くに手紙があるかどうかの全体判定（通知用）
+  const hasNearLetter = useMemo(() => {
+    if (!userLocation) return false;
+    
+    return letters.some(letter => {
+      // 自分の投稿や期限切れ、非表示設定のものは除外
+      if (!letter.is_official && !showUserPosts) return false;
+      if (!letter.is_official && letter.created_at) {
+         const diff = (new Date().getTime() - new Date(letter.created_at).getTime()) / (1000 * 60 * 60);
+         if (diff > LETTER_EXPIRATION_HOURS) return false;
+      }
+      
+      const dist = getDistance(
+        { latitude: userLocation.lat, longitude: userLocation.lng },
+        { latitude: letter.lat, longitude: letter.lng }
+      );
+      
+      // 「読める距離(100m)よりは遠い」かつ「通知距離(300m)以内」のものがあるか
+      const isReachable = dist <= UNLOCK_DISTANCE;
+      const isNear = dist <= NOTIFICATION_DISTANCE && !isReachable;
+      
+      // 自分の投稿や管理者は除外（常に読めるため通知不要）
+      const isMyPost = currentUser && currentUser.id === letter.user_id;
+      const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
+      if (isMyPost || isAdmin) return false;
+
+      return isNear;
+    });
+  }, [userLocation, letters, showUserPosts, currentUser]);
 
   const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   if (!mapToken) return <div>Map Token Error</div>;
@@ -190,8 +215,8 @@ export default function Home() {
         />
       )}
 
-      {/* ★コンポーネント化：ヘッダー */}
-      <Header currentUser={currentUser} nickname={myNickname} />
+      {/* ヘッダー */}
+      <Header currentUser={currentUser} nickname={myNickname} onAboutClick={() => setShowAbout(true)} />
 
       {/* スイッチ */}
       <div className="absolute top-16 left-4 z-10">
@@ -208,6 +233,22 @@ export default function Home() {
           </label>
         </div>
       </div>
+
+      {/* ★追加：右端の気配通知ポップ（近くにある時だけ表示） */}
+      {hasNearLetter && (
+        <div className="fixed right-0 top-32 z-40 animate-slideInRight">
+           <div className="bg-white/90 backdrop-blur-md p-3 pl-4 rounded-l-2xl shadow-lg border-y border-l border-gray-300 flex items-center gap-3 max-w-[180px] cursor-pointer hover:bg-white transition-colors">
+              <span className="text-xl animate-pulse">✨</span>
+              <div className="flex flex-col">
+                <span className="text-[10px] font-bold text-gray-400"></span>
+                {/* ★色変更：通知文字の色（text-cyan-600 を好きな色に） */}
+                <span className="text-xs font-bold text-gray-700 leading-tight">
+                  近くに手紙が<br/>あります...
+                </span>
+              </div>
+           </div>
+        </div>
+      )}
 
       {/* マップ */}
       <Map
@@ -241,6 +282,15 @@ export default function Home() {
           const isUserPost = !letter.is_official;
           if (isUserPost && !showUserPosts) return null;
 
+          const distance = calculateDistance(letter.lat, letter.lng);
+          const isMyPost = currentUser && currentUser.id === letter.user_id;
+          const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
+
+          // 1. 読める状態 (100m以内)
+          const isReachable = (distance !== null && distance <= UNLOCK_DISTANCE) || isMyPost || isAdmin;
+          // 2. 近い状態 (300m以内 ＆ 読めない)
+          const isNear = distance !== null && distance <= NOTIFICATION_DISTANCE && !isReachable;
+
           return (
             <Marker 
               key={letter.id} 
@@ -251,24 +301,46 @@ export default function Home() {
                 e.originalEvent.stopPropagation();
                 setPopupInfo(letter);
               }}
+              style={{ zIndex: isReachable ? 10 : isNear ? 5 : 1 }}
             >
               <div className="flex flex-col items-center group cursor-pointer">
-                <div className="bg-white/95 backdrop-blur px-2 py-1 rounded-sm shadow-sm text-[10px] mb-1 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap text-bunko-ink border border-bunko-gray/10">
+                {/* 吹き出しラベル */}
+                {/* ★色変更：吹き出しの枠線や文字色 */}
+                <div className={`bg-white/95 backdrop-blur px-2 py-1 rounded-sm shadow-sm text-[10px] mb-1 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border 
+                  ${isReachable ? 'border-orange-500 text-orange-600' : isNear ? 'border-cyan-400 text-cyan-600' : 'border-bunko-gray/10 text-bunko-ink'}`}>
+                   
                    {letter.is_official ? '木林文庫の手紙' : (letter.nickname ? `${letter.nickname}さんの手紙` : '')}
-                   {letter.spot_name !== '誰かの置き手紙' && (
-                     <span className="block text-[8px] text-gray-400 text-center">{letter.spot_name}</span>
-                   )}
+                   
+                   {/* 読める時のメッセージ */}
+                   {isReachable && <span className="block text-[8px] font-bold text-orange-500 text-center">読めます！</span>}
                 </div>
 
-                <div className="hover:scale-110 transition-transform duration-300 drop-shadow-md relative">
+                {/* アイコン本体 */}
+                <div className={`transition-transform duration-300 drop-shadow-md relative ${isReachable ? 'animate-bounce' : isNear ? 'animate-pulse scale-110' : 'hover:scale-110'}`}>
                    {letter.is_official ? (
-                     <IconAdminLetter className="w-10 h-10" />
+                     // 管理者手紙の色設定
+                     <div className={isReachable ? "text-yellow-500" : isNear ? "text-yellow-300" : "text-bunko-ink"}>
+                        <IconAdminLetter className="w-10 h-10" />
+                     </div>
                    ) : (
-                     <IconUserLetter className="w-10 h-10" />
+                     // ★色変更：ユーザー手紙の色設定（アイコン本体）
+                     // isReachable(読める) ? オレンジ : isNear(近い) ? 水色 : それ以外(遠い) ? 黒
+                     <div className={isReachable ? "text-orange-500" : isNear ? "text-cyan-500" : "text-bunko-ink"}>
+                        <IconUserLetter className="w-10 h-10" />
+                     </div>
                    )}
-                   {letter.password && (
+                   
+                   {/* 鍵マーク（読めない時のみ） */}
+                   {!isReachable && letter.password && (
                       <div className="absolute -top-1 -right-1 bg-white rounded-full p-0.5 shadow">
                         <span className="text-[8px]">🔒</span>
+                      </div>
+                   )}
+                   
+                   {/* 読めるマーク（!） */}
+                   {isReachable && (
+                      <div className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow w-4 h-4 flex items-center justify-center animate-pulse">
+                        <span className="text-[8px] font-bold">!</span>
                       </div>
                    )}
                 </div>
@@ -292,7 +364,7 @@ export default function Home() {
               <p className="text-[10px] text-gray-500 mb-1">
                 {popupInfo.is_official ? '木林文庫の手紙' : (popupInfo.nickname ? `${popupInfo.nickname}さんの置き手紙` : '置き手紙')}
               </p>
-              {popupInfo.spot_name !== '誰かの置き手紙' && (
+              {popupInfo.spot_name !== '名もなき場所' && (
                 <p className="text-xs text-bunko-gray mb-3">{popupInfo.spot_name}</p>
               )}
               
@@ -301,9 +373,11 @@ export default function Home() {
                 const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
                 const isMyPost = currentUser && currentUser.id === popupInfo.user_id;
 
+                const isReachable = (distance !== null && distance <= UNLOCK_DISTANCE) || isAdmin || isMyPost;
+
                 if (distance === null) return <p className="text-xs text-gray-400">現在地を確認中...</p>;
 
-                if (distance <= UNLOCK_DISTANCE || isAdmin || isMyPost) {
+                if (isReachable) {
                   return (
                     <button 
                       onClick={() => setReadingLetter(popupInfo)}
@@ -343,7 +417,7 @@ export default function Home() {
         <AboutModal onClose={() => setShowAbout(false)} />
       )}
 
-      {/* 投稿ボタンエリア (CTA) */}
+      {/* 投稿ボタンエリア */}
       <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2">
         {!currentUser && (
           <div className="bg-white/90 p-2 rounded-lg shadow-sm text-[10px] text-gray-600 font-bold animate-bounce cursor-pointer" onClick={() => router.push('/login')}>
@@ -363,7 +437,7 @@ export default function Home() {
         </Link>
       </div>
 
-      {/* ★コンポーネント化：フッター */}
+      {/* フッター */}
       <Footer 
         currentUser={currentUser}
         onResetMap={() => {
@@ -373,10 +447,20 @@ export default function Home() {
         onAboutClick={() => setShowAbout(true)}
       />
 
-      {/* ★追加：チュートリアルモーダル（条件付き表示） */}
       {showTutorial && (
         <TutorialModal onClose={handleCloseTutorial} />
       )}
+
+      {/* アニメーション用スタイル定義 */}
+      <style jsx global>{`
+        @keyframes slideInRight {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+        .animate-slideInRight {
+          animation: slideInRight 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+      `}</style>
 
     </main>
   );

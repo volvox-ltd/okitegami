@@ -7,7 +7,6 @@ import LetterModal from '@/components/LetterModal';
 import IconUserLetter from '@/components/IconUserLetter';
 import IconAdminLetter from '@/components/IconAdminLetter';
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
-// ★追加：スケルトンコンポーネントの読み込み
 import SkeletonLetter from '@/components/SkeletonLetter';
 
 const supabase = createClient(
@@ -28,6 +27,7 @@ type Letter = {
   created_at: string;
   password?: string | null;
   attached_stamp_id?: number | null;
+  read_count?: number; // 開封判定用（0か1以上かだけ分かればOK）
 };
 
 type Stamp = {
@@ -42,9 +42,7 @@ export default function MyPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   
-  // ★追加：読み込み中かどうかの状態（初期値はtrue）
   const [isLoading, setIsLoading] = useState(true);
-
   const [activeTab, setActiveTab] = useState<'posts' | 'favorites' | 'stamps'>('posts');
   
   const [myPosts, setMyPosts] = useState<Letter[]>([]);
@@ -62,14 +60,13 @@ export default function MyPage() {
       }
       setUser(user);
 
-      // ★修正：3つのデータ取得を並列で行い、全部終わったらローディングを完了にする
       await Promise.all([
         fetchMyPosts(user.id),
         fetchFavorites(user.id),
         fetchStamps(user.id)
       ]);
       
-      setIsLoading(false); // ★読み込み完了
+      setIsLoading(false);
     };
     init();
   }, []);
@@ -77,10 +74,17 @@ export default function MyPage() {
   const fetchMyPosts = async (userId: string) => {
     const { data } = await supabase
       .from('letters')
-      .select('*')
+      .select('*, letter_reads(count)')
       .eq('user_id', userId)
       .order('created_at', { ascending: false });
-    if (data) setMyPosts(data as Letter[]);
+    
+    if (data) {
+      const formattedData = data.map((item: any) => ({
+        ...item,
+        read_count: item.letter_reads?.[0]?.count || 0
+      }));
+      setMyPosts(formattedData as Letter[]);
+    }
   };
 
   const fetchFavorites = async (userId: string) => {
@@ -120,7 +124,6 @@ export default function MyPage() {
     return diffHours > LETTER_EXPIRATION_HOURS;
   };
 
-  // 表示する切手をフィルタリング（持っているものだけ）
   const obtainedStamps = stamps.filter(s => s.has_obtained);
 
   return (
@@ -160,7 +163,7 @@ export default function MyPage() {
       {/* コンテンツエリア */}
       <div className="p-4 space-y-3 min-h-[300px]">
         
-        {/* ★追加：ローディング中のスケルトン表示（手紙系のタブのみ） */}
+        {/* ローディング中 */}
         {isLoading && activeTab !== 'stamps' && (
           <div className="space-y-3 max-w-3xl mx-auto">
             <SkeletonLetter />
@@ -169,21 +172,17 @@ export default function MyPage() {
           </div>
         )}
 
-        {/* 読み込み完了後に表示するコンテンツ */}
         {!isLoading && (
           <>
             {/* === 切手帳タブ === */}
             {activeTab === 'stamps' && (
               <div className="animate-fadeIn">
-                {/* モバイル3列、PC6列、最大幅設定 */}
                 <div className="grid grid-cols-3 md:grid-cols-6 gap-4 px-2 max-w-5xl mx-auto">
                   {obtainedStamps.map(stamp => (
                     <div key={stamp.id} className="flex flex-col items-center">
                       <div 
                         className="aspect-[3/4] w-full rounded border-4 shadow-sm relative overflow-hidden mb-2 transition-all duration-500 border-white bg-white scale-100"
-                        style={{
-                          boxShadow: '0 2px 5px rgba(0,0,0,0.1)',
-                        }}
+                        style={{ boxShadow: '0 2px 5px rgba(0,0,0,0.1)' }}
                       >
                         <img 
                           src={stamp.image_url} 
@@ -197,7 +196,6 @@ export default function MyPage() {
                     </div>
                   ))}
                 </div>
-
                 {obtainedStamps.length === 0 && (
                   <div className="text-center py-10 text-gray-400 text-xs">
                     まだ切手を持っていません。<br/>
@@ -243,9 +241,23 @@ export default function MyPage() {
                           )}
                         </div>
                         <p className="text-xs text-gray-400 truncate mt-1">📍 {letter.spot_name}</p>
-                        <p className="text-[10px] text-gray-300 mt-1">
-                          {new Date(letter.created_at).toLocaleDateString()}
-                        </p>
+                        
+                        {/* 日付と開封通知エリア */}
+                        <div className="flex justify-between items-end mt-1">
+                          <p className="text-[10px] text-gray-300">
+                            {new Date(letter.created_at).toLocaleDateString()}
+                          </p>
+                          
+                          {/* ★修正：人数の表示を削除し、「開封されました」のみ表示 */}
+                          {activeTab === 'posts' && letter.read_count !== undefined && letter.read_count > 0 && (
+                            <div className="flex items-center gap-1 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-100">
+                              <span className="text-[10px]"></span>
+                              <span className="text-[10px] font-bold text-orange-600">
+                                開封されました
+                              </span>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
@@ -256,7 +268,7 @@ export default function MyPage() {
         )}
       </div>
 
-      {/* フッターメニューエリア */}
+      {/* フッターメニュー */}
       <div className="mt-8 mb-4 border-t border-gray-200 pt-6">
         <div className="flex flex-col items-center gap-4 text-xs text-gray-500 font-bold">
           <Link href="/terms" className="hover:text-green-700 transition-colors">
@@ -271,7 +283,7 @@ export default function MyPage() {
         </div>
       </div>
 
-      {/* ログアウトボタン */}
+      {/* ログアウト */}
       <div className="p-6 mt-4 text-center">
         <button onClick={handleLogout} className="text-xs text-red-400 underline hover:text-red-600 bg-white px-4 py-2 rounded-full border border-red-100">
           ログアウトする

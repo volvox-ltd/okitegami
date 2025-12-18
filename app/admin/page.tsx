@@ -15,6 +15,11 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+// ★仕様変更：ページ区切り設定
+const PAGE_DELIMITER = '<<<PAGE>>>';
+const MAX_CHARS_PER_PAGE = 180;
+const MAX_PAGES_ADMIN = 20; // 運営は20枚まで
+
 type Letter = {
   id: string;
   title: string;
@@ -31,7 +36,10 @@ export default function AdminPage() {
   
   const [title, setTitle] = useState('');
   const [spotName, setSpotName] = useState('');
-  const [content, setContent] = useState('');
+  
+  // ★変更：content文字列ではなく、pages配列で管理
+  const [pages, setPages] = useState<string[]>(['']);
+
   const [imageFile, setImageFile] = useState<File | null>(null);
   
   const [isPrivate, setIsPrivate] = useState(false);
@@ -64,6 +72,24 @@ export default function AdminPage() {
     if (data) setLetters(data);
   };
 
+  // ★追加：ページ操作関数
+  const handlePageChange = (index: number, value: string) => {
+    if (value.length > MAX_CHARS_PER_PAGE) return;
+    const newPages = [...pages];
+    newPages[index] = value;
+    setPages(newPages);
+  };
+
+  const addPage = () => {
+    if (pages.length >= MAX_PAGES_ADMIN) return;
+    setPages([...pages, '']);
+  };
+
+  const removePage = (index: number) => {
+    const newPages = pages.filter((_, i) => i !== index);
+    setPages(newPages);
+  };
+
   const handleDelete = async (id: string, imageUrl?: string) => {
     if (!window.confirm('本当にこの手紙を削除しますか？')) return;
     try {
@@ -84,13 +110,17 @@ export default function AdminPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // ★修正：結合してチェック
+    const fullContent = pages.join('');
+    if (!title || !fullContent.trim()) return alert('タイトルと内容を入力してください');
+
     if (isPrivate && !password) return alert('合言葉を入力してください');
     if (hasStamp && (!stampName || !stampFile)) return alert('切手の名前と画像を指定してください');
 
     setIsSubmitting(true);
 
     try {
-      // 1. 手紙の画像をアップロード（ここは写真なので圧縮・JPG変換でOK）
+      // 1. 画像アップロード
       let letterImageUrl = null;
       if (imageFile) {
         const compressedFile = await compressImage(imageFile);
@@ -101,21 +131,18 @@ export default function AdminPage() {
         letterImageUrl = data.publicUrl;
       }
 
-      // 2. 切手画像をアップロード
+      // 2. 切手アップロード
       let newStampId = null;
       if (hasStamp && stampFile) {
-        // ★ここを修正：PNGならそのままアップロードして透過を維持する
         let fileToUpload = stampFile;
         let fileExt = 'jpg';
         let mimeType = 'image/jpeg';
 
         if (stampFile.type === 'image/png') {
-          // PNGの場合：圧縮せずそのまま使う（透過維持のため）
           fileToUpload = stampFile;
           fileExt = 'png';
           mimeType = 'image/png';
         } else {
-          // それ以外（JPEGなど）：圧縮する
           fileToUpload = await compressImage(stampFile);
           fileExt = 'jpg';
           mimeType = 'image/jpeg';
@@ -130,7 +157,6 @@ export default function AdminPage() {
         
         const { data: stampUrlData } = supabase.storage.from('stamp-images').getPublicUrl(stampFileName);
 
-        // DB登録
         const { data: stampData, error: stampDbErr } = await supabase
           .from('stamps')
           .insert({
@@ -145,13 +171,15 @@ export default function AdminPage() {
         newStampId = stampData.id;
       }
 
-      // 3. 手紙を登録
+      // 3. 手紙を登録（★修正：ページを結合して保存）
+      const contentToSave = pages.join(PAGE_DELIMITER);
+
       const { error: dbError } = await supabase
         .from('letters')
         .insert([{ 
           title, 
-          spot_name: spotName, 
-          content, 
+          spot_name: spotName || '名もなき場所', // 空ならデフォルト
+          content: contentToSave,
           lat, 
           lng,
           image_url: letterImageUrl,
@@ -165,7 +193,7 @@ export default function AdminPage() {
       alert('【運営】として手紙を置きました！');
       
       // リセット
-      setTitle(''); setSpotName(''); setContent(''); setImageFile(null);
+      setTitle(''); setSpotName(''); setPages(['']); setImageFile(null);
       setIsPrivate(false); setPassword('');
       setHasStamp(false); setStampName(''); setStampFile(null);
       fetchLetters();
@@ -208,9 +236,10 @@ export default function AdminPage() {
                 type="text" className="w-full p-2 border rounded text-sm" 
                 placeholder="タイトル" value={title} onChange={e => setTitle(e.target.value)} required 
               />
+              {/* 場所名は任意に変更 */}
               <input 
                 type="text" className="w-full p-2 border rounded text-sm" 
-                placeholder="場所の名前" value={spotName} onChange={e => setSpotName(e.target.value)} required 
+                placeholder="場所の名前 (任意)" value={spotName} onChange={e => setSpotName(e.target.value)} 
               />
             </div>
             
@@ -223,10 +252,50 @@ export default function AdminPage() {
               />
             </div>
 
-            <textarea 
-              className="w-full p-2 border rounded h-24 text-sm" 
-              placeholder="手紙の内容" value={content} onChange={e => setContent(e.target.value)} required 
-            />
+            {/* ★修正：ページごとの入力フォーム */}
+            <div>
+              <label className="block text-xs font-bold text-gray-500 mb-2">手紙の内容</label>
+              <div className="space-y-4">
+                {pages.map((pageContent, index) => (
+                  <div key={index} className="relative">
+                    <div className="absolute -top-2.5 left-2 bg-white px-2 text-[10px] font-bold text-gray-400 border border-gray-200 rounded-full">
+                       {index + 1} / {MAX_PAGES_ADMIN}枚目
+                    </div>
+                    <textarea 
+                      className="w-full p-3 pt-4 border rounded h-32 text-sm resize-none font-serif leading-relaxed"
+                      placeholder="手紙の内容" 
+                      value={pageContent} 
+                      onChange={e => handlePageChange(index, e.target.value)} 
+                      maxLength={MAX_CHARS_PER_PAGE}
+                    />
+                    <div className={`text-[10px] text-right mt-1 font-bold ${pageContent.length >= MAX_CHARS_PER_PAGE ? 'text-red-500' : 'text-gray-400'}`}>
+                      {pageContent.length} / {MAX_CHARS_PER_PAGE} 文字
+                    </div>
+                    {pages.length > 1 && (
+                      <button 
+                        type="button"
+                        onClick={() => removePage(index)}
+                        className="absolute top-2 right-2 text-gray-300 hover:text-red-400"
+                      >
+                        🗑️
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+              
+              {pages.length < MAX_PAGES_ADMIN ? (
+                <button 
+                  type="button"
+                  onClick={addPage}
+                  className="w-full mt-3 py-2 border-2 border-dashed border-gray-300 rounded text-gray-500 text-xs font-bold hover:bg-gray-50 hover:border-green-400 transition-colors"
+                >
+                  ＋ 便箋を追加する（あと{MAX_PAGES_ADMIN - pages.length}枚）
+                </button>
+              ) : (
+                <p className="text-xs text-red-500 text-center mt-2">※これ以上追加できません</p>
+              )}
+            </div>
 
             {/* 切手作成フォーム */}
             <div className="bg-yellow-50 p-4 rounded border border-yellow-200">

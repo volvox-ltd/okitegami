@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+'use client';
+import { useState, useEffect } from 'react';
 import { createClient, User } from '@supabase/supabase-js';
 import Link from 'next/link';
 import IconUserLetter from './IconUserLetter';
@@ -20,7 +21,7 @@ type Letter = {
   is_official?: boolean;
   user_id?: string;
   password?: string | null;
-  attached_stamp_id?: number | null; // ★切手IDを追加
+  attached_stamp_id?: number | null;
 };
 
 type Props = {
@@ -43,11 +44,12 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
   const [pages, setPages] = useState<any[]>([]);
   const [isFavorited, setIsFavorited] = useState(false);
 
-  // ★切手演出用のState
+  // 切手演出用のState
   const [gotStamp, setGotStamp] = useState<any>(null);
 
   const isMyPost = currentUser && currentUser.id === letter.user_id;
 
+  // 初期化 & ロック判定
   useEffect(() => {
     setIsVisible(true);
     
@@ -56,25 +58,35 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
       setIsLocked(true);
     } else {
       setIsLocked(false);
-      // ロックがない場合はすぐに切手チェック
+      // ロックがない場合はすぐに切手チェック & 既読記録
       checkStamp();
+      recordRead(); // ★ここで既読をつける
     }
 
     checkFavorite();
-  }, [letter, currentUser]);
+  }, [letter, currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ★切手取得ロジック
+  // ★既読をつける関数（ロック解除時にも呼ぶため関数化）
+  const recordRead = async () => {
+    // 自分の手紙を開いた場合はカウントしない
+    if (currentUser && currentUser.id === letter.user_id) return;
+
+    // 記録を追加
+    await supabase.from('letter_reads').insert({
+      letter_id: letter.id,
+      user_id: currentUser?.id || null,
+    });
+  };
+
+  // 切手取得ロジック
   const checkStamp = async () => {
-    // ログイン済み & 切手付き & 自分の投稿ではない場合
     if (currentUser && letter.attached_stamp_id && !isMyPost) {
       try {
-        // 重複エラーは無視してinsertを試みる
         const { error } = await supabase.from('user_stamps').insert({
           user_id: currentUser.id,
           stamp_id: letter.attached_stamp_id
         });
 
-        // 成功（=初めてゲット）したら演出データを取得
         if (!error) {
           const { data: stampData } = await supabase
             .from('stamps')
@@ -87,7 +99,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
           }
         }
       } catch (e) {
-        // すでに持っている場合はここで無視
+        // 重複エラーは無視
       }
     }
   };
@@ -96,8 +108,9 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
     if (inputPassword === letter.password) {
       setIsLocked(false);
       setUnlockError(false);
-      // ロック解除成功時に切手チェック
+      // ロック解除成功時に切手チェック & 既読記録
       checkStamp();
+      recordRead(); // ★ロック解除成功で既読をつける
     } else {
       setUnlockError(true);
     }
@@ -120,13 +133,32 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
     }
   };
 
+  // 区切り文字の定義（投稿画面と同じにする）
+  const PAGE_DELIMITER = '<<<PAGE>>>';
+
   useEffect(() => {
     const newPages = [];
-    if (letter.image_url) newPages.push({ type: 'image', content: letter.image_url });
-    if (!letter.content) newPages.push({ type: 'text', content: '' });
-    else {
-      for (let i = 0; i < letter.content.length; i += CHARS_PER_PAGE) {
-        newPages.push({ type: 'text', content: letter.content.slice(i, i + CHARS_PER_PAGE) });
+    
+    // 1ページ目：画像があれば画像
+    if (letter.image_url) {
+      newPages.push({ type: 'image', content: letter.image_url });
+    }
+
+    if (!letter.content) {
+      newPages.push({ type: 'text', content: '' });
+    } else {
+      // ★修正：区切り文字が含まれているかチェック
+      if (letter.content.includes(PAGE_DELIMITER)) {
+        // 区切り文字がある場合（新しい投稿）：そのまま分割してページにする
+        const splitPages = letter.content.split(PAGE_DELIMITER);
+        splitPages.forEach(p => {
+          newPages.push({ type: 'text', content: p });
+        });
+      } else {
+        // 区切り文字がない場合（古い投稿）：文字数で自動分割する
+        for (let i = 0; i < letter.content.length; i += CHARS_PER_PAGE) {
+          newPages.push({ type: 'text', content: letter.content.slice(i, i + CHARS_PER_PAGE) });
+        }
       }
     }
     setPages(newPages);
@@ -154,13 +186,13 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
     <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose}></div>
 
-      {/* ★切手ゲット時の演出オーバーレイ */}
+      {/* 切手ゲット時の演出オーバーレイ */}
       {gotStamp && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none">
           <div className="bg-white/95 p-6 rounded-lg shadow-2xl flex flex-col items-center animate-bounce-in pointer-events-auto border-4 border-yellow-400 max-w-xs">
             <h3 className="font-bold text-orange-600 mb-2 font-serif text-lg tracking-widest">切手を拾いました！</h3>
             <div className="w-24 h-32 border-4 border-white shadow-md rotate-3 mb-4 bg-white">
-              <img src={gotStamp.image_url} className="w-full h-full object-cover" />
+              <img src={gotStamp.image_url} className="w-full h-full object-cover" alt="stamp" />
             </div>
             <p className="font-bold text-sm text-gray-800 mb-4">{gotStamp.name}</p>
             <button 
@@ -242,7 +274,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
                  </div>
               )}
               {pageData && pageData.type === 'text' && (
-                <div className={`w-full h-full text-base md:text-lg leading-loose font-serif tracking-widest [writing-mode:vertical-rl] flex flex-col flex-wrap content-start items-center ${textColor} animate-fadeIn overflow-hidden`}>
+                <div className={`w-full h-full text-base md:text-lg leading-loose font-serif tracking-widest [writing-mode:vertical-rl] whitespace-pre-wrap flex flex-col flex-wrap content-start items-center ${textColor} animate-fadeIn overflow-hidden`}>
                   {pageData.content}
                 </div>
               )}

@@ -14,17 +14,23 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+// 仕様設定
+const PAGE_DELIMITER = '<<<PAGE>>>';
+const MAX_CHARS_PER_PAGE = 180;
+const MAX_PAGES = 10;
+
 export default function UserEditPage() {
   const router = useRouter();
   const { id } = useParams();
   
   const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
+  // ★変更：contentではなくpages配列で管理
+  const [pages, setPages] = useState<string[]>(['']);
+
   const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null);
   const [newImageFile, setNewImageFile] = useState<File | null>(null);
   const [isImageDeleted, setIsImageDeleted] = useState(false);
   
-  // 場所データ（ユーザー編集では場所の移動も許可します）
   const [lat, setLat] = useState(35.6288);
   const [lng, setLng] = useState(139.6842);
   const [viewState, setViewState] = useState({ latitude: 35.6288, longitude: 139.6842, zoom: 16 });
@@ -53,7 +59,6 @@ export default function UserEditPage() {
         return;
       }
 
-      // ★重要：自分以外の投稿は編集させない
       if (data.user_id !== user.id) {
         alert('編集権限がありません');
         router.push('/');
@@ -61,7 +66,23 @@ export default function UserEditPage() {
       }
 
       setTitle(data.title);
-      setContent(data.content);
+      
+      // ★修正：コンテンツのパース処理
+      const content = data.content || '';
+      if (content.includes(PAGE_DELIMITER)) {
+         setPages(content.split(PAGE_DELIMITER));
+      } else {
+         const newPages = [];
+         if (content.length === 0) {
+           newPages.push('');
+         } else {
+           for (let i = 0; i < content.length; i += MAX_CHARS_PER_PAGE) {
+             newPages.push(content.slice(i, i + MAX_CHARS_PER_PAGE));
+           }
+         }
+         setPages(newPages);
+      }
+
       setLat(data.lat);
       setLng(data.lng);
       setCurrentImageUrl(data.image_url);
@@ -71,8 +92,29 @@ export default function UserEditPage() {
     fetchLetter();
   }, [id, router]);
 
+  // ★追加：ページ操作関数
+  const handlePageChange = (index: number, value: string) => {
+    if (value.length > MAX_CHARS_PER_PAGE) return;
+    const newPages = [...pages];
+    newPages[index] = value;
+    setPages(newPages);
+  };
+
+  const addPage = () => {
+    if (pages.length >= MAX_PAGES) return;
+    setPages([...pages, '']);
+  };
+
+  const removePage = (index: number) => {
+    const newPages = pages.filter((_, i) => i !== index);
+    setPages(newPages);
+  };
+
   const handleUpdate = async () => {
-    if (!title || !content) return alert('タイトルと内容を入力してください');
+    // ★修正：結合してチェック
+    const fullContent = pages.join('');
+    if (!title || !fullContent.trim()) return alert('タイトルと内容を入力してください');
+    
     setIsSubmitting(true);
 
     try {
@@ -87,13 +129,11 @@ export default function UserEditPage() {
 
       // 新しい画像
       if (newImageFile) {
-        // 古いのがあれば消す
         if (currentImageUrl && !isImageDeleted) {
            const oldFileName = currentImageUrl.split('/').pop();
            if (oldFileName) await supabase.storage.from('letter-images').remove([oldFileName]);
         }
         
-        // 圧縮 & アップロード
         const compressedFile = await compressImage(newImageFile);
         const fileName = `${Date.now()}_${compressedFile.name}`;
         const { error: uploadError } = await supabase.storage
@@ -108,13 +148,15 @@ export default function UserEditPage() {
         finalImageUrl = urlData.publicUrl;
       }
 
+      // ★修正：ページを結合して保存
+      const contentToSave = pages.join(PAGE_DELIMITER);
+
       const { error } = await supabase
         .from('letters')
         .update({
           title,
-          content,
-          lat,
-          lng,
+          content: contentToSave,
+          // lat, lng は更新しない（場所移動禁止のため）
           image_url: finalImageUrl
         })
         .eq('id', id);
@@ -122,7 +164,7 @@ export default function UserEditPage() {
       if (error) throw error;
 
       alert('手紙を書き直しました！');
-      router.push('/');
+      router.push('/'); // トップページへ戻る
     } catch (e) {
       console.error(e);
       alert('更新に失敗しました');
@@ -149,27 +191,21 @@ export default function UserEditPage() {
           style={{ width: '100%', height: '100%' }}
           mapStyle="mapbox://styles/mapbox/streets-v12"
           mapboxAccessToken={mapToken}
-          onClick={(e) => {
-             setLat(e.lngLat.lat);
-             setLng(e.lngLat.lng);
-          }}
+          // onClick削除（移動不可）
         >
           <NavigationControl position="bottom-right" />
           <Marker
-             latitude={lat} longitude={lng} anchor="bottom" draggable
-             onDragEnd={(e) => {
-               setLat(e.lngLat.lat);
-               setLng(e.lngLat.lng);
-             }}
+             latitude={lat} longitude={lng} anchor="bottom" 
+             // draggable削除（移動不可）
           >
-             <div className="animate-bounce cursor-grab active:cursor-grabbing drop-shadow-lg">
+             <div className="animate-bounce drop-shadow-lg">
                <IconUserLetter className="w-12 h-12" />
              </div>
           </Marker>
         </Map>
         <div className="absolute bottom-2 w-full text-center z-10 pointer-events-none">
-          <span className="bg-white/80 backdrop-blur text-gray-600 text-[10px] px-3 py-1 rounded-full shadow-sm border border-gray-200">
-            ピンを動かして場所を変更できます
+          <span className="bg-white/80 backdrop-blur text-gray-400 text-[10px] px-3 py-1 rounded-full shadow-sm border border-gray-200">
+            ※場所は変更できません
           </span>
         </div>
       </div>
@@ -192,7 +228,7 @@ export default function UserEditPage() {
              <p className="text-xs font-bold text-gray-500 mb-2">写真</p>
              {currentImageUrl && !isImageDeleted && !newImageFile ? (
                <div className="flex items-center gap-3">
-                 <img src={currentImageUrl} className="h-16 w-16 object-cover rounded" />
+                 <img src={currentImageUrl} className="h-16 w-16 object-cover rounded" alt="current" />
                  <button onClick={() => setIsImageDeleted(true)} className="text-xs text-red-500 underline">この写真を削除</button>
                </div>
              ) : (
@@ -206,14 +242,64 @@ export default function UserEditPage() {
              {isImageDeleted && <p className="text-xs text-red-500 mt-1">※写真は削除されます</p>}
           </div>
 
+          {/* ★修正：ページごとの編集フォーム */}
           <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1">内容</label>
-            <textarea value={content} onChange={(e) => setContent(e.target.value)} className="w-full h-32 bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-300 resize-none"></textarea>
+            <label className="block text-xs font-bold text-gray-500 mb-2">内容</label>
+            <div className="space-y-6">
+                {pages.map((pageContent, index) => (
+                  <div key={index} className="relative">
+                    <div className="absolute -top-2.5 left-2 bg-white px-2 text-[10px] font-bold text-gray-400 border border-gray-200 rounded-full">
+                       {index + 1} / {MAX_PAGES}枚目
+                    </div>
+                    
+                    <textarea 
+                      value={pageContent} 
+                      onChange={(e) => handlePageChange(index, e.target.value)} 
+                      maxLength={MAX_CHARS_PER_PAGE} 
+                      className="w-full h-36 bg-gray-50 border border-gray-200 rounded-lg p-3 pt-4 text-sm focus:outline-none focus:ring-2 focus:ring-green-300 resize-none leading-relaxed font-serif" 
+                      placeholder="内容を編集..."
+                    ></textarea>
+
+                    <div className={`text-[10px] text-right mt-1 font-bold ${pageContent.length >= MAX_CHARS_PER_PAGE ? 'text-red-500' : 'text-gray-400'}`}>
+                      {pageContent.length} / {MAX_CHARS_PER_PAGE} 文字
+                    </div>
+
+                    {pages.length > 1 && (
+                      <button 
+                        onClick={() => removePage(index)}
+                        className="absolute top-2 right-2 text-gray-300 hover:text-red-400"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                ))}
+            </div>
+
+            {pages.length < MAX_PAGES ? (
+                <button 
+                  onClick={addPage}
+                  className="w-full mt-4 py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-400 text-xs font-bold hover:bg-gray-50 hover:border-green-400 hover:text-green-600 transition-colors flex items-center justify-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  便箋を追加する （あと{MAX_PAGES - pages.length}枚）
+                </button>
+            ) : (
+                <div className="w-full mt-4 py-3 bg-gray-100 rounded-lg text-gray-400 text-xs font-bold text-center border border-gray-200">
+                  便箋は{MAX_PAGES}枚までです
+                </div>
+            )}
           </div>
 
-          <button onClick={handleUpdate} disabled={isSubmitting} className={`w-full py-4 rounded-full text-white font-bold text-sm shadow-md transition-transform active:scale-95 ${isSubmitting ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'}`}>
+          <button onClick={handleUpdate} disabled={isSubmitting} className={`w-full py-4 rounded-full text-white font-bold text-sm shadow-md transition-transform active:scale-95 mt-4 ${isSubmitting ? 'bg-gray-400' : 'bg-green-600 hover:bg-green-700'}`}>
             {isSubmitting ? '保存中...' : '変更を保存する'}
           </button>
+          
+          <div className="h-8"></div>
         </div>
       </div>
     </div>

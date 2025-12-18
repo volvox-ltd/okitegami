@@ -14,16 +14,24 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+// 区切り文字
+const PAGE_DELIMITER = '<<<PAGE>>>';
+// 1ページあたりの最大文字数
+const MAX_CHARS_PER_PAGE = 180;
+// 最大ページ数
+const MAX_PAGES = 10;
+
 export default function PostPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   
-  // ★追加：フォームが開いているかどうかの状態（初期値は true = 開いている）
   const [isExpanded, setIsExpanded] = useState(true);
 
   const [title, setTitle] = useState('');
-  const [spotName, setSpotName] = useState(''); 
-  const [content, setContent] = useState('');
+  const [spotName, setSpotName] = useState('');
+  
+  const [pages, setPages] = useState<string[]>(['']); 
+
   const [imageFile, setImageFile] = useState<File | null>(null);
   
   const [isPrivate, setIsPrivate] = useState(false);
@@ -36,20 +44,43 @@ export default function PostPage() {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition((position) => {
         const { latitude, longitude } = position.coords;
+        // 現在地を取得したら、地図の中心とピンの位置をそこに合わせる
         setViewState((prev) => ({ ...prev, latitude, longitude }));
         setPinLocation({ lat: latitude, lng: longitude });
+      }, (error) => {
+        console.error("位置情報の取得に失敗しました", error);
+        alert("位置情報をオンにしてください。現在地に手紙を置くために必要です。");
       });
     }
   }, []);
 
+  const handlePageChange = (index: number, value: string) => {
+    if (value.length > MAX_CHARS_PER_PAGE) return;
+    const newPages = [...pages];
+    newPages[index] = value;
+    setPages(newPages);
+  };
+
+  const addPage = () => {
+    if (pages.length >= MAX_PAGES) return;
+    setPages([...pages, '']);
+  };
+
+  const removePage = (index: number) => {
+    const newPages = pages.filter((_, i) => i !== index);
+    setPages(newPages);
+  };
+
   const handleSubmit = async () => {
-    if (!title || !spotName || !content) return alert('タイトル・場所・内容を入力してください');
+    const fullContent = pages.join('');
+    if (!title || !fullContent.trim()) return alert('手紙の名前と内容を入力してください');
+    
     if (isPrivate && !password) return alert('合言葉を入力してください');
 
     setIsLoading(true);
 
     const foundNgWord = NG_WORDS.find(word => 
-      title.includes(word) || content.includes(word) || spotName.includes(word)
+      title.includes(word) || fullContent.includes(word) || spotName.includes(word)
     );
 
     if (foundNgWord) {
@@ -88,12 +119,14 @@ export default function PostPage() {
       }
     }
 
+    const contentToSave = pages.join(PAGE_DELIMITER);
+
     const { error: insertError } = await supabase
       .from('letters')
       .insert({
         title: title,
-        content: content,
-        spot_name: spotName,
+        content: contentToSave,
+        spot_name: spotName || '名もなき場所', 
         lat: pinLocation.lat,
         lng: pinLocation.lng,
         image_url: publicUrl,
@@ -116,10 +149,9 @@ export default function PostPage() {
   const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
   return (
-    // ★修正：全体を相対配置のコンテナにする
     <div className="relative w-full h-screen overflow-hidden bg-gray-100">
       
-      {/* 1. 地図エリア（全画面表示） */}
+      {/* 1. 地図エリア */}
       <div className="absolute inset-0 z-0">
         {mapToken && (
           <Map
@@ -128,15 +160,19 @@ export default function PostPage() {
             style={{ width: '100%', height: '100%' }}
             mapStyle="mapbox://styles/mapbox/streets-v12"
             mapboxAccessToken={mapToken}
-            onClick={(e) => setPinLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng })}
+            // ★修正：onClickイベントを削除（地図タップでピン移動させない）
           >
             <NavigationControl position="top-right" style={{ marginTop: '80px' }} />
+            
+            {/* 現在地ボタンを押したときは、ビューだけでなくピンの位置も更新するロジックを入れても良いですが、
+                基本はuseEffectで取得済みなので、ビュー移動のみの標準動作でOKとします */}
             <GeolocateControl position="top-right" />
+            
             <Marker
-              latitude={pinLocation.lat} longitude={pinLocation.lng} anchor="bottom" draggable
-              onDragEnd={(e) => setPinLocation({ lat: e.lngLat.lat, lng: e.lngLat.lng })}
+              latitude={pinLocation.lat} longitude={pinLocation.lng} anchor="bottom" 
+              // ★修正：draggable={true} と onDragEnd を削除（ピンを動かせないようにする）
             >
-              <div className="animate-bounce cursor-grab active:cursor-grabbing drop-shadow-lg">
+              <div className="animate-bounce drop-shadow-lg">
                 <IconUserLetter className="w-12 h-12" />
               </div>
             </Marker>
@@ -144,28 +180,25 @@ export default function PostPage() {
         )}
       </div>
 
-      {/* キャンセルボタン（地図の上に浮くように配置） */}
       <Link href="/" className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur p-2 px-4 rounded-full shadow-md text-gray-600 font-bold text-xs hover:bg-white transition-colors">
         ✕ キャンセル
       </Link>
 
-      {/* ピン調整のヒント（フォームが開いている時は隠す） */}
       {!isExpanded && (
         <div className="absolute top-20 left-1/2 -translate-x-1/2 z-10 pointer-events-none w-full text-center px-4">
+           {/* ★修正：メッセージを変更 */}
            <span className="bg-white/80 backdrop-blur text-gray-600 text-[10px] px-3 py-1 rounded-full shadow-sm border border-gray-200">
-             ピンを動かして場所を決めてください
+             現在地に手紙を置きます
            </span>
         </div>
       )}
 
-      {/* 2. フォームエリア（ボトムシート） */}
-      {/* isExpandedの状態によって高さを変える */}
+      {/* 2. フォームエリア */}
       <div 
         className={`absolute bottom-0 left-0 w-full bg-white rounded-t-3xl z-20 shadow-[0_-5px_20px_rgba(0,0,0,0.15)] transition-all duration-300 ease-in-out flex flex-col ${
-          isExpanded ? 'h-[85%] md:h-[80%]' : 'h-24'
+          isExpanded ? 'h-[85%] md:h-[80%]' : 'h-40'
         }`}
       >
-        {/* ★ここがハンドル（クリックで開閉） */}
         <div 
           className="w-full flex items-center justify-center pt-3 pb-2 cursor-pointer shrink-0 hover:bg-gray-50 rounded-t-3xl transition-colors"
           onClick={() => setIsExpanded(!isExpanded)}
@@ -173,13 +206,11 @@ export default function PostPage() {
           <div className="w-12 h-1.5 bg-gray-300 rounded-full"></div>
         </div>
 
-        {/* ヘッダー部分（常に表示） */}
         <div className="px-6 pb-2 shrink-0 flex justify-between items-center cursor-pointer" onClick={() => setIsExpanded(!isExpanded)}>
           <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
             <IconUserLetter className="w-6 h-6" /> 
-            {isExpanded ? '手紙を書く' : '場所を決める（タップで開く）'}
+            {isExpanded ? '手紙を書く' : '現在地に置く（タップで開く）'}
           </h2>
-          {/* 開閉状態を示す矢印アイコン */}
           <div className={`text-gray-400 transition-transform duration-300 ${isExpanded ? 'rotate-180' : 'rotate-0'}`}>
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
               <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 15.75l7.5-7.5 7.5 7.5" />
@@ -187,22 +218,73 @@ export default function PostPage() {
           </div>
         </div>
         
-        {/* 入力フォーム本体（スクロール可能エリア） */}
         <div className="flex-1 overflow-y-auto px-6 pb-8">
           <div className="space-y-5 pt-2">
             <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1">タイトル</label>
-              <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-300" placeholder="タイトル" />
+              <label className="block text-xs font-bold text-gray-500 mb-1">手紙の名前</label>
+              <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-300" placeholder="手紙の名前" />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1">場所の名前</label>
+              <label className="block text-xs font-bold text-gray-500 mb-1">場所の名前 <span className="text-gray-400 font-normal ml-1">(任意)</span></label>
               <input type="text" value={spotName} onChange={(e) => setSpotName(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-300" placeholder="例：大きな桜の木の下" />
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1">手紙の内容</label>
-              <textarea value={content} onChange={(e) => setContent(e.target.value)} className="w-full h-32 bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-300 resize-none leading-relaxed" placeholder="ここにメッセージを書いてください..."></textarea>
+              <label className="block text-xs font-bold text-gray-500 mb-2">手紙の内容</label>
+              
+              <div className="space-y-6">
+                {pages.map((pageContent, index) => (
+                  <div key={index} className="relative">
+                    {/* 枚数表示 */}
+                    <div className="absolute -top-2.5 left-2 bg-white px-2 text-[10px] font-bold text-gray-400 border border-gray-200 rounded-full">
+                       {index + 1} / {MAX_PAGES}枚目
+                    </div>
+                    
+                    <textarea 
+                      value={pageContent} 
+                      onChange={(e) => handlePageChange(index, e.target.value)} 
+                      maxLength={MAX_CHARS_PER_PAGE} 
+                      className="w-full h-36 bg-gray-50 border border-gray-200 rounded-lg p-3 pt-4 text-sm focus:outline-none focus:ring-2 focus:ring-green-300 resize-none leading-relaxed font-serif" 
+                      placeholder="ここに手紙を書いてください..."
+                    ></textarea>
+
+                    {/* 文字数カウンター */}
+                    <div className={`text-[10px] text-right mt-1 font-bold ${pageContent.length >= MAX_CHARS_PER_PAGE ? 'text-red-500' : 'text-gray-400'}`}>
+                      {pageContent.length} / {MAX_CHARS_PER_PAGE} 文字
+                    </div>
+
+                    {/* 削除ボタン */}
+                    {pages.length > 1 && (
+                      <button 
+                        onClick={() => removePage(index)}
+                        className="absolute top-2 right-2 text-gray-300 hover:text-red-400"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* ページ追加ボタン */}
+              {pages.length < MAX_PAGES ? (
+                <button 
+                  onClick={addPage}
+                  className="w-full mt-4 py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-400 text-xs font-bold hover:bg-gray-50 hover:border-green-400 hover:text-green-600 transition-colors flex items-center justify-center gap-2"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                  便箋を追加する （あと{MAX_PAGES - pages.length}枚）
+                </button>
+              ) : (
+                <div className="w-full mt-4 py-3 bg-gray-100 rounded-lg text-gray-400 text-xs font-bold text-center border border-gray-200">
+                  便箋は{MAX_PAGES}枚までです
+                </div>
+              )}
             </div>
 
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">

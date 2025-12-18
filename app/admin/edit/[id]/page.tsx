@@ -13,13 +13,21 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+// 仕様設定
+const PAGE_DELIMITER = '<<<PAGE>>>';
+const MAX_CHARS_PER_PAGE = 180;
+const MAX_PAGES_ADMIN = 20;
+
 export default function EditPage() {
   const router = useRouter();
   const { id } = useParams();
   
   const [title, setTitle] = useState('');
   const [spotName, setSpotName] = useState('');
-  const [content, setContent] = useState('');
+  
+  // ★変更：pagesで管理
+  const [pages, setPages] = useState<string[]>(['']);
+
   const [lat, setLat] = useState(35.6288);
   const [lng, setLng] = useState(139.6842);
   
@@ -65,8 +73,26 @@ export default function EditPage() {
 
       if (letter) {
         setTitle(letter.title);
-        setSpotName(letter.spot_name);
-        setContent(letter.content || '');
+        setSpotName(letter.spot_name || '');
+        
+        // ★修正：コンテンツのパース処理
+        const content = letter.content || '';
+        if (content.includes(PAGE_DELIMITER)) {
+           // 区切り文字がある場合（新しい形式）
+           setPages(content.split(PAGE_DELIMITER));
+        } else {
+           // 区切り文字がない場合（古い形式）：文字数で分割して配列化
+           const newPages = [];
+           if (content.length === 0) {
+             newPages.push('');
+           } else {
+             for (let i = 0; i < content.length; i += MAX_CHARS_PER_PAGE) {
+               newPages.push(content.slice(i, i + MAX_CHARS_PER_PAGE));
+             }
+           }
+           setPages(newPages);
+        }
+
         setLat(letter.lat);
         setLng(letter.lng);
         setCurrentImageUrl(letter.image_url);
@@ -94,8 +120,30 @@ export default function EditPage() {
     fetchLetter();
   }, [id, router]);
 
+  // ページ操作関数
+  const handlePageChange = (index: number, value: string) => {
+    if (value.length > MAX_CHARS_PER_PAGE) return;
+    const newPages = [...pages];
+    newPages[index] = value;
+    setPages(newPages);
+  };
+
+  const addPage = () => {
+    if (pages.length >= MAX_PAGES_ADMIN) return;
+    setPages([...pages, '']);
+  };
+
+  const removePage = (index: number) => {
+    const newPages = pages.filter((_, i) => i !== index);
+    setPages(newPages);
+  };
+
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // ★修正：結合してチェック
+    const fullContent = pages.join('');
+    if (!title || !fullContent.trim()) return alert('タイトルと内容を入力してください');
 
     if (isPrivate && !password) return alert('合言葉を入力してください');
     if (isCreatingNewStamp && (!newStampName || !newStampFile)) return alert('新しい切手の名前と画像を指定してください');
@@ -103,7 +151,7 @@ export default function EditPage() {
     setIsSubmitting(true);
 
     try {
-      // 1. 手紙のメイン画像（写真なので圧縮OK）
+      // 1. 画像処理
       let finalImageUrl = currentImageUrl;
 
       if (isImageDeleted) {
@@ -130,7 +178,7 @@ export default function EditPage() {
         finalImageUrl = urlData.publicUrl;
       }
 
-      // 2. 切手の処理
+      // 2. 切手処理
       let finalStampId = currentStamp ? currentStamp.id : null;
 
       if (isStampDeleted) {
@@ -138,7 +186,6 @@ export default function EditPage() {
       }
 
       if (isCreatingNewStamp && newStampName && newStampFile) {
-        // ★ここを修正：PNGならそのままアップロード
         let fileToUpload = newStampFile;
         let fileExt = 'jpg';
         let mimeType = 'image/jpeg';
@@ -175,13 +222,15 @@ export default function EditPage() {
         finalStampId = newStamp.id;
       }
 
-      // 3. データベース更新
+      // 3. 更新処理（★修正：ページを結合して保存）
+      const contentToSave = pages.join(PAGE_DELIMITER);
+
       const { error } = await supabase
         .from('letters')
         .update({
           title, 
-          spot_name: spotName, 
-          content,
+          spot_name: spotName || '名もなき場所', 
+          content: contentToSave,
           lat,
           lng,
           image_url: finalImageUrl,
@@ -227,10 +276,10 @@ export default function EditPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1">場所の名前</label>
+              <label className="block text-xs font-bold text-gray-500 mb-1">場所の名前 (任意)</label>
               <input 
                 type="text" className="w-full p-2 border rounded text-sm focus:ring-2 focus:ring-orange-300 outline-none"
-                value={spotName} onChange={(e) => setSpotName(e.target.value)} required
+                value={spotName} onChange={(e) => setSpotName(e.target.value)}
               />
             </div>
           </div>
@@ -274,12 +323,49 @@ export default function EditPage() {
             {newImageFile && <p className="text-[10px] text-green-600 mt-1">新しい画像を選択中</p>}
           </div>
 
+          {/* ★修正：ページごとの入力フォーム */}
           <div>
-            <label className="block text-xs font-bold text-gray-500 mb-1">手紙の内容</label>
-            <textarea 
-              className="w-full p-2 border rounded h-32 text-sm focus:ring-2 focus:ring-orange-300 outline-none"
-              value={content} onChange={(e) => setContent(e.target.value)} required
-            />
+            <label className="block text-xs font-bold text-gray-500 mb-2">手紙の内容</label>
+            <div className="space-y-4">
+                {pages.map((pageContent, index) => (
+                  <div key={index} className="relative">
+                    <div className="absolute -top-2.5 left-2 bg-white px-2 text-[10px] font-bold text-gray-400 border border-gray-200 rounded-full">
+                       {index + 1} / {MAX_PAGES_ADMIN}枚目
+                    </div>
+                    <textarea 
+                      className="w-full p-3 pt-4 border rounded h-32 text-sm resize-none font-serif leading-relaxed"
+                      placeholder="手紙の内容" 
+                      value={pageContent} 
+                      onChange={e => handlePageChange(index, e.target.value)} 
+                      maxLength={MAX_CHARS_PER_PAGE}
+                    />
+                    <div className={`text-[10px] text-right mt-1 font-bold ${pageContent.length >= MAX_CHARS_PER_PAGE ? 'text-red-500' : 'text-gray-400'}`}>
+                      {pageContent.length} / {MAX_CHARS_PER_PAGE} 文字
+                    </div>
+                    {pages.length > 1 && (
+                      <button 
+                        type="button"
+                        onClick={() => removePage(index)}
+                        className="absolute top-2 right-2 text-gray-300 hover:text-red-400"
+                      >
+                        🗑️
+                      </button>
+                    )}
+                  </div>
+                ))}
+            </div>
+            
+            {pages.length < MAX_PAGES_ADMIN ? (
+                <button 
+                  type="button"
+                  onClick={addPage}
+                  className="w-full mt-3 py-2 border-2 border-dashed border-gray-300 rounded text-gray-500 text-xs font-bold hover:bg-gray-50 hover:border-green-400 transition-colors"
+                >
+                  ＋ 便箋を追加する（あと{MAX_PAGES_ADMIN - pages.length}枚）
+                </button>
+            ) : (
+                <p className="text-xs text-red-500 text-center mt-2">※これ以上追加できません</p>
+            )}
           </div>
 
           {/* 切手管理エリア */}
