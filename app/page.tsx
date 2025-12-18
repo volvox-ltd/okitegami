@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useMemo } from 'react'; // useMemoを追加
+import { useState, useEffect, useMemo } from 'react';
 import Map, { Marker, NavigationControl, Popup, GeolocateControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { createClient, User } from '@supabase/supabase-js';
@@ -37,6 +37,7 @@ type Letter = {
   created_at: string;
   nickname?: string;
   password?: string | null;
+  attached_stamp_id?: number | null;
 };
 
 // ★距離設定（メートル）
@@ -169,12 +170,61 @@ export default function Home() {
     );
   };
 
-  // ★追加：近くに手紙があるかどうかの全体判定（通知用）
+  // ★追加：一番近くの手紙を探して移動する関数
+  const handleFindNearest = () => {
+    if (!userLocation || letters.length === 0) {
+      alert("現在地を取得中か、手紙が見つかりません。");
+      return;
+    }
+
+    // 今地図に表示されているべき手紙だけをフィルタリング
+    const validLetters = letters.filter(letter => {
+      // 期限切れチェック
+      if (!letter.is_official && letter.created_at) {
+        const diff = (new Date().getTime() - new Date(letter.created_at).getTime()) / (1000 * 60 * 60);
+        if (diff > LETTER_EXPIRATION_HOURS) return false;
+      }
+      // 表示設定チェック
+      if (!letter.is_official && !showUserPosts) return false;
+      
+      return true;
+    });
+
+    if (validLetters.length === 0) {
+      alert("近くに手紙はありません。");
+      return;
+    }
+
+    // 距離を計算してソート
+    const sortedLetters = validLetters.map(letter => {
+      const dist = getDistance(
+        { latitude: userLocation.lat, longitude: userLocation.lng },
+        { latitude: letter.lat, longitude: letter.lng }
+      );
+      return { ...letter, distance: dist };
+    }).sort((a, b) => a.distance - b.distance);
+
+    const nearestLetter = sortedLetters[0];
+
+    // 移動 & ポップアップ表示
+    if (nearestLetter) {
+      setViewState(prev => ({
+        ...prev,
+        latitude: nearestLetter.lat,
+        longitude: nearestLetter.lng,
+        zoom: 17, // 近くに寄る
+        transitionDuration: 1000 // スムーズに移動
+      }));
+      setPopupInfo(nearestLetter); // 吹き出しを開く
+    }
+  };
+
+
+  // 近くに手紙があるかどうかの全体判定（通知用）
   const hasNearLetter = useMemo(() => {
     if (!userLocation) return false;
     
     return letters.some(letter => {
-      // 自分の投稿や期限切れ、非表示設定のものは除外
       if (!letter.is_official && !showUserPosts) return false;
       if (!letter.is_official && letter.created_at) {
          const diff = (new Date().getTime() - new Date(letter.created_at).getTime()) / (1000 * 60 * 60);
@@ -186,11 +236,9 @@ export default function Home() {
         { latitude: letter.lat, longitude: letter.lng }
       );
       
-      // 「読める距離(100m)よりは遠い」かつ「通知距離(300m)以内」のものがあるか
       const isReachable = dist <= UNLOCK_DISTANCE;
       const isNear = dist <= NOTIFICATION_DISTANCE && !isReachable;
       
-      // 自分の投稿や管理者は除外（常に読めるため通知不要）
       const isMyPost = currentUser && currentUser.id === letter.user_id;
       const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
       if (isMyPost || isAdmin) return false;
@@ -234,14 +282,13 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ★追加：右端の気配通知ポップ（近くにある時だけ表示） */}
+      {/* 右端の気配通知ポップ（近くにある時だけ表示） */}
       {hasNearLetter && (
         <div className="fixed right-0 top-32 z-40 animate-slideInRight">
            <div className="bg-white/90 backdrop-blur-md p-3 pl-4 rounded-l-2xl shadow-lg border-y border-l border-gray-300 flex items-center gap-3 max-w-[180px] cursor-pointer hover:bg-white transition-colors">
               <span className="text-xl animate-pulse">✨</span>
               <div className="flex flex-col">
                 <span className="text-[10px] font-bold text-gray-400"></span>
-                {/* ★色変更：通知文字の色（text-cyan-600 を好きな色に） */}
                 <span className="text-xs font-bold text-gray-700 leading-tight">
                   近くに手紙が<br/>あります...
                 </span>
@@ -286,7 +333,7 @@ export default function Home() {
           const isMyPost = currentUser && currentUser.id === letter.user_id;
           const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
 
-          // 1. 読める状態 (100m以内)
+          // 1. 読める状態 (50m以内)
           const isReachable = (distance !== null && distance <= UNLOCK_DISTANCE) || isMyPost || isAdmin;
           // 2. 近い状態 (300m以内 ＆ 読めない)
           const isNear = distance !== null && distance <= NOTIFICATION_DISTANCE && !isReachable;
@@ -305,7 +352,6 @@ export default function Home() {
             >
               <div className="flex flex-col items-center group cursor-pointer">
                 {/* 吹き出しラベル */}
-                {/* ★色変更：吹き出しの枠線や文字色 */}
                 <div className={`bg-white/95 backdrop-blur px-2 py-1 rounded-sm shadow-sm text-[10px] mb-1 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border 
                   ${isReachable ? 'border-orange-500 text-orange-600' : isNear ? 'border-cyan-400 text-cyan-600' : 'border-bunko-gray/10 text-bunko-ink'}`}>
                    
@@ -323,8 +369,7 @@ export default function Home() {
                         <IconAdminLetter className="w-10 h-10" />
                      </div>
                    ) : (
-                     // ★色変更：ユーザー手紙の色設定（アイコン本体）
-                     // isReachable(読める) ? オレンジ : isNear(近い) ? 水色 : それ以外(遠い) ? 黒
+                     // ユーザー手紙の色設定
                      <div className={isReachable ? "text-orange-500" : isNear ? "text-cyan-500" : "text-bunko-ink"}>
                         <IconUserLetter className="w-10 h-10" />
                      </div>
@@ -440,10 +485,7 @@ export default function Home() {
       {/* フッター */}
       <Footer 
         currentUser={currentUser}
-        onResetMap={() => {
-          setPopupInfo(null);
-          setShowAbout(false);
-        }}
+        onResetMap={handleFindNearest} // ★ここを修正（一番近い手紙を探す）
         onAboutClick={() => setShowAbout(true)}
       />
 
