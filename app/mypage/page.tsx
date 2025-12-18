@@ -6,6 +6,7 @@ import Link from 'next/link';
 import LetterModal from '@/components/LetterModal';
 import IconUserLetter from '@/components/IconUserLetter';
 import IconAdminLetter from '@/components/IconAdminLetter';
+import FooterLinks from '@/components/FooterLinks'; // ★追加
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
 import SkeletonLetter from '@/components/SkeletonLetter';
 
@@ -27,7 +28,7 @@ type Letter = {
   created_at: string;
   password?: string | null;
   attached_stamp_id?: number | null;
-  read_count?: number; // 開封判定用（0か1以上かだけ分かればOK）
+  read_count?: number;
 };
 
 type Stamp = {
@@ -127,12 +128,23 @@ export default function MyPage() {
   const obtainedStamps = stamps.filter(s => s.has_obtained);
 
   return (
-    <div className="min-h-screen bg-[#f7f4ea] pb-24 font-sans text-gray-800">
+    <div className="min-h-screen bg-[#fdfcf5] pb-10 font-sans text-gray-800 relative">
+      
       {/* ヘッダー */}
       <div className="bg-white/90 backdrop-blur-sm px-6 py-4 shadow-sm text-center relative sticky top-0 z-10">
-        <Link href="/" className="absolute top-1/2 -translate-y-1/2 left-6 text-gray-400 text-xs font-bold hover:text-green-700">← 地図に戻る</Link>
+        
+        {/* ★変更：iPhone風の戻るボタン（< アイコン） */}
+        <Link 
+          href="/" 
+          className="absolute top-1/2 -translate-y-1/2 left-4 w-9 h-9 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm text-gray-600 hover:text-black transition-colors"
+        >
+           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+             <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+           </svg>
+        </Link>
+
         <h1 className="text-lg font-bold font-serif text-bunko-ink tracking-widest">マイページ</h1>
-        {user && <p className="text-[10px] text-gray-400 mt-1">{user.email}</p>}
+        {user && <p className="text-[10px] text-gray-400 mt-1 font-sans">{user.email}</p>}
       </div>
 
       {/* 3つのタブ */}
@@ -161,7 +173,7 @@ export default function MyPage() {
       </div>
 
       {/* コンテンツエリア */}
-      <div className="p-4 space-y-3 min-h-[300px]">
+      <div className="p-4 space-y-3 min-h-[50vh]">
         
         {/* ローディング中 */}
         {isLoading && activeTab !== 'stamps' && (
@@ -181,13 +193,12 @@ export default function MyPage() {
                   {obtainedStamps.map(stamp => (
                     <div key={stamp.id} className="flex flex-col items-center">
                       <div 
-                        className="aspect-[3/4] w-full rounded border-4 shadow-sm relative overflow-hidden mb-2 transition-all duration-500 border-white bg-white scale-100"
-                        style={{ boxShadow: '0 2px 5px rgba(0,0,0,0.1)' }}
+                        className="aspect-[3/4] w-full rounded border border-gray-200 bg-white shadow-sm p-1 flex items-center justify-center mb-2"
                       >
                         <img 
                           src={stamp.image_url} 
                           alt={stamp.name} 
-                          className="w-full h-full object-contain p-1"
+                          className="w-full h-full object-contain"
                         />
                       </div>
                       <p className="text-[10px] font-bold text-center text-bunko-ink">
@@ -248,10 +259,8 @@ export default function MyPage() {
                             {new Date(letter.created_at).toLocaleDateString()}
                           </p>
                           
-                          {/* ★修正：人数の表示を削除し、「開封されました」のみ表示 */}
                           {activeTab === 'posts' && letter.read_count !== undefined && letter.read_count > 0 && (
                             <div className="flex items-center gap-1 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-100">
-                              <span className="text-[10px]"></span>
                               <span className="text-[10px] font-bold text-orange-600">
                                 開封されました
                               </span>
@@ -268,27 +277,15 @@ export default function MyPage() {
         )}
       </div>
 
-      {/* フッターメニュー */}
-      <div className="mt-8 mb-4 border-t border-gray-200 pt-6">
-        <div className="flex flex-col items-center gap-4 text-xs text-gray-500 font-bold">
-          <Link href="/terms" className="hover:text-green-700 transition-colors">
-            利用規約
-          </Link>
-          <Link href="/privacy" className="hover:text-green-700 transition-colors">
-            プライバシーポリシー
-          </Link>
-          <Link href="/contact" className="hover:text-green-700 transition-colors">
-            お問い合わせ
-          </Link>
-        </div>
-      </div>
-
-      {/* ログアウト */}
-      <div className="p-6 mt-4 text-center">
-        <button onClick={handleLogout} className="text-xs text-red-400 underline hover:text-red-600 bg-white px-4 py-2 rounded-full border border-red-100">
-          ログアウトする
+      {/* ログアウトボタン */}
+      <div className="text-center py-6 border-t border-gray-100 mt-6">
+        <button onClick={handleLogout} className="text-xs text-gray-400 underline hover:text-red-500">
+          ログアウトしてトップへ戻る
         </button>
       </div>
+
+      {/* ★追加：共通フッター */}
+      <FooterLinks />
 
       {/* モーダル */}
       {selectedLetter && (

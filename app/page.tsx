@@ -9,8 +9,6 @@ import Link from 'next/link';
 
 // コンポーネントのインポート
 import Header from '@/components/Header';
-import Footer from '@/components/Footer';
-
 import IconUserLetter from '@/components/IconUserLetter';
 import IconAdminLetter from '@/components/IconAdminLetter';
 import LetterModal from '@/components/LetterModal';
@@ -40,9 +38,9 @@ type Letter = {
   attached_stamp_id?: number | null;
 };
 
-// ★距離設定（メートル）
-const UNLOCK_DISTANCE = 50;      // 読める距離
-const NOTIFICATION_DISTANCE = 300; // 気配を感じる距離
+// 距離設定（メートル）
+const UNLOCK_DISTANCE = 50;      
+const NOTIFICATION_DISTANCE = 300; 
 
 export default function Home() {
   const ADMIN_EMAILS = [
@@ -170,57 +168,6 @@ export default function Home() {
     );
   };
 
-  // ★追加：一番近くの手紙を探して移動する関数
-  const handleFindNearest = () => {
-    if (!userLocation || letters.length === 0) {
-      alert("現在地を取得中か、手紙が見つかりません。");
-      return;
-    }
-
-    // 今地図に表示されているべき手紙だけをフィルタリング
-    const validLetters = letters.filter(letter => {
-      // 期限切れチェック
-      if (!letter.is_official && letter.created_at) {
-        const diff = (new Date().getTime() - new Date(letter.created_at).getTime()) / (1000 * 60 * 60);
-        if (diff > LETTER_EXPIRATION_HOURS) return false;
-      }
-      // 表示設定チェック
-      if (!letter.is_official && !showUserPosts) return false;
-      
-      return true;
-    });
-
-    if (validLetters.length === 0) {
-      alert("近くに手紙はありません。");
-      return;
-    }
-
-    // 距離を計算してソート
-    const sortedLetters = validLetters.map(letter => {
-      const dist = getDistance(
-        { latitude: userLocation.lat, longitude: userLocation.lng },
-        { latitude: letter.lat, longitude: letter.lng }
-      );
-      return { ...letter, distance: dist };
-    }).sort((a, b) => a.distance - b.distance);
-
-    const nearestLetter = sortedLetters[0];
-
-    // 移動 & ポップアップ表示
-    if (nearestLetter) {
-      setViewState(prev => ({
-        ...prev,
-        latitude: nearestLetter.lat,
-        longitude: nearestLetter.lng,
-        zoom: 17, // 近くに寄る
-        transitionDuration: 1000 // スムーズに移動
-      }));
-      setPopupInfo(nearestLetter); // 吹き出しを開く
-    }
-  };
-
-
-  // 近くに手紙があるかどうかの全体判定（通知用）
   const hasNearLetter = useMemo(() => {
     if (!userLocation) return false;
     
@@ -267,7 +214,7 @@ export default function Home() {
       <Header currentUser={currentUser} nickname={myNickname} onAboutClick={() => setShowAbout(true)} />
 
       {/* スイッチ */}
-      <div className="absolute top-16 left-4 z-10">
+      <div className="absolute top-20 left-4 z-10">
         <div className="flex items-center bg-white/90 backdrop-blur px-3 py-2 rounded-full shadow-md border border-gray-100">
           <span className="text-[10px] font-bold text-gray-600 mr-2">みんなの手紙</span>
           <label className="relative inline-flex items-center cursor-pointer">
@@ -282,7 +229,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 右端の気配通知ポップ（近くにある時だけ表示） */}
+      {/* 気配通知ポップ */}
       {hasNearLetter && (
         <div className="fixed right-0 top-32 z-40 animate-slideInRight">
            <div className="bg-white/90 backdrop-blur-md p-3 pl-4 rounded-l-2xl shadow-lg border-y border-l border-gray-300 flex items-center gap-3 max-w-[180px] cursor-pointer hover:bg-white transition-colors">
@@ -306,8 +253,8 @@ export default function Home() {
         mapboxAccessToken={mapToken}
         onClick={() => setPopupInfo(null)}
       >
-        <NavigationControl position="bottom-right" style={{ marginBottom: '100px' }} />
-        <GeolocateControl position="bottom-right" trackUserLocation={true} style={{ marginBottom: '100px' }} />
+        <NavigationControl position="bottom-right" style={{ marginBottom: '90px', marginRight: '16px' }} />
+        <GeolocateControl position="bottom-right" trackUserLocation={true} style={{ marginBottom: '90px', marginRight: '16px' }} />
 
         {userLocation && (
           <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
@@ -333,9 +280,7 @@ export default function Home() {
           const isMyPost = currentUser && currentUser.id === letter.user_id;
           const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
 
-          // 1. 読める状態 (50m以内)
           const isReachable = (distance !== null && distance <= UNLOCK_DISTANCE) || isMyPost || isAdmin;
-          // 2. 近い状態 (300m以内 ＆ 読めない)
           const isNear = distance !== null && distance <= NOTIFICATION_DISTANCE && !isReachable;
 
           return (
@@ -351,38 +296,29 @@ export default function Home() {
               style={{ zIndex: isReachable ? 10 : isNear ? 5 : 1 }}
             >
               <div className="flex flex-col items-center group cursor-pointer">
-                {/* 吹き出しラベル */}
                 <div className={`bg-white/95 backdrop-blur px-2 py-1 rounded-sm shadow-sm text-[10px] mb-1 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border 
                   ${isReachable ? 'border-orange-500 text-orange-600' : isNear ? 'border-cyan-400 text-cyan-600' : 'border-bunko-gray/10 text-bunko-ink'}`}>
-                   
                    {letter.is_official ? '木林文庫の手紙' : (letter.nickname ? `${letter.nickname}さんの手紙` : '')}
-                   
-                   {/* 読める時のメッセージ */}
                    {isReachable && <span className="block text-[8px] font-bold text-orange-500 text-center">読めます！</span>}
                 </div>
 
-                {/* アイコン本体 */}
                 <div className={`transition-transform duration-300 drop-shadow-md relative ${isReachable ? 'animate-bounce' : isNear ? 'animate-pulse scale-110' : 'hover:scale-110'}`}>
                    {letter.is_official ? (
-                     // 管理者手紙の色設定
                      <div className={isReachable ? "text-yellow-500" : isNear ? "text-yellow-300" : "text-bunko-ink"}>
                         <IconAdminLetter className="w-10 h-10" />
                      </div>
                    ) : (
-                     // ユーザー手紙の色設定
                      <div className={isReachable ? "text-orange-500" : isNear ? "text-cyan-500" : "text-bunko-ink"}>
                         <IconUserLetter className="w-10 h-10" />
                      </div>
                    )}
                    
-                   {/* 鍵マーク（読めない時のみ） */}
                    {!isReachable && letter.password && (
                       <div className="absolute -top-1 -right-1 bg-white rounded-full p-0.5 shadow">
                         <span className="text-[8px]">🔒</span>
                       </div>
                    )}
                    
-                   {/* 読めるマーク（!） */}
                    {isReachable && (
                       <div className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 shadow w-4 h-4 flex items-center justify-center animate-pulse">
                         <span className="text-[8px] font-bold">!</span>
@@ -463,13 +399,15 @@ export default function Home() {
       )}
 
       {/* 投稿ボタンエリア */}
-      <div className="fixed bottom-24 right-4 z-40 flex flex-col items-end gap-2">
-        {!currentUser && (
-          <div className="bg-white/90 p-2 rounded-lg shadow-sm text-[10px] text-gray-600 font-bold animate-bounce cursor-pointer" onClick={() => router.push('/login')}>
-             ログインして手紙を書く
-             <div className="absolute right-4 top-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white/90"></div>
-          </div>
-        )}
+      <div className="fixed bottom-8 right-4 z-40 flex flex-col items-end gap-2">
+        {/* ★変更：吹き出しを常に表示し、ログイン状態に応じてテキストを変更 */}
+        <div 
+          className="bg-white/90 p-2 rounded-lg shadow-sm text-[10px] text-gray-600 font-bold animate-bounce cursor-pointer relative"
+          onClick={() => router.push(currentUser ? '/post' : '/login')}
+        >
+           {currentUser ? '手紙を書く' : 'ログインして手紙を書く'}
+           <div className="absolute right-4 top-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white/90"></div>
+        </div>
         
         <Link href={currentUser ? "/post" : "/login"}>
           <button
@@ -482,18 +420,10 @@ export default function Home() {
         </Link>
       </div>
 
-      {/* フッター */}
-      <Footer 
-        currentUser={currentUser}
-        onResetMap={handleFindNearest} // ★ここを修正（一番近い手紙を探す）
-        onAboutClick={() => setShowAbout(true)}
-      />
-
       {showTutorial && (
         <TutorialModal onClose={handleCloseTutorial} />
       )}
 
-      {/* アニメーション用スタイル定義 */}
       <style jsx global>{`
         @keyframes slideInRight {
           from { transform: translateX(100%); opacity: 0; }

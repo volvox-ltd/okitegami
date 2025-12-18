@@ -10,13 +10,17 @@ export default function AboutModal({ onClose }: Props) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [showScrollHint, setShowScrollHint] = useState(true);
 
+  // 初期表示時に一番右（文章の書き出し）へスクロールする
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (container) {
       container.scrollLeft = container.scrollWidth;
       
       const handleScroll = () => {
-        // スクロール時の処理が必要ならここに記述
+        // スクロールしたらヒントを消すなどの処理があればここへ
+        if (container.scrollLeft < container.scrollWidth - 50) {
+           setShowScrollHint(false);
+        }
       };
       
       container.addEventListener('scroll', handleScroll);
@@ -25,15 +29,21 @@ export default function AboutModal({ onClose }: Props) {
   }, []);
 
   return (
-    <div className="fixed inset-0 z-[100] bg-white/90 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       
-      {/* 背景：生成り色 (#fdfcf5) に変更 */}
-      <div className="bg-[#fdfcf5] w-full max-w-5xl h-[85vh] rounded-sm shadow-xl relative flex flex-col overflow-hidden border border-gray-200">
+      {/* 1. 背景レイヤー（暗くして地図を透かす） */}
+      <div 
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
+        onClick={onClose}
+      ></div>
+
+      {/* 2. ボード本体：生成り色 (#fdfcf5) */}
+      <div className="relative bg-[#fdfcf5] w-full max-w-5xl h-[85vh] rounded-sm shadow-2xl flex flex-col overflow-hidden border border-gray-200 animate-fade-in">
         
         {/* 閉じるボタン */}
         <button 
           onClick={onClose}
-          className="absolute top-4 right-4 z-50 text-gray-400 hover:text-black transition-colors p-2 tracking-widest text-xs font-serif border border-gray-200 rounded-full px-4 bg-white/50"
+          className="absolute top-4 right-4 z-50 text-gray-500 hover:text-black transition-colors p-2 tracking-widest text-xs font-serif border border-gray-300 rounded-full px-4 bg-white/80 hover:bg-white shadow-sm"
         >
           閉じる
         </button>
@@ -48,10 +58,10 @@ export default function AboutModal({ onClose }: Props) {
           </div>
         )}
 
-        {/* コンテンツエリア */}
+        {/* コンテンツエリア（横スクロール・縦書き） */}
         <div 
           ref={scrollContainerRef}
-          className="flex-1 overflow-x-auto overflow-y-hidden relative py-12 px-6 md:px-16 scroll-smooth"
+          className="flex-1 overflow-x-auto overflow-y-hidden relative py-16 px-6 md:px-16 scroll-smooth"
         >
           <div 
             className="h-full flex flex-col items-start gap-16 text-bunko-ink font-serif"
@@ -61,7 +71,7 @@ export default function AboutModal({ onClose }: Props) {
             }}
           >
             {/* 1. タイトルエリア */}
-            <div className="flex flex-col justify-start border-l-2 border-gray-400 pl-6 py-2 shrink-0 h-auto">
+            <div className="flex flex-col justify-start border-gray-400 pl-6 py-2 shrink-0 h-auto">
                <h2 className="text-2xl md:text-3xl text-black tracking-[0.2em] leading-normal font-normal">
                  「おきてがみ」とは
                </h2>
@@ -78,7 +88,6 @@ export default function AboutModal({ onClose }: Props) {
             </p>
 
             {/* 3. セクション：探す・読む */}
-            {/* ボックス背景を少し透過させて、生成り色と馴染ませる */}
             <div className="p-8 border border-gray-200 rounded-sm bg-white/40 shrink-0 h-auto min-h-[360px]">
               <h3 className="text-lg md:text-xl mb-8 text-black tracking-[0.2em] font-normal h-auto inline-block pl-4">
                 手紙を 探す・読む
@@ -143,6 +152,22 @@ export default function AboutModal({ onClose }: Props) {
           </div>
         </div>
       </div>
+
+      {/* アニメーション用スタイル */}
+      <style jsx>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: scale(0.98); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        .animate-fade-in {
+          animation: fadeIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+        }
+        /* 縦書き用ユーティリティクラス（念のため） */
+        .writing-vertical-rl {
+          writing-mode: vertical-rl;
+          text-orientation: upright;
+        }
+      `}</style>
     </div>
   );
 }
