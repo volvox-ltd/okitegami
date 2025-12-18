@@ -242,7 +242,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
         )}
 
         {/* コンテンツエリア */}
-        <div className="flex-1 relative overflow-hidden p-6 md:p-8 flex items-center justify-center">
+        <div className="flex-1 relative overflow-hidden pt-14 pb-2 px-6 md:pt-16 md:pb-4 md:px-8 flex items-center justify-center">
           
           {isLocked ? (
             <div className="flex flex-col items-center justify-center w-full h-full animate-fadeIn space-y-4">
