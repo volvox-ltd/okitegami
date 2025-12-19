@@ -15,7 +15,7 @@ import LetterModal from '@/components/LetterModal';
 import AboutModal from '@/components/AboutModal';
 import NicknameModal from '@/components/NicknameModal';
 import TutorialModal from '@/components/TutorialModal'; 
-import AddToHomeScreen from '@/components/AddToHomeScreen'; // ★追加
+import AddToHomeScreen from '@/components/AddToHomeScreen'; // ★追加: インポート漏れ修正
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
 
 const supabase = createClient(
@@ -69,7 +69,7 @@ export default function Home() {
   
   const [isRetryingGPS, setIsRetryingGPS] = useState(false);
 
-  // ★追加：PWA案内用のState定義（ここが抜けていました！）
+  // ★追加：PWA案内用のState定義
   const [showPwaPrompt, setShowPwaPrompt] = useState(false);
 
   const [viewState, setViewState] = useState({
@@ -206,7 +206,8 @@ export default function Home() {
   const nearestNotificationLetter = useMemo(() => {
     if (!userLocation) return null;
     
-    let nearest = null;
+    // ★修正: ここで型を明示して、TSが「never」と誤認するのを防ぐ
+    let nearest: Letter | null = null;
     let minDist = Infinity;
 
     letters.forEach(letter => {
@@ -290,18 +291,20 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 気配通知ポップ（地図のポップアップが出ている時は表示しない！） */}
+      {/* 気配通知ポップ */}
       {nearestNotificationLetter && !popupInfo && (
         <div 
           className="fixed right-0 top-32 z-40 animate-slideInRight"
           onClick={() => {
-            // 通知をクリックすると、その手紙にフォーカスして詳細を開く
+            // ★修正: TypeScriptガード（ここで存在チェックをしてエラーを防ぐ）
+            if (!nearestNotificationLetter) return;
+
             setPopupInfo(nearestNotificationLetter);
             setViewState(prev => ({
               ...prev, 
               latitude: nearestNotificationLetter.lat, 
               longitude: nearestNotificationLetter.lng, 
-              zoom: 16 // 少しズームする
+              zoom: 16
             }));
           }}
         >
