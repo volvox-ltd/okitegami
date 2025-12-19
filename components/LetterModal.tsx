@@ -44,8 +44,10 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
   const [pages, setPages] = useState<any[]>([]);
   const [isFavorited, setIsFavorited] = useState(false);
 
-  // 切手演出用のState
   const [gotStamp, setGotStamp] = useState<any>(null);
+  
+  // ★追加：通報済みかどうか
+  const [isReported, setIsReported] = useState(false);
 
   const isMyPost = currentUser && currentUser.id === letter.user_id;
 
@@ -58,27 +60,21 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
       setIsLocked(true);
     } else {
       setIsLocked(false);
-      // ロックがない場合はすぐに切手チェック & 既読記録
       checkStamp();
-      recordRead(); // ★ここで既読をつける
+      recordRead(); 
     }
 
     checkFavorite();
   }, [letter, currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ★既読をつける関数（ロック解除時にも呼ぶため関数化）
   const recordRead = async () => {
-    // 自分の手紙を開いた場合はカウントしない
     if (currentUser && currentUser.id === letter.user_id) return;
-
-    // 記録を追加
     await supabase.from('letter_reads').insert({
       letter_id: letter.id,
       user_id: currentUser?.id || null,
     });
   };
 
-  // 切手取得ロジック
   const checkStamp = async () => {
     if (currentUser && letter.attached_stamp_id && !isMyPost) {
       try {
@@ -108,9 +104,8 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
     if (inputPassword === letter.password) {
       setIsLocked(false);
       setUnlockError(false);
-      // ロック解除成功時に切手チェック & 既読記録
       checkStamp();
-      recordRead(); // ★ロック解除成功で既読をつける
+      recordRead(); 
     } else {
       setUnlockError(true);
     }
@@ -133,13 +128,11 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
     }
   };
 
-  // 区切り文字の定義（投稿画面と同じにする）
   const PAGE_DELIMITER = '<<<PAGE>>>';
 
   useEffect(() => {
     const newPages = [];
     
-    // 1ページ目：画像があれば画像
     if (letter.image_url) {
       newPages.push({ type: 'image', content: letter.image_url });
     }
@@ -147,15 +140,12 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
     if (!letter.content) {
       newPages.push({ type: 'text', content: '' });
     } else {
-      // ★修正：区切り文字が含まれているかチェック
       if (letter.content.includes(PAGE_DELIMITER)) {
-        // 区切り文字がある場合（新しい投稿）：そのまま分割してページにする
         const splitPages = letter.content.split(PAGE_DELIMITER);
         splitPages.forEach(p => {
           newPages.push({ type: 'text', content: p });
         });
       } else {
-        // 区切り文字がない場合（古い投稿）：文字数で自動分割する
         for (let i = 0; i < letter.content.length; i += CHARS_PER_PAGE) {
           newPages.push({ type: 'text', content: letter.content.slice(i, i + CHARS_PER_PAGE) });
         }
@@ -175,6 +165,26 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
     else { alert('削除しました'); handleClose(); if (onDeleted) onDeleted(); }
   };
 
+  // ★追加：通報機能
+  const handleReport = async () => {
+    if (!confirm('この手紙を不適切なコンテンツとして通報しますか？')) return;
+    
+    try {
+      const { error } = await supabase.from('reports').insert({
+        letter_id: letter.id,
+        reporter_id: currentUser?.id || null, // 未ログインでも通報可とする（要件次第）
+        reason: '不適切なコンテンツ'
+      });
+
+      if (error) throw error;
+      
+      alert('通報を受け付けました。\nご協力ありがとうございます。');
+      setIsReported(true);
+    } catch (e) {
+      alert('送信に失敗しました');
+    }
+  };
+
   const isOfficial = letter.is_official;
   const borderColor = isOfficial ? 'border-yellow-600' : 'border-green-700';
   const bgColor = isOfficial ? 'bg-[#fdfcf5]' : 'bg-white';
@@ -186,7 +196,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
     <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose}></div>
 
-      {/* 切手ゲット時の演出オーバーレイ */}
       {gotStamp && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none">
           <div className="bg-white/95 p-6 rounded-lg shadow-2xl flex flex-col items-center animate-bounce-in pointer-events-auto border-4 border-yellow-400 max-w-xs">
@@ -207,7 +216,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
 
       <div className={`relative w-full max-w-md h-[600px] shadow-2xl rounded-2xl transform transition-all duration-300 border-4 ${borderColor} ${bgColor} flex flex-col ${isVisible ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}`}>
         
-        {/* ヘッダー */}
         <div className="h-20 flex items-center justify-between px-6 border-b border-gray-100/50 relative shrink-0">
           <div className="flex items-center gap-3">
              <div className="shrink-0 drop-shadow-sm"><Icon className="w-10 h-10" /></div>
@@ -221,7 +229,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
           <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 p-2 -mr-2">✕</button>
         </div>
 
-        {/* 編集/お気に入りボタン (ロック中は非表示) */}
         {!isLocked && (
           <div className="absolute top-20 right-4 z-10 flex gap-2">
             {isMyPost ? (
@@ -241,7 +248,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
           </div>
         )}
 
-        {/* コンテンツエリア */}
         <div className="flex-1 relative overflow-hidden pt-14 pb-2 px-6 md:pt-16 md:pb-4 md:px-8 flex items-center justify-center">
           
           {isLocked ? (
@@ -283,25 +289,42 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
 
         </div>
 
-        {/* フッター (ロック中は非表示) */}
         {!isLocked && (
-          <div className="h-16 border-t border-gray-100/50 flex items-center justify-between px-6 shrink-0 bg-white/30 backdrop-blur-sm rounded-b-xl">
-            <div className="flex items-center">
-              {currentPage < pages.length - 1 ? (
-                <button onClick={handleNext} className="text-sm font-bold flex items-center gap-1 text-gray-600 hover:text-orange-600 transition-colors pl-2 py-2">
-                  <span className="text-lg">←</span> 次へ
-                </button>
-              ) : (
-                <button onClick={handleClose} className={`px-5 py-2 rounded-full text-white text-xs font-bold shadow-sm transition-transform active:scale-95 ${isOfficial ? 'bg-[#826d36]' : 'bg-green-700'}`}>
-                  読み終わる
-                </button>
-              )}
+          <div className="h-16 border-t border-gray-100/50 flex items-center justify-between px-6 shrink-0 bg-white/30 backdrop-blur-sm rounded-b-xl relative">
+            
+            {/* ★追加：通報ボタン（左端） */}
+            <div className="absolute left-6 top-1/2 -translate-y-1/2">
+               {!isMyPost && !isOfficial && (
+                 <button 
+                   onClick={handleReport}
+                   disabled={isReported}
+                   className="text-gray-300 hover:text-red-400 p-2 transition-colors disabled:text-gray-200"
+                   title="不適切な投稿を通報"
+                 >
+                   {isReported ? '✓' : '⚐'}
+                 </button>
+               )}
             </div>
-            <span className="text-xs text-gray-400 font-serif tracking-widest absolute left-1/2 -translate-x-1/2">- {currentPage + 1} -</span>
-            <div className="flex items-center">
-              <button onClick={handlePrev} disabled={currentPage === 0} className={`text-sm font-bold flex items-center gap-1 transition-colors pr-2 py-2 ${currentPage === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:text-orange-500'}`}>
-                前へ <span className="text-lg">→</span>
-              </button>
+
+            {/* ページネーション（中央寄せのために位置調整） */}
+            <div className="flex-1 flex justify-center items-center gap-4">
+              <div className="flex items-center">
+                {currentPage < pages.length - 1 ? (
+                  <button onClick={handleNext} className="text-sm font-bold flex items-center gap-1 text-gray-600 hover:text-orange-600 transition-colors pl-2 py-2">
+                    <span className="text-lg">←</span> 次へ
+                  </button>
+                ) : (
+                  <button onClick={handleClose} className={`px-5 py-2 rounded-full text-white text-xs font-bold shadow-sm transition-transform active:scale-95 ${isOfficial ? 'bg-[#826d36]' : 'bg-green-700'}`}>
+                    読み終わる
+                  </button>
+                )}
+              </div>
+              <span className="text-xs text-gray-400 font-serif tracking-widest w-8 text-center">- {currentPage + 1} -</span>
+              <div className="flex items-center">
+                <button onClick={handlePrev} disabled={currentPage === 0} className={`text-sm font-bold flex items-center gap-1 transition-colors pr-2 py-2 ${currentPage === 0 ? 'text-gray-300 cursor-not-allowed' : 'text-gray-500 hover:text-orange-500'}`}>
+                  前へ <span className="text-lg">→</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

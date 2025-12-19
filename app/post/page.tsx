@@ -346,16 +346,12 @@ export default function PostPage() {
             {/* 招待状カード（デザイン） */}
             <div className="bg-[#fdfcf5] rounded-xl p-6 shadow-2xl relative border-4 border-white mb-6">
               {/* 切手っぽい装飾 */}
-              <div className="absolute top-4 right-4 w-12 h-14 bg-red-50 border-2 border-dotted border-red-200 flex items-center justify-center rotate-3 shadow-sm">
-                <span className="text-[8px] text-red-300 font-bold">POST</span>
-              </div>
-              
               <div className="text-center mt-4">
                 <h3 className="font-serif text-lg font-bold text-bunko-ink mb-2 tracking-widest">
                   お手紙を置きました
                 </h3>
                 <div className="w-full h-px bg-gray-300 my-4 relative">
-                  <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 bg-[#fdfcf5] px-2 text-gray-400 text-xs">✉</div>
+                  <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 bg-[#fdfcf5] px-2 text-gray-400 text-xs"></div>
                 </div>
                 
                 <div className="space-y-2 font-serif text-sm text-gray-700">

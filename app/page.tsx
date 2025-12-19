@@ -40,6 +40,7 @@ type Letter = {
 
 // 距離設定（メートル）
 const UNLOCK_DISTANCE = 50;      
+const RELIEF_DISTANCE = 100;     
 const NOTIFICATION_DISTANCE = 300; 
 
 export default function Home() {
@@ -64,6 +65,8 @@ export default function Home() {
 
   const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
   const [hasCentered, setHasCentered] = useState(false);
+  
+  const [isRetryingGPS, setIsRetryingGPS] = useState(false);
 
   const [viewState, setViewState] = useState({
     latitude: 35.6288,
@@ -168,30 +171,68 @@ export default function Home() {
     );
   };
 
-  const hasNearLetter = useMemo(() => {
-    if (!userLocation) return false;
+  const handleRetryGPS = () => {
+    if (!navigator.geolocation || !popupInfo) return;
+    setIsRetryingGPS(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setUserLocation({ lat: latitude, lng: longitude });
+        const dist = getDistance(
+          { latitude, longitude },
+          { latitude: popupInfo.lat, longitude: popupInfo.lng }
+        );
+        if (dist <= RELIEF_DISTANCE) {
+          setReadingLetter(popupInfo);
+        } else {
+          alert(`位置情報を更新しましたが、まだ距離があります。\n現在: 約${dist}m\n（残り${dist - UNLOCK_DISTANCE}m）`);
+        }
+        setIsRetryingGPS(false);
+      },
+      (error) => {
+        console.error(error);
+        alert("位置情報の取得に失敗しました。");
+        setIsRetryingGPS(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
+  // ★変更：単なるbooleanではなく「一番近くにある通知対象の手紙」を特定する
+  const nearestNotificationLetter = useMemo(() => {
+    if (!userLocation) return null;
     
-    return letters.some(letter => {
-      if (!letter.is_official && !showUserPosts) return false;
+    let nearest = null;
+    let minDist = Infinity;
+
+    letters.forEach(letter => {
+      // フィルタリング
+      if (!letter.is_official && !showUserPosts) return;
       if (!letter.is_official && letter.created_at) {
          const diff = (new Date().getTime() - new Date(letter.created_at).getTime()) / (1000 * 60 * 60);
-         if (diff > LETTER_EXPIRATION_HOURS) return false;
+         if (diff > LETTER_EXPIRATION_HOURS) return;
       }
       
+      const isMyPost = currentUser && currentUser.id === letter.user_id;
+      const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
+      if (isMyPost || isAdmin) return; // 自分の手紙は通知しない
+
       const dist = getDistance(
         { latitude: userLocation.lat, longitude: userLocation.lng },
         { latitude: letter.lat, longitude: letter.lng }
       );
       
+      // 条件：300m以内 かつ 50mより遠い（まだ開けない）
       const isReachable = dist <= UNLOCK_DISTANCE;
       const isNear = dist <= NOTIFICATION_DISTANCE && !isReachable;
-      
-      const isMyPost = currentUser && currentUser.id === letter.user_id;
-      const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
-      if (isMyPost || isAdmin) return false;
 
-      return isNear;
+      if (isNear && dist < minDist) {
+        minDist = dist;
+        nearest = letter;
+      }
     });
+
+    return nearest;
   }, [userLocation, letters, showUserPosts, currentUser]);
 
   const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
@@ -210,10 +251,8 @@ export default function Home() {
         />
       )}
 
-      {/* ヘッダー */}
       <Header currentUser={currentUser} nickname={myNickname} onAboutClick={() => setShowAbout(true)} />
 
-      {/* スイッチ */}
       <div className="absolute top-20 left-4 z-10">
         <div className="flex items-center bg-white/90 backdrop-blur px-3 py-2 rounded-full shadow-md border border-gray-100">
           <span className="text-[10px] font-bold text-gray-600 mr-2">みんなの手紙</span>
@@ -229,11 +268,23 @@ export default function Home() {
         </div>
       </div>
 
-      {/* 気配通知ポップ */}
-      {hasNearLetter && (
-        <div className="fixed right-0 top-32 z-40 animate-slideInRight">
+      {/* ★修正：気配通知ポップ（地図のポップアップが出ている時は表示しない！） */}
+      {nearestNotificationLetter && !popupInfo && (
+        <div 
+          className="fixed right-0 top-32 z-40 animate-slideInRight"
+          onClick={() => {
+            // 通知をクリックすると、その手紙にフォーカスして詳細を開く
+            setPopupInfo(nearestNotificationLetter);
+            setViewState(prev => ({
+              ...prev, 
+              latitude: nearestNotificationLetter.lat, 
+              longitude: nearestNotificationLetter.lng, 
+              zoom: 16 // 少しズームする
+            }));
+          }}
+        >
            <div className="bg-white/90 backdrop-blur-md p-3 pl-4 rounded-l-2xl shadow-lg border-y border-l border-gray-300 flex items-center gap-3 max-w-[180px] cursor-pointer hover:bg-white transition-colors">
-              <span className="text-xl animate-pulse">✨</span>
+              <span className="text-xl animate-pulse"></span>
               <div className="flex flex-col">
                 <span className="text-[10px] font-bold text-gray-400"></span>
                 <span className="text-xs font-bold text-gray-700 leading-tight">
@@ -244,7 +295,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* マップ */}
       <Map
         {...viewState}
         onMove={evt => setViewState(evt.viewState)}
@@ -296,8 +346,9 @@ export default function Home() {
               style={{ zIndex: isReachable ? 10 : isNear ? 5 : 1 }}
             >
               <div className="flex flex-col items-center group cursor-pointer">
+                {/* マーカー上の吹き出し（これもpopupInfoが出ている時は隠してもいいかもですが、小さいので残します） */}
                 <div className={`bg-white/95 backdrop-blur px-2 py-1 rounded-sm shadow-sm text-[10px] mb-1 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border 
-                  ${isReachable ? 'border-orange-500 text-orange-600' : isNear ? 'border-cyan-400 text-cyan-600' : 'border-bunko-gray/10 text-bunko-ink'}`}>
+                  ${isReachable ? 'border-orange-500 text-orange-600' : isNear ? 'border-gray-400 text-gray-600' : 'border-bunko-gray/10 text-bunko-ink'}`}>
                    {letter.is_official ? '木林文庫の手紙' : (letter.nickname ? `${letter.nickname}さんの手紙` : '')}
                    {isReachable && <span className="block text-[8px] font-bold text-orange-500 text-center">読めます！</span>}
                 </div>
@@ -355,6 +406,9 @@ export default function Home() {
                 const isMyPost = currentUser && currentUser.id === popupInfo.user_id;
 
                 const isReachable = (distance !== null && distance <= UNLOCK_DISTANCE) || isAdmin || isMyPost;
+                
+                // 救済エリア
+                const isReliefArea = distance !== null && distance > UNLOCK_DISTANCE && distance <= RELIEF_DISTANCE;
 
                 if (distance === null) return <p className="text-xs text-gray-400">現在地を確認中...</p>;
 
@@ -372,8 +426,20 @@ export default function Home() {
                 }
 
                 return (
-                  <div className="bg-gray-100 text-gray-500 text-xs py-2 px-2 rounded-full border border-gray-200">
-                    🔒 あと {distance}m
+                  <div className="flex flex-col gap-2">
+                    <div className="bg-gray-100 text-gray-500 text-xs py-2 px-2 rounded-full border border-gray-200">
+                      🔒 あと {distance}m
+                    </div>
+                    
+                    {isReliefArea && (
+                      <button
+                        onClick={handleRetryGPS}
+                        disabled={isRetryingGPS}
+                        className="text-[10px] text-blue-600 font-bold underline hover:text-blue-800 disabled:text-gray-400"
+                      >
+                        {isRetryingGPS ? '位置情報を確認中...' : '目の前にいます！(GPS補正)'}
+                      </button>
+                    )}
                   </div>
                 );
               })()}
@@ -398,9 +464,8 @@ export default function Home() {
         <AboutModal onClose={() => setShowAbout(false)} />
       )}
 
-      {/* 投稿ボタンエリア */}
+      {/* 投稿ボタン（右下） */}
       <div className="fixed bottom-8 right-4 z-40 flex flex-col items-end gap-2">
-        {/* ★変更：吹き出しを常に表示し、ログイン状態に応じてテキストを変更 */}
         <div 
           className="bg-white/90 p-2 rounded-lg shadow-sm text-[10px] text-gray-600 font-bold animate-bounce cursor-pointer relative"
           onClick={() => router.push(currentUser ? '/post' : '/login')}

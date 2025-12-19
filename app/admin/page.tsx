@@ -14,11 +14,10 @@ const supabase = createClient(
 
 export default function AdminDashboard() {
   const router = useRouter();
-  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'official' | 'users' | 'members' | 'stats' | 'create'>('official');
 
-  const [stats, setStats] = useState({ userCount: 0, letterCount: 0 });
+  const [stats, setStats] = useState({ userCount: 0, letterCount: 0, reportCount: 0 });
   const [letters, setLetters] = useState<any[]>([]);
   const [profiles, setProfiles] = useState<any[]>([]);
   
@@ -45,7 +44,6 @@ export default function AdminDashboard() {
         return;
       }
 
-      setIsAdmin(true);
       fetchData();
       setLoading(false);
     };
@@ -57,38 +55,64 @@ export default function AdminDashboard() {
       // 1. 統計情報の取得
       const { count: userCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
       const { count: letterCount } = await supabase.from('letters').select('*', { count: 'exact', head: true });
-      setStats({ userCount: userCount || 0, letterCount: letterCount || 0 });
+      const { count: reportCount } = await supabase.from('reports').select('*', { count: 'exact', head: true }); // ★追加：通報数
+      
+      setStats({ 
+        userCount: userCount || 0, 
+        letterCount: letterCount || 0,
+        reportCount: reportCount || 0 
+      });
 
       // 2. 全投稿の取得
-      const { data: lettersData, error: letterError } = await supabase
+      const { data: lettersData } = await supabase
         .from('letters')
         .select('*')
         .order('created_at', { ascending: false });
       
-      if (letterError) throw letterError;
-
       // 3. 全ユーザーの取得
-      const { data: profilesData, error: profileError } = await supabase
+      const { data: profilesData } = await supabase
         .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false });
+        .select('*');
 
-      if (profileError) throw profileError;
+      // ★追加：4. 全通報データの取得
+      const { data: reportsData } = await supabase
+        .from('reports')
+        .select('letter_id');
 
-      setProfiles(profilesData || []);
-
-      // 4. 手動で結合
-      if (lettersData && profilesData) {
-        const profileMap = new Map(profilesData.map((p: any) => [p.id, p]));
+      // 5. データ結合
+      if (lettersData) {
+        const profileMap = new Map(profilesData?.map((p: any) => [p.id, p]) || []);
         
+        // 通報数を集計 (letter_id -> count)
+        const reportCountMap = new Map();
+        reportsData?.forEach((r: any) => {
+          const current = reportCountMap.get(r.letter_id) || 0;
+          reportCountMap.set(r.letter_id, current + 1);
+        });
+
         const mergedLetters = lettersData.map((letter: any) => ({
           ...letter,
-          profiles: profileMap.get(letter.user_id) || { nickname: '不明', email: null }
+          profiles: profileMap.get(letter.user_id) || { nickname: '不明', email: null },
+          report_count: reportCountMap.get(letter.id) || 0 // ★追加：通報数を持たせる
         }));
         
+        // ★並び替え：通報数が多い順 > 新しい順
+        mergedLetters.sort((a: any, b: any) => {
+          if (b.report_count !== a.report_count) {
+            return b.report_count - a.report_count;
+          }
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+        
         setLetters(mergedLetters);
-      } else {
-        setLetters(lettersData || []);
+      }
+      
+      if (profilesData) {
+        // ユーザーリストも新しい順に
+        const sortedProfiles = profilesData.sort((a: any, b: any) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        setProfiles(sortedProfiles);
       }
 
     } catch (e: any) {
@@ -133,20 +157,18 @@ export default function AdminDashboard() {
 
       for (const letter of targets) {
         setCleanLog(prev => prev + `処理中: ${letter.title}...\n`);
-        
         try {
           const response = await fetch(letter.image_url);
           const blob = await response.blob();
           const file = new File([blob], "temp.jpg", { type: "image/jpeg" });
 
           const options = {
-            maxSizeMB: 0.03, // 30KB以下
+            maxSizeMB: 0.03,
             maxWidthOrHeight: 400,
             useWebWorker: true,
             fileType: 'image/webp'
           };
           const compressedFile = await imageCompression(file, options);
-          
           const fileName = `archive/${Date.now()}_${Math.random().toString(36).substring(7)}.webp`;
           
           const { error: uploadError } = await supabase.storage
@@ -156,26 +178,18 @@ export default function AdminDashboard() {
           if (uploadError) throw uploadError;
 
           const publicUrl = supabase.storage.from('letter-images').getPublicUrl(fileName).data.publicUrl;
-          
           const oldName = letter.image_url.split('/').pop();
           if (oldName) await supabase.storage.from('letter-images').remove([oldName]);
 
-          await supabase
-            .from('letters')
-            .update({ image_url: publicUrl })
-            .eq('id', letter.id);
-
+          await supabase.from('letters').update({ image_url: publicUrl }).eq('id', letter.id);
           setCleanLog(prev => prev + `完了\n`);
-
         } catch (err) {
           console.error(err);
           setCleanLog(prev => prev + `エラー\n`);
         }
       }
-      
       setCleanLog(prev => prev + '完了しました\n');
       fetchData();
-
     } catch (e: any) {
       alert('エラー: ' + e.message);
     } finally {
@@ -201,16 +215,24 @@ export default function AdminDashboard() {
           </Link>
         </div>
 
-        {/* タブメニュー（文字色を黒に調整） */}
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-300 pb-2">
           <TabButton label="運営の投稿" isActive={activeTab === 'official'} onClick={() => setActiveTab('official')} icon="👑" count={officialLetters.length} />
-          <TabButton label="みんなの投稿" isActive={activeTab === 'users'} onClick={() => setActiveTab('users')} icon="👤" count={userLetters.length} />
+          
+          {/* ★修正：通報がある場合、バッジを赤くして目立たせる */}
+          <TabButton 
+            label="みんなの投稿" 
+            isActive={activeTab === 'users'} 
+            onClick={() => setActiveTab('users')} 
+            icon="👤" 
+            count={userLetters.length}
+            badgeColor={stats.reportCount > 0 ? "bg-red-500 text-white" : undefined}
+          />
+          
           <TabButton label="ユーザー管理" isActive={activeTab === 'members'} onClick={() => setActiveTab('members')} icon="list" count={stats.userCount} />
           <TabButton label="統計" isActive={activeTab === 'stats'} onClick={() => setActiveTab('stats')} icon="📊" />
           <TabButton label="新規作成" isActive={activeTab === 'create'} onClick={() => setActiveTab('create')} icon="✏️" color="bg-green-700 text-white" />
         </div>
 
-        {/* === 1. 運営の投稿 === */}
         {activeTab === 'official' && (
           <div className="space-y-4">
             <h2 className="font-bold text-lg">運営からの手紙一覧</h2>
@@ -222,7 +244,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* === 2. みんなの投稿 === */}
         {activeTab === 'users' && (
           <div className="space-y-6">
             
@@ -245,7 +266,11 @@ export default function AdminDashboard() {
               </pre>
             )}
 
-            <h2 className="font-bold text-lg">ユーザーの投稿一覧</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-lg">ユーザーの投稿一覧</h2>
+              {stats.reportCount > 0 && <span className="text-xs font-bold text-red-600">⚠️ {stats.reportCount}件の通報があります</span>}
+            </div>
+            
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {userLetters.map(letter => (
                 <LetterCard key={letter.id} letter={letter} onDelete={handleDeletePost} />
@@ -254,7 +279,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* === 3. ユーザー管理 === */}
         {activeTab === 'members' && (
           <div className="bg-white rounded-xl shadow overflow-hidden">
             <div className="overflow-x-auto">
@@ -286,7 +310,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* === 4. 統計 === */}
         {activeTab === 'stats' && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white p-6 rounded-2xl shadow-sm text-center border border-gray-100">
@@ -297,9 +320,10 @@ export default function AdminDashboard() {
               <h3 className="text-xs font-bold text-gray-400 mb-1">総投稿数</h3>
               <p className="text-3xl font-bold text-orange-500">{stats.letterCount}</p>
             </div>
+            {/* ★追加：通報数 */}
             <div className="bg-white p-6 rounded-2xl shadow-sm text-center border border-gray-100">
-              <h3 className="text-xs font-bold text-gray-400 mb-1">運営投稿</h3>
-              <p className="text-3xl font-bold text-yellow-600">{officialLetters.length}</p>
+              <h3 className="text-xs font-bold text-gray-400 mb-1">未対応の通報</h3>
+              <p className="text-3xl font-bold text-red-600">{stats.reportCount}</p>
             </div>
             <div className="bg-white p-6 rounded-2xl shadow-sm text-center border border-gray-100">
               <h3 className="text-xs font-bold text-gray-400 mb-1">ユーザー投稿</h3>
@@ -308,7 +332,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* === 5. 新規作成 === */}
         {activeTab === 'create' && (
           <div className="bg-white p-8 rounded-xl shadow-sm text-center">
             <h2 className="text-lg font-bold mb-4">公式手紙を投稿する</h2>
@@ -331,28 +354,42 @@ export default function AdminDashboard() {
 
 // --- サブコンポーネント ---
 
-// ★修正：アクティブ時の色を黒文字（bg-gray-800 text-white ではなく、bg-gray-200 text-black border-black 等）に変更
-const TabButton = ({ label, isActive, onClick, icon, count, color }: any) => (
+const TabButton = ({ label, isActive, onClick, icon, count, color, badgeColor }: any) => (
   <button 
     onClick={onClick} 
     className={`px-4 py-2 rounded-full text-sm font-bold transition-all flex items-center gap-2 ${
       isActive 
-      ? (color || 'bg-gray-800 text-white shadow-md')  // 視認性を考慮して濃いグレー背景+白文字に変更（あるいは bg-white text-black border-2 border-black でも可）
+      ? (color || 'bg-gray-800 text-white shadow-md') 
       : 'bg-white text-gray-500 hover:bg-gray-100 border border-gray-200'
     }`}
   >
     <span>{icon}</span>
     {label}
-    {count !== undefined && <span className="ml-1 text-xs opacity-70 bg-white/20 px-1.5 rounded-full">{count}</span>}
+    {count !== undefined && (
+      <span className={`ml-1 text-xs px-1.5 rounded-full ${badgeColor || 'bg-black/10 opacity-70'}`}>
+        {count}
+      </span>
+    )}
   </button>
 );
 
 const LetterCard = ({ letter, onDelete }: any) => {
   const isExpired = !letter.is_official && (new Date().getTime() - new Date(letter.created_at).getTime()) / (1000 * 60 * 60) > 48;
-  
+  const isReported = letter.report_count > 0; // ★通報有無
+
   return (
-    <div className={`p-4 rounded-xl border flex flex-col gap-3 shadow-sm transition-shadow hover:shadow-md ${letter.is_official ? 'bg-yellow-50 border-yellow-200' : 'bg-white border-gray-200'}`}>
+    <div className={`p-4 rounded-xl border flex flex-col gap-3 shadow-sm transition-shadow hover:shadow-md relative overflow-hidden ${
+      isReported ? 'bg-red-50 border-red-400' : // ★通報時は赤く
+      letter.is_official ? 'bg-yellow-50 border-yellow-200' : 'bg-white border-gray-200'
+    }`}>
       
+      {/* ★通報アラート */}
+      {isReported && (
+        <div className="bg-red-500 text-white text-[10px] font-bold px-2 py-1 absolute top-0 right-0 rounded-bl-lg z-10">
+          ⚠️ {letter.report_count}件の通報
+        </div>
+      )}
+
       <div className="flex justify-between items-start">
         <div className="flex items-center gap-2">
           {letter.is_official ? <IconAdminLetter className="w-8 h-8" /> : <IconUserLetter className="w-8 h-8 text-gray-400" />}
@@ -364,12 +401,14 @@ const LetterCard = ({ letter, onDelete }: any) => {
             </p>
           </div>
         </div>
-        {/* ★修正：運営投稿には「掲載中」などを出さず、ユーザー投稿の期限切れのみ表示、または運営は「公式」バッジにする */}
-        {letter.is_official ? (
-           <span className="text-[10px] bg-yellow-100 text-yellow-700 px-2 py-1 rounded font-bold border border-yellow-200">公式</span>
-        ) : (
-           isExpired ? <span className="text-[10px] bg-gray-200 text-gray-500 px-2 py-1 rounded font-bold">期限切れ</span> : <span className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded font-bold">掲載中</span>
-        )}
+        {/* バッジ表示 */}
+        <div className="mt-1">
+          {letter.is_official ? (
+             <span className="text-[10px] bg-yellow-100 text-yellow-700 px-2 py-1 rounded font-bold border border-yellow-200">公式</span>
+          ) : (
+             isExpired ? <span className="text-[10px] bg-gray-200 text-gray-500 px-2 py-1 rounded font-bold">期限切れ</span> : <span className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded font-bold">掲載中</span>
+          )}
+        </div>
       </div>
 
       <div className="text-xs text-gray-600 bg-white/50 p-2 rounded border border-gray-100 h-16 overflow-hidden">
@@ -382,7 +421,6 @@ const LetterCard = ({ letter, onDelete }: any) => {
         </div>
       )}
 
-      {/* ★修正：User名の横の () を email がある時だけ表示 */}
       {!letter.is_official && (
         <div className="text-[10px] text-gray-400 border-t pt-2 mt-auto">
           User: {letter.profiles?.nickname || '不明'} 

@@ -15,10 +15,9 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// ★仕様変更：ページ区切り設定
 const PAGE_DELIMITER = '<<<PAGE>>>';
 const MAX_CHARS_PER_PAGE = 180;
-const MAX_PAGES_ADMIN = 20; // 運営は20枚まで
+const MAX_PAGES_ADMIN = 20;
 
 type Letter = {
   id: string;
@@ -31,17 +30,14 @@ type Letter = {
   attached_stamp_id?: number | null;
 };
 
-export default function AdminPage() {
+export default function AdminCreatePage() {
   const router = useRouter();
   
   const [title, setTitle] = useState('');
   const [spotName, setSpotName] = useState('');
-  
-  // ★変更：content文字列ではなく、pages配列で管理
   const [pages, setPages] = useState<string[]>(['']);
 
   const [imageFile, setImageFile] = useState<File | null>(null);
-  
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState('');
 
@@ -49,10 +45,11 @@ export default function AdminPage() {
   const [stampName, setStampName] = useState('');
   const [stampFile, setStampFile] = useState<File | null>(null);
 
+  // 数値入力フォーム用ですが、空入力を許容するため number型として扱い、NaNを許容します
   const [lat, setLat] = useState(35.6288);
   const [lng, setLng] = useState(139.6842);
+  
   const [isSubmitting, setIsSubmitting] = useState(false);
-
   const [letters, setLetters] = useState<Letter[]>([]);
 
   const [viewState, setViewState] = useState({
@@ -72,7 +69,6 @@ export default function AdminPage() {
     if (data) setLetters(data);
   };
 
-  // ★追加：ページ操作関数
   const handlePageChange = (index: number, value: string) => {
     if (value.length > MAX_CHARS_PER_PAGE) return;
     const newPages = [...pages];
@@ -110,7 +106,9 @@ export default function AdminPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // ★修正：結合してチェック
+    // 緯度経度のバリデーション
+    if (isNaN(lat) || isNaN(lng)) return alert('緯度経度を正しく入力してください');
+
     const fullContent = pages.join('');
     if (!title || !fullContent.trim()) return alert('タイトルと内容を入力してください');
 
@@ -171,14 +169,14 @@ export default function AdminPage() {
         newStampId = stampData.id;
       }
 
-      // 3. 手紙を登録（★修正：ページを結合して保存）
+      // 3. 手紙を登録
       const contentToSave = pages.join(PAGE_DELIMITER);
 
       const { error: dbError } = await supabase
         .from('letters')
         .insert([{ 
           title, 
-          spot_name: spotName || '名もなき場所', // 空ならデフォルト
+          spot_name: spotName || '名もなき場所', 
           content: contentToSave,
           lat, 
           lng,
@@ -205,15 +203,20 @@ export default function AdminPage() {
     }
   };
 
+  // ★修正：入力変更ハンドラ（NaNになっても地図を壊さないようにする）
   const handleLatChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
-    setLat(val);
-    setViewState(prev => ({ ...prev, latitude: val }));
+    setLat(val); // 入力欄のためにNaNもセットする
+    if (!isNaN(val) && val >= -90 && val <= 90) {
+      setViewState(prev => ({ ...prev, latitude: val }));
+    }
   };
   const handleLngChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
-    setLng(val);
-    setViewState(prev => ({ ...prev, longitude: val }));
+    setLng(val); // 入力欄のためにNaNもセットする
+    if (!isNaN(val) && val >= -180 && val <= 180) {
+      setViewState(prev => ({ ...prev, longitude: val }));
+    }
   };
 
   if (!mapToken) return <div>Map Token Error</div>;
@@ -224,10 +227,14 @@ export default function AdminPage() {
       {/* 左側：入力フォーム */}
       <div className="w-full md:w-1/3 p-6 bg-white shadow-lg z-10 overflow-y-auto flex flex-col gap-8 h-screen border-r border-gray-200">
         <div>
-          <h1 className="text-xl font-bold mb-4 text-bunko-ink border-b pb-2 flex items-center gap-2">
-             <IconAdminLetter className="w-8 h-8" />
-             運営用投稿フォーム
-          </h1>
+          <div className="flex justify-between items-center mb-4 border-b pb-2">
+            <h1 className="text-xl font-bold text-bunko-ink flex items-center gap-2">
+               <IconAdminLetter className="w-8 h-8" />
+               運営用投稿フォーム
+            </h1>
+            <Link href="/admin" className="text-xs text-gray-500 hover:text-green-700">← ダッシュボードへ</Link>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
             
             <div className="space-y-2">
@@ -236,7 +243,6 @@ export default function AdminPage() {
                 type="text" className="w-full p-2 border rounded text-sm" 
                 placeholder="タイトル" value={title} onChange={e => setTitle(e.target.value)} required 
               />
-              {/* 場所名は任意に変更 */}
               <input 
                 type="text" className="w-full p-2 border rounded text-sm" 
                 placeholder="場所の名前 (任意)" value={spotName} onChange={e => setSpotName(e.target.value)} 
@@ -252,7 +258,6 @@ export default function AdminPage() {
               />
             </div>
 
-            {/* ★修正：ページごとの入力フォーム */}
             <div>
               <label className="block text-xs font-bold text-gray-500 mb-2">手紙の内容</label>
               <div className="space-y-4">
@@ -297,7 +302,6 @@ export default function AdminPage() {
               )}
             </div>
 
-            {/* 切手作成フォーム */}
             <div className="bg-yellow-50 p-4 rounded border border-yellow-200">
                <label className="flex items-center gap-2 cursor-pointer mb-2">
                  <input 
@@ -334,7 +338,6 @@ export default function AdminPage() {
                )}
             </div>
 
-            {/* 公開設定 */}
             <div className="bg-orange-50 p-3 rounded border border-orange-200">
               <label className="block text-xs font-bold text-gray-600 mb-2">公開設定</label>
               <div className="flex gap-4 mb-2">
@@ -373,9 +376,9 @@ export default function AdminPage() {
           </form>
         </div>
 
-        {/* リスト */}
-        <div className="flex-1">
-          <h2 className="text-lg font-bold mb-4 text-gray-800 border-b pb-2">📂 設置済みリスト</h2>
+        {/* リスト（簡易表示） */}
+        <div className="flex-1 overflow-y-auto">
+          <h2 className="text-lg font-bold mb-4 text-gray-800 border-b pb-2">📂 最近の投稿</h2>
           <div className="space-y-2">
             {letters.map((letter) => (
               <div key={letter.id} className={`p-3 rounded border flex justify-between items-center ${letter.is_official ? 'bg-orange-50 border-orange-200' : 'bg-white'}`}>
@@ -388,7 +391,6 @@ export default function AdminPage() {
                     <div className="flex items-center gap-2">
                       <p className="font-bold text-sm text-gray-700">{letter.title}</p>
                       {letter.password && <span className="text-xs bg-gray-600 text-white px-1 rounded">🔒</span>}
-                      {letter.attached_stamp_id && <span className="text-xs bg-yellow-500 text-white px-1 rounded ml-1">🏵️切手</span>}
                     </div>
                   </div>
                 </div>
@@ -396,9 +398,6 @@ export default function AdminPage() {
                   <Link href={`/admin/edit/${letter.id}`} className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 font-bold">
                     編集
                   </Link>
-                  <button onClick={() => handleDelete(letter.id, letter.image_url)} className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200 font-bold">
-                    削除
-                  </button>
                 </div>
               </div>
             ))}
@@ -419,17 +418,23 @@ export default function AdminPage() {
         >
           <NavigationControl position="top-right" />
           <Marker 
-            latitude={lat} longitude={lng} anchor="bottom" draggable
+            // ★修正：NaNの時はviewState（地図の中心）を代わりに使ってクラッシュを防ぐ
+            latitude={!isNaN(lat) ? lat : viewState.latitude} 
+            longitude={!isNaN(lng) ? lng : viewState.longitude} 
+            anchor="bottom" 
+            draggable
             onDragEnd={(e) => { setLat(e.lngLat.lat); setLng(e.lngLat.lng); }}
           >
-            <div className="animate-bounce"><IconAdminLetter className="w-10 h-10 drop-shadow-lg" /></div>
+            {/* NaNのときは半透明にして「場所未定」感を出す */}
+            <div className={`animate-bounce ${isNaN(lat) ? 'opacity-50' : ''}`}>
+              <IconAdminLetter className="w-10 h-10 drop-shadow-lg" />
+            </div>
           </Marker>
+          
           {letters.map(l => (
             <Marker key={l.id} latitude={l.lat} longitude={l.lng} anchor="bottom" onClick={(e) => {e.originalEvent.stopPropagation(); router.push(`/admin/edit/${l.id}`)}}>
               <div className="hover:scale-125 transition-transform cursor-pointer drop-shadow-md relative">
                 {l.is_official ? <IconAdminLetter className="w-10 h-10" /> : <IconUserLetter className="w-10 h-10 opacity-70" />}
-                {l.password && <div className="absolute -top-1 -right-1 bg-white rounded-full p-0.5 shadow"><span className="text-[8px]">🔒</span></div>}
-                {l.attached_stamp_id && !l.password && <div className="absolute -top-1 -left-1 bg-white rounded-full p-0.5 shadow"><span className="text-[8px]">🏵️</span></div>}
               </div>
             </Marker>
           ))}
