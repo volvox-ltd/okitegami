@@ -15,6 +15,7 @@ import LetterModal from '@/components/LetterModal';
 import AboutModal from '@/components/AboutModal';
 import NicknameModal from '@/components/NicknameModal';
 import TutorialModal from '@/components/TutorialModal'; 
+import AddToHomeScreen from '@/components/AddToHomeScreen'; // ★追加
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
 
 const supabase = createClient(
@@ -67,6 +68,9 @@ export default function Home() {
   const [hasCentered, setHasCentered] = useState(false);
   
   const [isRetryingGPS, setIsRetryingGPS] = useState(false);
+
+  // ★追加：PWA案内用のState定義（ここが抜けていました！）
+  const [showPwaPrompt, setShowPwaPrompt] = useState(false);
 
   const [viewState, setViewState] = useState({
     latitude: 35.6288,
@@ -198,7 +202,7 @@ export default function Home() {
     );
   };
 
-  // ★変更：単なるbooleanではなく「一番近くにある通知対象の手紙」を特定する
+  // 一番近くにある通知対象の手紙を特定
   const nearestNotificationLetter = useMemo(() => {
     if (!userLocation) return null;
     
@@ -215,7 +219,7 @@ export default function Home() {
       
       const isMyPost = currentUser && currentUser.id === letter.user_id;
       const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
-      if (isMyPost || isAdmin) return; // 自分の手紙は通知しない
+      if (isMyPost || isAdmin) return; 
 
       const dist = getDistance(
         { latitude: userLocation.lat, longitude: userLocation.lng },
@@ -237,6 +241,24 @@ export default function Home() {
 
   const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   if (!mapToken) return <div>Map Token Error</div>;
+
+  // 訪問回数チェックとPWAプロンプト表示ロジック
+  useEffect(() => {
+    const checkVisitCount = () => {
+      const visitedCount = localStorage.getItem('visit_count');
+      const currentCount = visitedCount ? parseInt(visitedCount) : 0;
+      const nextCount = currentCount + 1;
+      
+      localStorage.setItem('visit_count', nextCount.toString());
+
+      // 2回目の訪問時のみ表示
+      if (nextCount === 2) {
+        setTimeout(() => setShowPwaPrompt(true), 3000);
+      }
+    };
+    
+    checkVisitCount();
+  }, []);
 
   return (
     <main className="w-full h-screen relative bg-[#f7f4ea]">
@@ -268,7 +290,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* ★修正：気配通知ポップ（地図のポップアップが出ている時は表示しない！） */}
+      {/* 気配通知ポップ（地図のポップアップが出ている時は表示しない！） */}
       {nearestNotificationLetter && !popupInfo && (
         <div 
           className="fixed right-0 top-32 z-40 animate-slideInRight"
@@ -284,7 +306,7 @@ export default function Home() {
           }}
         >
            <div className="bg-white/90 backdrop-blur-md p-3 pl-4 rounded-l-2xl shadow-lg border-y border-l border-gray-300 flex items-center gap-3 max-w-[180px] cursor-pointer hover:bg-white transition-colors">
-              <span className="text-xl animate-pulse"></span>
+              <span className="text-xl animate-pulse">✨</span>
               <div className="flex flex-col">
                 <span className="text-[10px] font-bold text-gray-400"></span>
                 <span className="text-xs font-bold text-gray-700 leading-tight">
@@ -346,7 +368,7 @@ export default function Home() {
               style={{ zIndex: isReachable ? 10 : isNear ? 5 : 1 }}
             >
               <div className="flex flex-col items-center group cursor-pointer">
-                {/* マーカー上の吹き出し（これもpopupInfoが出ている時は隠してもいいかもですが、小さいので残します） */}
+                {/* マーカー上の吹き出し */}
                 <div className={`bg-white/95 backdrop-blur px-2 py-1 rounded-sm shadow-sm text-[10px] mb-1 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border 
                   ${isReachable ? 'border-orange-500 text-orange-600' : isNear ? 'border-gray-400 text-gray-600' : 'border-bunko-gray/10 text-bunko-ink'}`}>
                    {letter.is_official ? '木林文庫の手紙' : (letter.nickname ? `${letter.nickname}さんの手紙` : '')}
@@ -406,8 +428,6 @@ export default function Home() {
                 const isMyPost = currentUser && currentUser.id === popupInfo.user_id;
 
                 const isReachable = (distance !== null && distance <= UNLOCK_DISTANCE) || isAdmin || isMyPost;
-                
-                // 救済エリア
                 const isReliefArea = distance !== null && distance > UNLOCK_DISTANCE && distance <= RELIEF_DISTANCE;
 
                 if (distance === null) return <p className="text-xs text-gray-400">現在地を確認中...</p>;
@@ -489,6 +509,13 @@ export default function Home() {
         <TutorialModal onClose={handleCloseTutorial} />
       )}
 
+      {/* PWAインストール案内（2回目訪問時） */}
+      <AddToHomeScreen 
+        isOpen={showPwaPrompt} 
+        onClose={() => setShowPwaPrompt(false)}
+        message="また来てくれてありがとうございます。ホーム画面に追加すると、すぐに地図を開けます。"
+      />
+
       <style jsx global>{`
         @keyframes slideInRight {
           from { transform: translateX(100%); opacity: 0; }
@@ -498,7 +525,6 @@ export default function Home() {
           animation: slideInRight 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
       `}</style>
-
     </main>
   );
 }

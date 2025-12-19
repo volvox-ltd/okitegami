@@ -8,6 +8,9 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import IconUserLetter from '@/components/IconUserLetter';
 import { NG_WORDS } from '@/utils/ngWords';
+// ★追加: 距離計算とPWA案内
+import { getDistance } from 'geolib';
+import AddToHomeScreen from '@/components/AddToHomeScreen';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,6 +21,9 @@ const PAGE_DELIMITER = '<<<PAGE>>>';
 const MAX_CHARS_PER_PAGE = 180;
 const MAX_PAGES = 10;
 
+// ★追加：手紙同士が最低限離れていなければならない距離（メートル）
+const MIN_DISTANCE = 30; 
+
 export default function PostPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
@@ -25,7 +31,10 @@ export default function PostPage() {
   
   const [isCompleted, setIsCompleted] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
-  const [isCopied, setIsCopied] = useState(false); // コピー完了フィードバック用
+  const [isCopied, setIsCopied] = useState(false);
+  
+  // ★追加: PWAプロンプト用
+  const [showPwaPrompt, setShowPwaPrompt] = useState(false);
 
   const [title, setTitle] = useState('');
   const [spotName, setSpotName] = useState('');
@@ -90,6 +99,35 @@ export default function PostPage() {
       return;
     }
 
+    // ★追加：近すぎる手紙がないかチェックする処理
+    try {
+      // 既存の手紙の座標だけ取得
+      const { data: existingLetters, error: fetchError } = await supabase
+        .from('letters')
+        .select('lat, lng');
+
+      if (fetchError) throw fetchError;
+
+      if (existingLetters) {
+        // どれか一つでも「近すぎる」ものがあるかチェック
+        const isTooClose = existingLetters.some(letter => {
+          const dist = getDistance(
+            { latitude: letter.lat, longitude: letter.lng },
+            { latitude: pinLocation.lat, longitude: pinLocation.lng }
+          );
+          return dist < MIN_DISTANCE;
+        });
+
+        if (isTooClose) {
+          alert(`この場所にはすでに誰かの手紙が置かれています。\n地図上のピンが重なってしまうため、\nここから${MIN_DISTANCE}mほど離れた場所に移動してください。`);
+          setIsLoading(false);
+          return; // 投稿を中断
+        }
+      }
+    } catch (e) {
+      console.error("重複チェックエラー", e);
+    }
+
     let publicUrl = null;
 
     if (imageFile) {
@@ -134,29 +172,29 @@ export default function PostPage() {
       alert('保存に失敗しました');
     } else {
       const baseUrl = window.location.origin;
-      // シンプルな位置情報付きURL
       const shareLink = `${baseUrl}/?lat=${pinLocation.lat}&lng=${pinLocation.lng}`;
       setShareUrl(shareLink);
       setIsCompleted(true);
+
+      // ★追加：完了画面の少し後にPWA案内を表示
+      setTimeout(() => setShowPwaPrompt(true), 2000);
     }
     
     setIsLoading(false);
   };
 
-  // LINEシェア機能
   const handleLineShare = () => {
     const shareText = `「${spotName || 'ある場所'}」に手紙を置きました。${isPrivate ? `\n🔑 合言葉：${password}` : ''}\n\n#おきてがみ`;
     const lineUrl = `https://line.me/R/msg/text/?${encodeURIComponent(shareText + '\n' + shareUrl)}`;
     window.open(lineUrl, '_blank');
   };
 
-  // クリップボードコピー機能
   const handleCopyLink = () => {
     const shareText = `「${spotName || 'ある場所'}」に手紙を置きました。${isPrivate ? `合言葉は「${password}」です。` : ''} #おきてがみ ${shareUrl}`;
     
     navigator.clipboard.writeText(shareText).then(() => {
       setIsCopied(true);
-      setTimeout(() => setIsCopied(false), 3000); // 3秒後に戻す
+      setTimeout(() => setIsCopied(false), 3000); 
     }).catch(err => {
       console.error('Copy failed', err);
       alert('コピーに失敗しました。URLを直接選択してコピーしてください。');
@@ -338,20 +376,22 @@ export default function PostPage() {
         </div>
       )}
 
-      {/* ★修正：3. 完了＆招待状シェア画面 */}
+      {/* 3. 完了＆招待状シェア画面 */}
       {isCompleted && (
         <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
           <div className="w-full max-w-sm relative">
             
-            {/* 招待状カード（デザイン） */}
             <div className="bg-[#fdfcf5] rounded-xl p-6 shadow-2xl relative border-4 border-white mb-6">
-              {/* 切手っぽい装飾 */}
+              <div className="absolute top-4 right-4 w-12 h-14 bg-red-50 border-2 border-dotted border-red-200 flex items-center justify-center rotate-3 shadow-sm">
+                <span className="text-[8px] text-red-300 font-bold">POST</span>
+              </div>
+              
               <div className="text-center mt-4">
                 <h3 className="font-serif text-lg font-bold text-bunko-ink mb-2 tracking-widest">
                   お手紙を置きました
                 </h3>
                 <div className="w-full h-px bg-gray-300 my-4 relative">
-                  <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 bg-[#fdfcf5] px-2 text-gray-400 text-xs"></div>
+                  <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 bg-[#fdfcf5] px-2 text-gray-400 text-xs">✉</div>
                 </div>
                 
                 <div className="space-y-2 font-serif text-sm text-gray-700">
@@ -370,9 +410,7 @@ export default function PostPage() {
               </div>
             </div>
 
-            {/* シェアアクション */}
             <div className="flex flex-col gap-3">
-              {/* LINEボタン */}
               <button 
                 onClick={handleLineShare}
                 className="w-full py-3.5 bg-[#06C755] text-white rounded-full font-bold shadow-lg hover:brightness-95 transition-all flex items-center justify-center gap-2"
@@ -381,7 +419,6 @@ export default function PostPage() {
                 LINEで招待状を送る
               </button>
 
-              {/* コピーボタン */}
               <button 
                 onClick={handleCopyLink}
                 className={`w-full py-3.5 rounded-full font-bold shadow-md transition-all flex items-center justify-center gap-2 border ${
@@ -412,6 +449,13 @@ export default function PostPage() {
           </div>
         </div>
       )}
+
+      {/* ★追加：PWAインストール案内（投稿完了時） */}
+      <AddToHomeScreen 
+        isOpen={showPwaPrompt} 
+        onClose={() => setShowPwaPrompt(false)}
+        message="いつでも手紙の場所を確認できるように、ホーム画面に追加しておきませんか？"
+      />
 
       <style jsx global>{`
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
