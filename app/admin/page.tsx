@@ -1,12 +1,9 @@
 'use client';
-import { compressImage } from '@/utils/compressImage';
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Map, { Marker, NavigationControl } from 'react-map-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
 import { createClient } from '@supabase/supabase-js';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-
+import imageCompression from 'browser-image-compression'; 
 import IconAdminLetter from '@/components/IconAdminLetter';
 import IconUserLetter from '@/components/IconUserLetter';
 
@@ -15,83 +12,93 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// ★仕様変更：ページ区切り設定
-const PAGE_DELIMITER = '<<<PAGE>>>';
-const MAX_CHARS_PER_PAGE = 180;
-const MAX_PAGES_ADMIN = 20; // 運営は20枚まで
-
-type Letter = {
-  id: string;
-  title: string;
-  lat: number;
-  lng: number;
-  image_url?: string;
-  is_official?: boolean;
-  password?: string | null;
-  attached_stamp_id?: number | null;
-};
-
-export default function AdminPage() {
+export default function AdminDashboard() {
   const router = useRouter();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'official' | 'users' | 'members' | 'stats' | 'create'>('official');
+
+  const [stats, setStats] = useState({ userCount: 0, letterCount: 0 });
+  const [letters, setLetters] = useState<any[]>([]);
+  const [profiles, setProfiles] = useState<any[]>([]);
   
-  const [title, setTitle] = useState('');
-  const [spotName, setSpotName] = useState('');
-  
-  // ★変更：content文字列ではなく、pages配列で管理
-  const [pages, setPages] = useState<string[]>(['']);
-
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  
-  const [isPrivate, setIsPrivate] = useState(false);
-  const [password, setPassword] = useState('');
-
-  const [hasStamp, setHasStamp] = useState(false);
-  const [stampName, setStampName] = useState('');
-  const [stampFile, setStampFile] = useState<File | null>(null);
-
-  const [lat, setLat] = useState(35.6288);
-  const [lng, setLng] = useState(139.6842);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const [letters, setLetters] = useState<Letter[]>([]);
-
-  const [viewState, setViewState] = useState({
-    latitude: 35.6288,
-    longitude: 139.6842,
-    zoom: 15
-  });
-
-  const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+  const [isCleaning, setIsCleaning] = useState(false);
+  const [cleanLog, setCleanLog] = useState<string>('');
 
   useEffect(() => {
-    fetchLetters();
-  }, []);
+    const checkAdmin = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/login');
+        return;
+      }
 
-  const fetchLetters = async () => {
-    const { data } = await supabase.from('letters').select('*').order('created_at', { ascending: false });
-    if (data) setLetters(data);
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_admin')
+        .eq('id', user.id)
+        .single();
+
+      if (!profile || !profile.is_admin) {
+        alert("管理者権限がありません");
+        router.push('/');
+        return;
+      }
+
+      setIsAdmin(true);
+      fetchData();
+      setLoading(false);
+    };
+    checkAdmin();
+  }, [router]);
+
+  const fetchData = async () => {
+    try {
+      // 1. 統計情報の取得
+      const { count: userCount } = await supabase.from('profiles').select('*', { count: 'exact', head: true });
+      const { count: letterCount } = await supabase.from('letters').select('*', { count: 'exact', head: true });
+      setStats({ userCount: userCount || 0, letterCount: letterCount || 0 });
+
+      // 2. 全投稿の取得
+      const { data: lettersData, error: letterError } = await supabase
+        .from('letters')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (letterError) throw letterError;
+
+      // 3. 全ユーザーの取得
+      const { data: profilesData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (profileError) throw profileError;
+
+      setProfiles(profilesData || []);
+
+      // 4. 手動で結合
+      if (lettersData && profilesData) {
+        const profileMap = new Map(profilesData.map((p: any) => [p.id, p]));
+        
+        const mergedLetters = lettersData.map((letter: any) => ({
+          ...letter,
+          profiles: profileMap.get(letter.user_id) || { nickname: '不明', email: null }
+        }));
+        
+        setLetters(mergedLetters);
+      } else {
+        setLetters(lettersData || []);
+      }
+
+    } catch (e: any) {
+      console.error("Data Fetch Error:", e);
+      alert("データの取得に失敗しました: " + e.message);
+    }
   };
 
-  // ★追加：ページ操作関数
-  const handlePageChange = (index: number, value: string) => {
-    if (value.length > MAX_CHARS_PER_PAGE) return;
-    const newPages = [...pages];
-    newPages[index] = value;
-    setPages(newPages);
-  };
-
-  const addPage = () => {
-    if (pages.length >= MAX_PAGES_ADMIN) return;
-    setPages([...pages, '']);
-  };
-
-  const removePage = (index: number) => {
-    const newPages = pages.filter((_, i) => i !== index);
-    setPages(newPages);
-  };
-
-  const handleDelete = async (id: string, imageUrl?: string) => {
-    if (!window.confirm('本当にこの手紙を削除しますか？')) return;
+  const handleDeletePost = async (id: string, imageUrl?: string) => {
+    if (!confirm('本当に削除しますか？')) return;
     try {
       if (imageUrl) {
         const fileName = imageUrl.split('/').pop();
@@ -100,341 +107,303 @@ export default function AdminPage() {
       const { error } = await supabase.from('letters').delete().eq('id', id);
       if (error) throw error;
       alert('削除しました');
-      fetchLetters();
-    } catch (error) {
-      console.error(error);
-      alert('削除に失敗しました');
+      fetchData();
+    } catch (e: any) {
+      alert('エラー: ' + e.message);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // ★修正：結合してチェック
-    const fullContent = pages.join('');
-    if (!title || !fullContent.trim()) return alert('タイトルと内容を入力してください');
-
-    if (isPrivate && !password) return alert('合言葉を入力してください');
-    if (hasStamp && (!stampName || !stampFile)) return alert('切手の名前と画像を指定してください');
-
-    setIsSubmitting(true);
+  const handleImageCleanup = async () => {
+    if (!confirm('48時間以上経過した画像の画質を落として軽量化しますか？')) return;
+    setIsCleaning(true);
+    setCleanLog('開始します...\n');
 
     try {
-      // 1. 画像アップロード
-      let letterImageUrl = null;
-      if (imageFile) {
-        const compressedFile = await compressImage(imageFile);
-        const fileName = `letter_${Date.now()}.jpg`;
-        const { error: upErr } = await supabase.storage.from('letter-images').upload(fileName, compressedFile, { contentType: 'image/jpeg' });
-        if (upErr) throw upErr;
-        const { data } = supabase.storage.from('letter-images').getPublicUrl(fileName);
-        letterImageUrl = data.publicUrl;
-      }
+      const now = new Date();
+      const twoDaysAgo = new Date(now.getTime() - (48 * 60 * 60 * 1000));
 
-      // 2. 切手アップロード
-      let newStampId = null;
-      if (hasStamp && stampFile) {
-        let fileToUpload = stampFile;
-        let fileExt = 'jpg';
-        let mimeType = 'image/jpeg';
+      const targets = letters.filter(l => 
+        !l.is_official &&
+        l.image_url && 
+        new Date(l.created_at) < twoDaysAgo &&
+        !l.image_url.includes('archive') 
+      );
 
-        if (stampFile.type === 'image/png') {
-          fileToUpload = stampFile;
-          fileExt = 'png';
-          mimeType = 'image/png';
-        } else {
-          fileToUpload = await compressImage(stampFile);
-          fileExt = 'jpg';
-          mimeType = 'image/jpeg';
-        }
+      setCleanLog(prev => prev + `対象件数: ${targets.length}件\n`);
+
+      for (const letter of targets) {
+        setCleanLog(prev => prev + `処理中: ${letter.title}...\n`);
         
-        const stampFileName = `stamp_${Date.now()}.${fileExt}`;
-        const { error: stampUpErr } = await supabase.storage
-          .from('stamp-images')
-          .upload(stampFileName, fileToUpload, { contentType: mimeType });
+        try {
+          const response = await fetch(letter.image_url);
+          const blob = await response.blob();
+          const file = new File([blob], "temp.jpg", { type: "image/jpeg" });
+
+          const options = {
+            maxSizeMB: 0.03, // 30KB以下
+            maxWidthOrHeight: 400,
+            useWebWorker: true,
+            fileType: 'image/webp'
+          };
+          const compressedFile = await imageCompression(file, options);
           
-        if (stampUpErr) throw stampUpErr;
-        
-        const { data: stampUrlData } = supabase.storage.from('stamp-images').getPublicUrl(stampFileName);
+          const fileName = `archive/${Date.now()}_${Math.random().toString(36).substring(7)}.webp`;
+          
+          const { error: uploadError } = await supabase.storage
+            .from('letter-images')
+            .upload(fileName, compressedFile);
 
-        const { data: stampData, error: stampDbErr } = await supabase
-          .from('stamps')
-          .insert({
-            name: stampName,
-            image_url: stampUrlData.publicUrl,
-            description: `${spotName}の記念切手`
-          })
-          .select()
-          .single();
-        
-        if (stampDbErr) throw stampDbErr;
-        newStampId = stampData.id;
+          if (uploadError) throw uploadError;
+
+          const publicUrl = supabase.storage.from('letter-images').getPublicUrl(fileName).data.publicUrl;
+          
+          const oldName = letter.image_url.split('/').pop();
+          if (oldName) await supabase.storage.from('letter-images').remove([oldName]);
+
+          await supabase
+            .from('letters')
+            .update({ image_url: publicUrl })
+            .eq('id', letter.id);
+
+          setCleanLog(prev => prev + `完了\n`);
+
+        } catch (err) {
+          console.error(err);
+          setCleanLog(prev => prev + `エラー\n`);
+        }
       }
-
-      // 3. 手紙を登録（★修正：ページを結合して保存）
-      const contentToSave = pages.join(PAGE_DELIMITER);
-
-      const { error: dbError } = await supabase
-        .from('letters')
-        .insert([{ 
-          title, 
-          spot_name: spotName || '名もなき場所', // 空ならデフォルト
-          content: contentToSave,
-          lat, 
-          lng,
-          image_url: letterImageUrl,
-          is_official: true,
-          password: isPrivate ? password : null,
-          attached_stamp_id: newStampId
-        }]);
-
-      if (dbError) throw dbError;
-
-      alert('【運営】として手紙を置きました！');
       
-      // リセット
-      setTitle(''); setSpotName(''); setPages(['']); setImageFile(null);
-      setIsPrivate(false); setPassword('');
-      setHasStamp(false); setStampName(''); setStampFile(null);
-      fetchLetters();
+      setCleanLog(prev => prev + '完了しました\n');
+      fetchData();
 
-    } catch (error: any) {
-      alert('エラー: ' + error.message);
+    } catch (e: any) {
+      alert('エラー: ' + e.message);
     } finally {
-      setIsSubmitting(false);
+      setIsCleaning(false);
     }
   };
 
-  const handleLatChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    setLat(val);
-    setViewState(prev => ({ ...prev, latitude: val }));
-  };
-  const handleLngChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    setLng(val);
-    setViewState(prev => ({ ...prev, longitude: val }));
-  };
+  if (loading) return <div className="p-10 text-center">Admin Checking...</div>;
 
-  if (!mapToken) return <div>Map Token Error</div>;
+  const officialLetters = letters.filter(l => l.is_official);
+  const userLetters = letters.filter(l => !l.is_official);
 
   return (
-    <main className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans">
+    <div className="min-h-screen bg-gray-100 p-4 md:p-8 font-sans text-gray-800">
       
-      {/* 左側：入力フォーム */}
-      <div className="w-full md:w-1/3 p-6 bg-white shadow-lg z-10 overflow-y-auto flex flex-col gap-8 h-screen border-r border-gray-200">
-        <div>
-          <h1 className="text-xl font-bold mb-4 text-bunko-ink border-b pb-2 flex items-center gap-2">
-             <IconAdminLetter className="w-8 h-8" />
-             運営用投稿フォーム
+      <div className="max-w-7xl mx-auto">
+        <div className="flex justify-between items-center mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+          <h1 className="text-xl font-bold text-bunko-ink flex items-center gap-2">
+            <span className="text-2xl">👮‍♂️</span> 管理局ダッシュボード
           </h1>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            
-            <div className="space-y-2">
-              <label className="block text-xs font-bold text-gray-500">基本情報</label>
-              <input 
-                type="text" className="w-full p-2 border rounded text-sm" 
-                placeholder="タイトル" value={title} onChange={e => setTitle(e.target.value)} required 
-              />
-              {/* 場所名は任意に変更 */}
-              <input 
-                type="text" className="w-full p-2 border rounded text-sm" 
-                placeholder="場所の名前 (任意)" value={spotName} onChange={e => setSpotName(e.target.value)} 
-              />
-            </div>
-            
-            <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1">手紙の写真 (任意)</label>
-              <input 
-                type="file" accept="image/*"
-                className="w-full text-sm text-gray-500"
-                onChange={(e) => e.target.files?.[0] && setImageFile(e.target.files[0])}
-              />
-            </div>
-
-            {/* ★修正：ページごとの入力フォーム */}
-            <div>
-              <label className="block text-xs font-bold text-gray-500 mb-2">手紙の内容</label>
-              <div className="space-y-4">
-                {pages.map((pageContent, index) => (
-                  <div key={index} className="relative">
-                    <div className="absolute -top-2.5 left-2 bg-white px-2 text-[10px] font-bold text-gray-400 border border-gray-200 rounded-full">
-                       {index + 1} / {MAX_PAGES_ADMIN}枚目
-                    </div>
-                    <textarea 
-                      className="w-full p-3 pt-4 border rounded h-32 text-sm resize-none font-serif leading-relaxed"
-                      placeholder="手紙の内容" 
-                      value={pageContent} 
-                      onChange={e => handlePageChange(index, e.target.value)} 
-                      maxLength={MAX_CHARS_PER_PAGE}
-                    />
-                    <div className={`text-[10px] text-right mt-1 font-bold ${pageContent.length >= MAX_CHARS_PER_PAGE ? 'text-red-500' : 'text-gray-400'}`}>
-                      {pageContent.length} / {MAX_CHARS_PER_PAGE} 文字
-                    </div>
-                    {pages.length > 1 && (
-                      <button 
-                        type="button"
-                        onClick={() => removePage(index)}
-                        className="absolute top-2 right-2 text-gray-300 hover:text-red-400"
-                      >
-                        🗑️
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-              
-              {pages.length < MAX_PAGES_ADMIN ? (
-                <button 
-                  type="button"
-                  onClick={addPage}
-                  className="w-full mt-3 py-2 border-2 border-dashed border-gray-300 rounded text-gray-500 text-xs font-bold hover:bg-gray-50 hover:border-green-400 transition-colors"
-                >
-                  ＋ 便箋を追加する（あと{MAX_PAGES_ADMIN - pages.length}枚）
-                </button>
-              ) : (
-                <p className="text-xs text-red-500 text-center mt-2">※これ以上追加できません</p>
-              )}
-            </div>
-
-            {/* 切手作成フォーム */}
-            <div className="bg-yellow-50 p-4 rounded border border-yellow-200">
-               <label className="flex items-center gap-2 cursor-pointer mb-2">
-                 <input 
-                   type="checkbox" 
-                   checked={hasStamp} 
-                   onChange={() => setHasStamp(!hasStamp)}
-                   className="w-4 h-4 accent-orange-600"
-                 />
-                 <span className="text-sm font-bold text-yellow-900">🎁 この手紙専用の切手を作る</span>
-               </label>
-
-               {hasStamp && (
-                 <div className="pl-4 border-l-2 border-yellow-300 space-y-3 mt-2">
-                   <div>
-                     <input 
-                       type="text" 
-                       placeholder="切手の名前 (例: 古井戸の切手)" 
-                       className="w-full p-2 border rounded text-sm"
-                       value={stampName}
-                       onChange={e => setStampName(e.target.value)}
-                     />
-                   </div>
-                   <div>
-                     <label className="block text-[10px] text-gray-500 mb-1">
-                       画像 (PNGなら背景透過されます)
-                     </label>
-                     <input 
-                       type="file" accept="image/*"
-                       className="w-full text-xs text-gray-600"
-                       onChange={(e) => e.target.files?.[0] && setStampFile(e.target.files[0])}
-                     />
-                   </div>
-                 </div>
-               )}
-            </div>
-
-            {/* 公開設定 */}
-            <div className="bg-orange-50 p-3 rounded border border-orange-200">
-              <label className="block text-xs font-bold text-gray-600 mb-2">公開設定</label>
-              <div className="flex gap-4 mb-2">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" checked={!isPrivate} onChange={() => setIsPrivate(false)} className="accent-orange-600"/>
-                  <span className="text-sm">誰でもOK</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" checked={isPrivate} onChange={() => setIsPrivate(true)} className="accent-orange-600"/>
-                  <span className="text-sm">合言葉</span>
-                </label>
-              </div>
-              {isPrivate && (
-                <input 
-                  type="text" value={password} onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-white border border-gray-300 rounded p-2 text-sm"
-                  placeholder="合言葉を入力"
-                />
-              )}
-            </div>
-
-            <div className="bg-gray-100 p-2 rounded text-xs text-gray-500">
-               地図ピンをドラッグして位置調整
-               <div className="flex gap-2 mt-1">
-                 <input type="number" step="any" className="w-1/2 p-1 border rounded" value={lat} onChange={handleLatChange} />
-                 <input type="number" step="any" className="w-1/2 p-1 border rounded" value={lng} onChange={handleLngChange} />
-               </div>
-            </div>
-
-            <button 
-              type="submit" disabled={isSubmitting}
-              className="w-full bg-orange-600 text-white font-bold py-3 rounded hover:bg-orange-700 disabled:bg-gray-300 shadow-md transition-colors"
-            >
-              {isSubmitting ? 'アップロード中...' : '投稿する'}
-            </button>
-          </form>
+          <Link href="/" className="text-sm font-bold text-green-700 hover:underline">
+            アプリに戻る
+          </Link>
         </div>
 
-        {/* リスト */}
-        <div className="flex-1">
-          <h2 className="text-lg font-bold mb-4 text-gray-800 border-b pb-2">📂 設置済みリスト</h2>
-          <div className="space-y-2">
-            {letters.map((letter) => (
-              <div key={letter.id} className={`p-3 rounded border flex justify-between items-center ${letter.is_official ? 'bg-orange-50 border-orange-200' : 'bg-white'}`}>
-                <div 
-                  className="cursor-pointer flex items-center gap-2"
-                  onClick={() => setViewState(prev => ({...prev, latitude: letter.lat, longitude: letter.lng, zoom: 16}))}
-                >
-                  <span title={letter.is_official ? "運営" : "ユーザー"}>{letter.is_official ? '👑' : '👤'}</span>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-bold text-sm text-gray-700">{letter.title}</p>
-                      {letter.password && <span className="text-xs bg-gray-600 text-white px-1 rounded">🔒</span>}
-                      {letter.attached_stamp_id && <span className="text-xs bg-yellow-500 text-white px-1 rounded ml-1">🏵️切手</span>}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Link href={`/admin/edit/${letter.id}`} className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 font-bold">
-                    編集
-                  </Link>
-                  <button onClick={() => handleDelete(letter.id, letter.image_url)} className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200 font-bold">
-                    削除
-                  </button>
-                </div>
-              </div>
-            ))}
+        {/* タブメニュー（文字色を黒に調整） */}
+        <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-300 pb-2">
+          <TabButton label="運営の投稿" isActive={activeTab === 'official'} onClick={() => setActiveTab('official')} icon="👑" count={officialLetters.length} />
+          <TabButton label="みんなの投稿" isActive={activeTab === 'users'} onClick={() => setActiveTab('users')} icon="👤" count={userLetters.length} />
+          <TabButton label="ユーザー管理" isActive={activeTab === 'members'} onClick={() => setActiveTab('members')} icon="list" count={stats.userCount} />
+          <TabButton label="統計" isActive={activeTab === 'stats'} onClick={() => setActiveTab('stats')} icon="📊" />
+          <TabButton label="新規作成" isActive={activeTab === 'create'} onClick={() => setActiveTab('create')} icon="✏️" color="bg-green-700 text-white" />
+        </div>
+
+        {/* === 1. 運営の投稿 === */}
+        {activeTab === 'official' && (
+          <div className="space-y-4">
+            <h2 className="font-bold text-lg">運営からの手紙一覧</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {officialLetters.map(letter => (
+                <LetterCard key={letter.id} letter={letter} onDelete={handleDeletePost} />
+              ))}
+            </div>
           </div>
-        </div>
-      </div>
+        )}
 
-      {/* 右側：地図 */}
-      <div className="w-full md:w-2/3 h-[50vh] md:h-screen relative">
-        <Map
-          {...viewState}
-          onMove={evt => setViewState(evt.viewState)}
-          style={{ width: '100%', height: '100%' }}
-          mapStyle="mapbox://styles/mapbox/streets-v12"
-          mapboxAccessToken={mapToken}
-          cursor="crosshair"
-          onClick={(e) => { setLat(e.lngLat.lat); setLng(e.lngLat.lng); }}
-        >
-          <NavigationControl position="top-right" />
-          <Marker 
-            latitude={lat} longitude={lng} anchor="bottom" draggable
-            onDragEnd={(e) => { setLat(e.lngLat.lat); setLng(e.lngLat.lng); }}
-          >
-            <div className="animate-bounce"><IconAdminLetter className="w-10 h-10 drop-shadow-lg" /></div>
-          </Marker>
-          {letters.map(l => (
-            <Marker key={l.id} latitude={l.lat} longitude={l.lng} anchor="bottom" onClick={(e) => {e.originalEvent.stopPropagation(); router.push(`/admin/edit/${l.id}`)}}>
-              <div className="hover:scale-125 transition-transform cursor-pointer drop-shadow-md relative">
-                {l.is_official ? <IconAdminLetter className="w-10 h-10" /> : <IconUserLetter className="w-10 h-10 opacity-70" />}
-                {l.password && <div className="absolute -top-1 -right-1 bg-white rounded-full p-0.5 shadow"><span className="text-[8px]">🔒</span></div>}
-                {l.attached_stamp_id && !l.password && <div className="absolute -top-1 -left-1 bg-white rounded-full p-0.5 shadow"><span className="text-[8px]">🏵️</span></div>}
+        {/* === 2. みんなの投稿 === */}
+        {activeTab === 'users' && (
+          <div className="space-y-6">
+            
+            <div className="bg-orange-50 border border-orange-200 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4">
+              <div>
+                <h3 className="font-bold text-orange-800 text-sm">🧹 画像アーカイブ軽量化（お掃除）</h3>
+                <p className="text-xs text-orange-600 mt-1">48時間経過した画像の画質を落とし、容量を節約します。</p>
               </div>
-            </Marker>
-          ))}
-        </Map>
+              <button 
+                onClick={handleImageCleanup}
+                disabled={isCleaning}
+                className="bg-orange-600 text-white px-6 py-2 rounded-lg font-bold text-xs hover:bg-orange-700 disabled:bg-gray-400 shadow-sm whitespace-nowrap"
+              >
+                {isCleaning ? 'お掃除中...' : 'お掃除実行'}
+              </button>
+            </div>
+            {cleanLog && (
+              <pre className="bg-black text-green-400 p-3 rounded text-[10px] h-24 overflow-y-scroll border border-gray-700">
+                {cleanLog}
+              </pre>
+            )}
+
+            <h2 className="font-bold text-lg">ユーザーの投稿一覧</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {userLetters.map(letter => (
+                <LetterCard key={letter.id} letter={letter} onDelete={handleDeletePost} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* === 3. ユーザー管理 === */}
+        {activeTab === 'members' && (
+          <div className="bg-white rounded-xl shadow overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm text-left">
+                <thead className="bg-gray-100 text-gray-600 border-b">
+                  <tr>
+                    <th className="p-3 whitespace-nowrap">登録日</th>
+                    <th className="p-3">ニックネーム</th>
+                    <th className="p-3">Email</th>
+                    <th className="p-3">ID</th>
+                    <th className="p-3">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {profiles.map((profile) => (
+                    <tr key={profile.id} className="border-b hover:bg-gray-50">
+                      <td className="p-3 text-xs text-gray-500 whitespace-nowrap">{new Date(profile.created_at).toLocaleDateString()}</td>
+                      <td className="p-3 font-bold">{profile.nickname}</td>
+                      <td className="p-3 text-xs text-gray-500">{profile.email || '-'}</td>
+                      <td className="p-3 text-[10px] text-gray-400 font-mono">{profile.id}</td>
+                      <td className="p-3">
+                        <button onClick={() => alert('実装待ち')} className="text-red-500 hover:underline text-xs bg-red-50 px-2 py-1 rounded">BAN</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* === 4. 統計 === */}
+        {activeTab === 'stats' && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white p-6 rounded-2xl shadow-sm text-center border border-gray-100">
+              <h3 className="text-xs font-bold text-gray-400 mb-1">総ユーザー数</h3>
+              <p className="text-3xl font-bold text-blue-600">{stats.userCount}</p>
+            </div>
+            <div className="bg-white p-6 rounded-2xl shadow-sm text-center border border-gray-100">
+              <h3 className="text-xs font-bold text-gray-400 mb-1">総投稿数</h3>
+              <p className="text-3xl font-bold text-orange-500">{stats.letterCount}</p>
+            </div>
+            <div className="bg-white p-6 rounded-2xl shadow-sm text-center border border-gray-100">
+              <h3 className="text-xs font-bold text-gray-400 mb-1">運営投稿</h3>
+              <p className="text-3xl font-bold text-yellow-600">{officialLetters.length}</p>
+            </div>
+            <div className="bg-white p-6 rounded-2xl shadow-sm text-center border border-gray-100">
+              <h3 className="text-xs font-bold text-gray-400 mb-1">ユーザー投稿</h3>
+              <p className="text-3xl font-bold text-green-600">{userLetters.length}</p>
+            </div>
+          </div>
+        )}
+
+        {/* === 5. 新規作成 === */}
+        {activeTab === 'create' && (
+          <div className="bg-white p-8 rounded-xl shadow-sm text-center">
+            <h2 className="text-lg font-bold mb-4">公式手紙を投稿する</h2>
+            <p className="text-sm text-gray-500 mb-6">
+              以前の管理者用投稿画面を開きます。
+            </p>
+            <Link 
+              href="/admin/create" 
+              className="inline-block bg-green-700 text-white px-8 py-3 rounded-full font-bold hover:bg-green-800 shadow-lg transition-transform hover:scale-105"
+            >
+              投稿画面を開く 🚀
+            </Link>
+          </div>
+        )}
+
       </div>
-    </main>
+    </div>
   );
 }
+
+// --- サブコンポーネント ---
+
+// ★修正：アクティブ時の色を黒文字（bg-gray-800 text-white ではなく、bg-gray-200 text-black border-black 等）に変更
+const TabButton = ({ label, isActive, onClick, icon, count, color }: any) => (
+  <button 
+    onClick={onClick} 
+    className={`px-4 py-2 rounded-full text-sm font-bold transition-all flex items-center gap-2 ${
+      isActive 
+      ? (color || 'bg-gray-800 text-white shadow-md')  // 視認性を考慮して濃いグレー背景+白文字に変更（あるいは bg-white text-black border-2 border-black でも可）
+      : 'bg-white text-gray-500 hover:bg-gray-100 border border-gray-200'
+    }`}
+  >
+    <span>{icon}</span>
+    {label}
+    {count !== undefined && <span className="ml-1 text-xs opacity-70 bg-white/20 px-1.5 rounded-full">{count}</span>}
+  </button>
+);
+
+const LetterCard = ({ letter, onDelete }: any) => {
+  const isExpired = !letter.is_official && (new Date().getTime() - new Date(letter.created_at).getTime()) / (1000 * 60 * 60) > 48;
+  
+  return (
+    <div className={`p-4 rounded-xl border flex flex-col gap-3 shadow-sm transition-shadow hover:shadow-md ${letter.is_official ? 'bg-yellow-50 border-yellow-200' : 'bg-white border-gray-200'}`}>
+      
+      <div className="flex justify-between items-start">
+        <div className="flex items-center gap-2">
+          {letter.is_official ? <IconAdminLetter className="w-8 h-8" /> : <IconUserLetter className="w-8 h-8 text-gray-400" />}
+          <div>
+            <h3 className="font-bold text-sm text-gray-800 line-clamp-1">{letter.title}</h3>
+            <p className="text-[10px] text-gray-400">
+              {new Date(letter.created_at).toLocaleDateString()} 
+              <span className="ml-2">{new Date(letter.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+            </p>
+          </div>
+        </div>
+        {/* ★修正：運営投稿には「掲載中」などを出さず、ユーザー投稿の期限切れのみ表示、または運営は「公式」バッジにする */}
+        {letter.is_official ? (
+           <span className="text-[10px] bg-yellow-100 text-yellow-700 px-2 py-1 rounded font-bold border border-yellow-200">公式</span>
+        ) : (
+           isExpired ? <span className="text-[10px] bg-gray-200 text-gray-500 px-2 py-1 rounded font-bold">期限切れ</span> : <span className="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded font-bold">掲載中</span>
+        )}
+      </div>
+
+      <div className="text-xs text-gray-600 bg-white/50 p-2 rounded border border-gray-100 h-16 overflow-hidden">
+        {letter.content}
+      </div>
+
+      {letter.image_url && (
+        <div className="text-[10px] text-blue-500 flex items-center gap-1">
+          📷 画像あり {letter.image_url.includes('archive') && <span className="text-orange-500">(圧縮済)</span>}
+        </div>
+      )}
+
+      {/* ★修正：User名の横の () を email がある時だけ表示 */}
+      {!letter.is_official && (
+        <div className="text-[10px] text-gray-400 border-t pt-2 mt-auto">
+          User: {letter.profiles?.nickname || '不明'} 
+          {letter.profiles?.email && <span className="ml-1">({letter.profiles.email})</span>}
+        </div>
+      )}
+
+      <div className="flex gap-2 mt-2 pt-2 border-t border-gray-100">
+        <Link 
+          href={`/admin/edit/${letter.id}`} 
+          className="flex-1 text-center text-xs bg-blue-50 text-blue-600 py-2 rounded hover:bg-blue-100 font-bold"
+        >
+          編集
+        </Link>
+        <button 
+          onClick={() => onDelete(letter.id, letter.image_url)} 
+          className="flex-1 text-center text-xs bg-red-50 text-red-600 py-2 rounded hover:bg-red-100 font-bold"
+        >
+          削除
+        </button>
+      </div>
+    </div>
+  );
+};
