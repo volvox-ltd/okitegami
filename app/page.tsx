@@ -306,7 +306,7 @@ export default function Home() {
           }}
         >
            <div className="bg-white/90 backdrop-blur-md p-3 pl-4 rounded-l-2xl shadow-lg border-y border-l border-gray-300 flex items-center gap-3 max-w-[180px] cursor-pointer hover:bg-white transition-colors">
-              <span className="text-xl animate-pulse">✨</span>
+              <span className="text-xl animate-pulse"></span>
               <div className="flex flex-col">
                 <span className="text-[10px] font-bold text-gray-400"></span>
                 <span className="text-xs font-bold text-gray-700 leading-tight">
