@@ -15,7 +15,7 @@ import LetterModal from '@/components/LetterModal';
 import AboutModal from '@/components/AboutModal';
 import NicknameModal from '@/components/NicknameModal';
 import TutorialModal from '@/components/TutorialModal'; 
-import AddToHomeScreen from '@/components/AddToHomeScreen'; // ★追加: インポート漏れ修正
+import AddToHomeScreen from '@/components/AddToHomeScreen';
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
 
 const supabase = createClient(
@@ -69,7 +69,7 @@ export default function Home() {
   
   const [isRetryingGPS, setIsRetryingGPS] = useState(false);
 
-  // ★追加：PWA案内用のState定義
+  // PWA案内用のState定義
   const [showPwaPrompt, setShowPwaPrompt] = useState(false);
 
   const [viewState, setViewState] = useState({
@@ -202,16 +202,14 @@ export default function Home() {
     );
   };
 
-  // 一番近くにある通知対象の手紙を特定
-  const nearestNotificationLetter = useMemo(() => {
+  // ★修正1：ジェネリクス <Letter | null> を追加して型を明示
+  const nearestNotificationLetter = useMemo<Letter | null>(() => {
     if (!userLocation) return null;
     
-    // ★修正: ここで型を明示して、TSが「never」と誤認するのを防ぐ
     let nearest: Letter | null = null;
     let minDist = Infinity;
 
     letters.forEach(letter => {
-      // フィルタリング
       if (!letter.is_official && !showUserPosts) return;
       if (!letter.is_official && letter.created_at) {
          const diff = (new Date().getTime() - new Date(letter.created_at).getTime()) / (1000 * 60 * 60);
@@ -227,7 +225,6 @@ export default function Home() {
         { latitude: letter.lat, longitude: letter.lng }
       );
       
-      // 条件：300m以内 かつ 50mより遠い（まだ開けない）
       const isReachable = dist <= UNLOCK_DISTANCE;
       const isNear = dist <= NOTIFICATION_DISTANCE && !isReachable;
 
@@ -252,7 +249,6 @@ export default function Home() {
       
       localStorage.setItem('visit_count', nextCount.toString());
 
-      // 2回目の訪問時のみ表示
       if (nextCount === 2) {
         setTimeout(() => setShowPwaPrompt(true), 3000);
       }
@@ -296,14 +292,15 @@ export default function Home() {
         <div 
           className="fixed right-0 top-32 z-40 animate-slideInRight"
           onClick={() => {
-            // ★修正: TypeScriptガード（ここで存在チェックをしてエラーを防ぐ）
-            if (!nearestNotificationLetter) return;
+            // ★修正2：ローカル変数に一度入れることで、TypeScriptの「未定義かも？」という懸念を払拭する
+            const targetLetter = nearestNotificationLetter;
+            if (!targetLetter) return;
 
-            setPopupInfo(nearestNotificationLetter);
+            setPopupInfo(targetLetter);
             setViewState(prev => ({
               ...prev, 
-              latitude: nearestNotificationLetter.lat, 
-              longitude: nearestNotificationLetter.lng, 
+              latitude: targetLetter.lat, 
+              longitude: targetLetter.lng, 
               zoom: 16
             }));
           }}
@@ -371,7 +368,6 @@ export default function Home() {
               style={{ zIndex: isReachable ? 10 : isNear ? 5 : 1 }}
             >
               <div className="flex flex-col items-center group cursor-pointer">
-                {/* マーカー上の吹き出し */}
                 <div className={`bg-white/95 backdrop-blur px-2 py-1 rounded-sm shadow-sm text-[10px] mb-1 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border 
                   ${isReachable ? 'border-orange-500 text-orange-600' : isNear ? 'border-gray-400 text-gray-600' : 'border-bunko-gray/10 text-bunko-ink'}`}>
                    {letter.is_official ? '木林文庫の手紙' : (letter.nickname ? `${letter.nickname}さんの手紙` : '')}
