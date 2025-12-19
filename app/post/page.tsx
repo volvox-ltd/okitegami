@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import IconUserLetter from '@/components/IconUserLetter';
 import { NG_WORDS } from '@/utils/ngWords';
-// ★追加: 距離計算とPWA案内
+// 距離計算とPWA案内
 import { getDistance } from 'geolib';
 import AddToHomeScreen from '@/components/AddToHomeScreen';
 
@@ -18,10 +18,11 @@ const supabase = createClient(
 );
 
 const PAGE_DELIMITER = '<<<PAGE>>>';
-const MAX_CHARS_PER_PAGE = 180;
+// ★変更：140文字に制限
+const MAX_CHARS_PER_PAGE = 140;
 const MAX_PAGES = 10;
 
-// ★追加：手紙同士が最低限離れていなければならない距離（メートル）
+// 手紙同士が最低限離れていなければならない距離（メートル）
 const MIN_DISTANCE = 30; 
 
 export default function PostPage() {
@@ -33,7 +34,7 @@ export default function PostPage() {
   const [shareUrl, setShareUrl] = useState('');
   const [isCopied, setIsCopied] = useState(false);
   
-  // ★追加: PWAプロンプト用
+  // PWAプロンプト用
   const [showPwaPrompt, setShowPwaPrompt] = useState(false);
 
   const [title, setTitle] = useState('');
@@ -99,9 +100,8 @@ export default function PostPage() {
       return;
     }
 
-    // ★追加：近すぎる手紙がないかチェックする処理
+    // 近すぎる手紙がないかチェックする処理
     try {
-      // 既存の手紙の座標だけ取得
       const { data: existingLetters, error: fetchError } = await supabase
         .from('letters')
         .select('lat, lng');
@@ -109,7 +109,6 @@ export default function PostPage() {
       if (fetchError) throw fetchError;
 
       if (existingLetters) {
-        // どれか一つでも「近すぎる」ものがあるかチェック
         const isTooClose = existingLetters.some(letter => {
           const dist = getDistance(
             { latitude: letter.lat, longitude: letter.lng },
@@ -176,7 +175,7 @@ export default function PostPage() {
       setShareUrl(shareLink);
       setIsCompleted(true);
 
-      // ★追加：完了画面の少し後にPWA案内を表示
+      // 完了画面の少し後にPWA案内を表示
       setTimeout(() => setShowPwaPrompt(true), 2000);
     }
     
@@ -206,7 +205,6 @@ export default function PostPage() {
   return (
     <div className="relative w-full h-screen overflow-hidden bg-gray-100">
       
-      {/* 1. 地図エリア */}
       <div className="absolute inset-0 z-0">
         {mapToken && (
           <Map
@@ -239,7 +237,6 @@ export default function PostPage() {
         </div>
       )}
 
-      {/* 2. 投稿フォームエリア（完了時は非表示） */}
       {!isCompleted && (
         <div 
           className={`absolute bottom-0 left-0 w-full bg-white rounded-t-3xl z-20 shadow-[0_-5px_20px_rgba(0,0,0,0.15)] transition-all duration-300 ease-in-out flex flex-col ${
@@ -376,18 +373,21 @@ export default function PostPage() {
         </div>
       )}
 
-      {/* 3. 完了＆招待状シェア画面 */}
       {isCompleted && (
         <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
           <div className="w-full max-w-sm relative">
             
-            <div className="bg-[#fdfcf5] rounded-xl p-6 shadow-2xl relative border-4 border-white mb-6">              
+            <div className="bg-[#fdfcf5] rounded-xl p-6 shadow-2xl relative border-4 border-white mb-6">
+              <div className="absolute top-4 right-4 w-12 h-14 bg-red-50 border-2 border-dotted border-red-200 flex items-center justify-center rotate-3 shadow-sm">
+                <span className="text-[8px] text-red-300 font-bold">POST</span>
+              </div>
+              
               <div className="text-center mt-4">
                 <h3 className="font-serif text-lg font-bold text-bunko-ink mb-2 tracking-widest">
                   お手紙を置きました
                 </h3>
                 <div className="w-full h-px bg-gray-300 my-4 relative">
-                  <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 bg-[#fdfcf5] px-2 text-gray-400 text-xs"></div>
+                  <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 bg-[#fdfcf5] px-2 text-gray-400 text-xs">✉</div>
                 </div>
                 
                 <div className="space-y-2 font-serif text-sm text-gray-700">
@@ -446,7 +446,6 @@ export default function PostPage() {
         </div>
       )}
 
-      {/* ★追加：PWAインストール案内（投稿完了時） */}
       <AddToHomeScreen 
         isOpen={showPwaPrompt} 
         onClose={() => setShowPwaPrompt(false)}

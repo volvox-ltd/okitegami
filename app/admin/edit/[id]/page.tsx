@@ -15,7 +15,7 @@ const supabase = createClient(
 
 // 仕様設定
 const PAGE_DELIMITER = '<<<PAGE>>>';
-const MAX_CHARS_PER_PAGE = 180;
+const MAX_CHARS_PER_PAGE = 140;
 const MAX_PAGES_ADMIN = 20;
 
 export default function EditPage() {

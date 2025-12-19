@@ -202,7 +202,7 @@ export default function Home() {
     );
   };
 
-  // ★修正1：ジェネリクス <Letter | null> を追加して型を明示
+  // 一番近くにある通知対象の手紙を特定
   const nearestNotificationLetter = useMemo<Letter | null>(() => {
     if (!userLocation) return null;
     
@@ -292,7 +292,6 @@ export default function Home() {
         <div 
           className="fixed right-0 top-32 z-40 animate-slideInRight"
           onClick={() => {
-            // ★修正2：ローカル変数に一度入れることで、TypeScriptの「未定義かも？」という懸念を払拭する
             const targetLetter = nearestNotificationLetter;
             if (!targetLetter) return;
 
@@ -306,7 +305,7 @@ export default function Home() {
           }}
         >
            <div className="bg-white/90 backdrop-blur-md p-3 pl-4 rounded-l-2xl shadow-lg border-y border-l border-gray-300 flex items-center gap-3 max-w-[180px] cursor-pointer hover:bg-white transition-colors">
-              <span className="text-xl animate-pulse"></span>
+              <span className="text-xl animate-pulse">✨</span>
               <div className="flex flex-col">
                 <span className="text-[10px] font-bold text-gray-400"></span>
                 <span className="text-xs font-bold text-gray-700 leading-tight">
@@ -368,10 +367,23 @@ export default function Home() {
               style={{ zIndex: isReachable ? 10 : isNear ? 5 : 1 }}
             >
               <div className="flex flex-col items-center group cursor-pointer">
-                <div className={`bg-white/95 backdrop-blur px-2 py-1 rounded-sm shadow-sm text-[10px] mb-1 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border 
+                {/* マーカー上の吹き出し（ホバーで表示） */}
+                <div className={`bg-white/95 backdrop-blur px-3 py-2 rounded-lg shadow-md text-[10px] mb-2 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border flex flex-col items-center
                   ${isReachable ? 'border-orange-500 text-orange-600' : isNear ? 'border-gray-400 text-gray-600' : 'border-bunko-gray/10 text-bunko-ink'}`}>
-                   {letter.is_official ? '木林文庫の手紙' : (letter.nickname ? `${letter.nickname}さんの手紙` : '')}
-                   {isReachable && <span className="block text-[8px] font-bold text-orange-500 text-center">読めます！</span>}
+                   
+                   {/* ユーザー名/公式名 */}
+                   <span className="font-bold">
+                     {letter.is_official ? '木林文庫の手紙' : (letter.nickname ? `${letter.nickname}さんの手紙` : '')}
+                   </span>
+
+                   {/* ★追加：場所名（入力がある場合のみ表示） */}
+                   {letter.spot_name && letter.spot_name !== '名もなき場所' && (
+                     <span className="text-[8px] text-gray-400 mt-0.5 font-sans">
+                       📍 {letter.spot_name}
+                     </span>
+                   )}
+
+                   {isReachable && <span className="block text-[8px] font-bold text-orange-500 text-center mt-1">読めます！</span>}
                 </div>
 
                 <div className={`transition-transform duration-300 drop-shadow-md relative ${isReachable ? 'animate-bounce' : isNear ? 'animate-pulse scale-110' : 'hover:scale-110'}`}>

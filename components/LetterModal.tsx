@@ -31,7 +31,8 @@ type Props = {
   onDeleted?: () => void;
 };
 
-const CHARS_PER_PAGE = 180; 
+// 1ページあたりの文字数（改行などを考慮して安全圏に設定）
+const CHARS_PER_PAGE = 140; 
 
 export default function LetterModal({ letter, currentUser, onClose, onDeleted }: Props) {
   const [isVisible, setIsVisible] = useState(false);
@@ -45,8 +46,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
   const [isFavorited, setIsFavorited] = useState(false);
 
   const [gotStamp, setGotStamp] = useState<any>(null);
-  
-  // ★追加：通報済みかどうか
   const [isReported, setIsReported] = useState(false);
 
   const isMyPost = currentUser && currentUser.id === letter.user_id;
@@ -54,8 +53,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
   // 初期化 & ロック判定
   useEffect(() => {
     setIsVisible(true);
-    
-    // ロック判定
     if (letter.password && !isMyPost) {
       setIsLocked(true);
     } else {
@@ -63,9 +60,8 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
       checkStamp();
       recordRead(); 
     }
-
     checkFavorite();
-  }, [letter, currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [letter, currentUser]); 
 
   const recordRead = async () => {
     if (currentUser && currentUser.id === letter.user_id) return;
@@ -82,17 +78,13 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
           user_id: currentUser.id,
           stamp_id: letter.attached_stamp_id
         });
-
         if (!error) {
           const { data: stampData } = await supabase
             .from('stamps')
             .select('*')
             .eq('id', letter.attached_stamp_id)
             .single();
-          
-          if (stampData) {
-            setGotStamp(stampData);
-          }
+          if (stampData) setGotStamp(stampData);
         }
       } catch (e) {
         // 重複エラーは無視
@@ -132,7 +124,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
 
   useEffect(() => {
     const newPages = [];
-    
     if (letter.image_url) {
       newPages.push({ type: 'image', content: letter.image_url });
     }
@@ -165,24 +156,60 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
     else { alert('削除しました'); handleClose(); if (onDeleted) onDeleted(); }
   };
 
-  // ★追加：通報機能
   const handleReport = async () => {
     if (!confirm('この手紙を不適切なコンテンツとして通報しますか？')) return;
-    
     try {
       const { error } = await supabase.from('reports').insert({
         letter_id: letter.id,
-        reporter_id: currentUser?.id || null, // 未ログインでも通報可とする（要件次第）
+        reporter_id: currentUser?.id || null,
         reason: '不適切なコンテンツ'
       });
-
       if (error) throw error;
-      
       alert('通報を受け付けました。\nご協力ありがとうございます。');
       setIsReported(true);
     } catch (e) {
       alert('送信に失敗しました');
     }
+  };
+
+  // リンク化関数（正規表現でHTMLタグ風の文字列をパース）
+  const renderContent = (text: string) => {
+    if (!letter.is_official) return text; 
+
+    // <a href="URL">TEXT</a> を検出する正規表現
+    const regex = /<a\s+href="([^"]+)"[^>]*>(.*?)<\/a>/g;
+    
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = regex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(text.substring(lastIndex, match.index));
+      }
+      
+      parts.push(
+        <a 
+          key={match.index} 
+          href={match[1]} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          // ★修正：mx-1 を削除し、テキストの流れを阻害しないように
+          className="text-blue-600 underline decoration-blue-400 decoration-1 underline-offset-2 hover:text-blue-800"
+          style={{ textCombineUpright: 'none' }} 
+        >
+          {match[2]} 
+        </a>
+      );
+      
+      lastIndex = regex.lastIndex;
+    }
+
+    if (lastIndex < text.length) {
+      parts.push(text.substring(lastIndex));
+    }
+
+    return parts.length > 0 ? parts : text;
   };
 
   const isOfficial = letter.is_official;
@@ -216,19 +243,21 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
 
       <div className={`relative w-full max-w-md h-[600px] shadow-2xl rounded-2xl transform transition-all duration-300 border-4 ${borderColor} ${bgColor} flex flex-col ${isVisible ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}`}>
         
+        {/* ヘッダー */}
         <div className="h-20 flex items-center justify-between px-6 border-b border-gray-100/50 relative shrink-0">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 w-full pr-8">
              <div className="shrink-0 drop-shadow-sm"><Icon className="w-10 h-10" /></div>
-             <div className="overflow-hidden">
-               <h2 className={`font-bold font-serif text-lg leading-tight truncate ${textColor}`}>
+             <div className="overflow-hidden w-full">
+               <h2 className={`font-bold font-serif text-base md:text-lg leading-tight line-clamp-2 ${textColor}`}>
                  {isLocked ? '秘密の手紙' : letter.title}
                </h2>
                <p className="text-xs text-gray-400 font-serif mt-1 truncate">📍 {letter.spot_name}</p>
              </div>
           </div>
-          <button onClick={handleClose} className="text-gray-400 hover:text-gray-600 p-2 -mr-2">✕</button>
+          <button onClick={handleClose} className="absolute right-4 text-gray-400 hover:text-gray-600 p-2">✕</button>
         </div>
 
+        {/* 編集ボタン等 */}
         {!isLocked && (
           <div className="absolute top-20 right-4 z-10 flex gap-2">
             {isMyPost ? (
@@ -248,7 +277,9 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
           </div>
         )}
 
-        <div className="flex-1 relative overflow-hidden pt-14 pb-2 px-6 md:pt-16 md:pb-4 md:px-8 flex items-center justify-center">
+        {/* コンテンツエリア */}
+        {/* ★修正：overflow-x-auto, pt-12, pb-8 を適用し、paddingを確保して切れを防ぐ */}
+        <div className="flex-1 relative overflow-hidden overflow-x-auto pt-12 pb-8 px-6 md:pt-14 md:pb-10 md:px-8 flex items-center justify-center">
           
           {isLocked ? (
             <div className="flex flex-col items-center justify-center w-full h-full animate-fadeIn space-y-4">
@@ -280,8 +311,9 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
                  </div>
               )}
               {pageData && pageData.type === 'text' && (
-                <div className={`w-full h-full text-base md:text-lg leading-loose font-serif tracking-widest [writing-mode:vertical-rl] whitespace-pre-wrap flex flex-col flex-wrap content-start items-center ${textColor} animate-fadeIn overflow-hidden`}>
-                  {pageData.content}
+                // ★修正：flex系のクラスを全て削除し、ブロック/インラインの自然なフローに戻す
+                <div className={`w-full h-full text-base md:text-lg leading-loose font-serif tracking-widest [writing-mode:vertical-rl] whitespace-pre-wrap ${textColor} animate-fadeIn`}>
+                  {renderContent(pageData.content)}
                 </div>
               )}
             </>
@@ -292,7 +324,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
         {!isLocked && (
           <div className="h-16 border-t border-gray-100/50 flex items-center justify-between px-6 shrink-0 bg-white/30 backdrop-blur-sm rounded-b-xl relative">
             
-            {/* ★追加：通報ボタン（左端） */}
             <div className="absolute left-6 top-1/2 -translate-y-1/2">
                {!isMyPost && !isOfficial && (
                  <button 
@@ -306,7 +337,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
                )}
             </div>
 
-            {/* ページネーション（中央寄せのために位置調整） */}
             <div className="flex-1 flex justify-center items-center gap-4">
               <div className="flex items-center">
                 {currentPage < pages.length - 1 ? (

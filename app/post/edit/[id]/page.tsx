@@ -14,9 +14,9 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-// 仕様設定
 const PAGE_DELIMITER = '<<<PAGE>>>';
-const MAX_CHARS_PER_PAGE = 180;
+// ★変更：140文字に制限
+const MAX_CHARS_PER_PAGE = 140;
 const MAX_PAGES = 10;
 
 export default function UserEditPage() {
@@ -24,7 +24,6 @@ export default function UserEditPage() {
   const { id } = useParams();
   
   const [title, setTitle] = useState('');
-  // ★変更：contentではなくpages配列で管理
   const [pages, setPages] = useState<string[]>(['']);
 
   const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null);
@@ -67,7 +66,6 @@ export default function UserEditPage() {
 
       setTitle(data.title);
       
-      // ★修正：コンテンツのパース処理
       const content = data.content || '';
       if (content.includes(PAGE_DELIMITER)) {
          setPages(content.split(PAGE_DELIMITER));
@@ -92,7 +90,6 @@ export default function UserEditPage() {
     fetchLetter();
   }, [id, router]);
 
-  // ★追加：ページ操作関数
   const handlePageChange = (index: number, value: string) => {
     if (value.length > MAX_CHARS_PER_PAGE) return;
     const newPages = [...pages];
@@ -111,7 +108,6 @@ export default function UserEditPage() {
   };
 
   const handleUpdate = async () => {
-    // ★修正：結合してチェック
     const fullContent = pages.join('');
     if (!title || !fullContent.trim()) return alert('タイトルと内容を入力してください');
     
@@ -120,14 +116,12 @@ export default function UserEditPage() {
     try {
       let finalImageUrl = currentImageUrl;
 
-      // 画像削除
       if (isImageDeleted && currentImageUrl) {
          const oldFileName = currentImageUrl.split('/').pop();
          if (oldFileName) await supabase.storage.from('letter-images').remove([oldFileName]);
          finalImageUrl = null;
       }
 
-      // 新しい画像
       if (newImageFile) {
         if (currentImageUrl && !isImageDeleted) {
            const oldFileName = currentImageUrl.split('/').pop();
@@ -148,7 +142,6 @@ export default function UserEditPage() {
         finalImageUrl = urlData.publicUrl;
       }
 
-      // ★修正：ページを結合して保存
       const contentToSave = pages.join(PAGE_DELIMITER);
 
       const { error } = await supabase
@@ -156,7 +149,6 @@ export default function UserEditPage() {
         .update({
           title,
           content: contentToSave,
-          // lat, lng は更新しない（場所移動禁止のため）
           image_url: finalImageUrl
         })
         .eq('id', id);
@@ -164,7 +156,7 @@ export default function UserEditPage() {
       if (error) throw error;
 
       alert('手紙を書き直しました！');
-      router.push('/'); // トップページへ戻る
+      router.push('/'); 
     } catch (e) {
       console.error(e);
       alert('更新に失敗しました');
@@ -180,7 +172,6 @@ export default function UserEditPage() {
   return (
     <div className="flex flex-col h-screen bg-gray-50">
       
-      {/* マップエリア */}
       <div className="relative w-full h-[45%] bg-gray-200">
         <Link href="/" className="absolute top-4 left-4 z-50 bg-white/80 p-2 rounded-full shadow-sm text-gray-600 font-bold text-xs">
           ✕ キャンセル
@@ -191,12 +182,10 @@ export default function UserEditPage() {
           style={{ width: '100%', height: '100%' }}
           mapStyle="mapbox://styles/mapbox/streets-v12"
           mapboxAccessToken={mapToken}
-          // onClick削除（移動不可）
         >
           <NavigationControl position="bottom-right" />
           <Marker
              latitude={lat} longitude={lng} anchor="bottom" 
-             // draggable削除（移動不可）
           >
              <div className="animate-bounce drop-shadow-lg">
                <IconUserLetter className="w-12 h-12" />
@@ -210,7 +199,6 @@ export default function UserEditPage() {
         </div>
       </div>
 
-      {/* フォームエリア */}
       <div className="flex-1 bg-white rounded-t-3xl -mt-4 z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] p-6 overflow-y-auto">
         <h2 className="text-lg font-bold text-gray-800 mb-6 font-serif flex items-center gap-2">
           <IconUserLetter className="w-6 h-6" />
@@ -223,7 +211,6 @@ export default function UserEditPage() {
             <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-green-300" />
           </div>
 
-          {/* 画像編集 */}
           <div className="border border-dashed border-gray-300 rounded-lg p-3">
              <p className="text-xs font-bold text-gray-500 mb-2">写真</p>
              {currentImageUrl && !isImageDeleted && !newImageFile ? (
@@ -242,7 +229,6 @@ export default function UserEditPage() {
              {isImageDeleted && <p className="text-xs text-red-500 mt-1">※写真は削除されます</p>}
           </div>
 
-          {/* ★修正：ページごとの編集フォーム */}
           <div>
             <label className="block text-xs font-bold text-gray-500 mb-2">内容</label>
             <div className="space-y-6">
@@ -281,7 +267,7 @@ export default function UserEditPage() {
             {pages.length < MAX_PAGES ? (
                 <button 
                   onClick={addPage}
-                  className="w-full mt-4 py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-400 text-xs font-bold hover:bg-gray-50 hover:border-green-400 hover:text-green-600 transition-colors flex items-center justify-center gap-2"
+                  className="w-full mt-4 py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-400 text-xs font-bold hover:bg-gray-50 hover:border-green-400 transition-colors flex items-center justify-center gap-2"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />

@@ -16,7 +16,8 @@ const supabase = createClient(
 );
 
 const PAGE_DELIMITER = '<<<PAGE>>>';
-const MAX_CHARS_PER_PAGE = 180;
+// ★変更：140文字に制限
+const MAX_CHARS_PER_PAGE = 140;
 const MAX_PAGES_ADMIN = 20;
 
 type Letter = {
@@ -45,7 +46,6 @@ export default function AdminCreatePage() {
   const [stampName, setStampName] = useState('');
   const [stampFile, setStampFile] = useState<File | null>(null);
 
-  // 数値入力フォーム用ですが、空入力を許容するため number型として扱い、NaNを許容します
   const [lat, setLat] = useState(35.6288);
   const [lng, setLng] = useState(139.6842);
   
@@ -106,7 +106,6 @@ export default function AdminCreatePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // 緯度経度のバリデーション
     if (isNaN(lat) || isNaN(lng)) return alert('緯度経度を正しく入力してください');
 
     const fullContent = pages.join('');
@@ -118,7 +117,6 @@ export default function AdminCreatePage() {
     setIsSubmitting(true);
 
     try {
-      // 1. 画像アップロード
       let letterImageUrl = null;
       if (imageFile) {
         const compressedFile = await compressImage(imageFile);
@@ -129,7 +127,6 @@ export default function AdminCreatePage() {
         letterImageUrl = data.publicUrl;
       }
 
-      // 2. 切手アップロード
       let newStampId = null;
       if (hasStamp && stampFile) {
         let fileToUpload = stampFile;
@@ -169,7 +166,6 @@ export default function AdminCreatePage() {
         newStampId = stampData.id;
       }
 
-      // 3. 手紙を登録
       const contentToSave = pages.join(PAGE_DELIMITER);
 
       const { error: dbError } = await supabase
@@ -190,7 +186,6 @@ export default function AdminCreatePage() {
 
       alert('【運営】として手紙を置きました！');
       
-      // リセット
       setTitle(''); setSpotName(''); setPages(['']); setImageFile(null);
       setIsPrivate(false); setPassword('');
       setHasStamp(false); setStampName(''); setStampFile(null);
@@ -203,17 +198,16 @@ export default function AdminCreatePage() {
     }
   };
 
-  // ★修正：入力変更ハンドラ（NaNになっても地図を壊さないようにする）
   const handleLatChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
-    setLat(val); // 入力欄のためにNaNもセットする
+    setLat(val); 
     if (!isNaN(val) && val >= -90 && val <= 90) {
       setViewState(prev => ({ ...prev, latitude: val }));
     }
   };
   const handleLngChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
-    setLng(val); // 入力欄のためにNaNもセットする
+    setLng(val); 
     if (!isNaN(val) && val >= -180 && val <= 180) {
       setViewState(prev => ({ ...prev, longitude: val }));
     }
@@ -224,7 +218,6 @@ export default function AdminCreatePage() {
   return (
     <main className="min-h-screen bg-gray-50 flex flex-col md:flex-row font-sans">
       
-      {/* 左側：入力フォーム */}
       <div className="w-full md:w-1/3 p-6 bg-white shadow-lg z-10 overflow-y-auto flex flex-col gap-8 h-screen border-r border-gray-200">
         <div>
           <div className="flex justify-between items-center mb-4 border-b pb-2">
@@ -418,14 +411,12 @@ export default function AdminCreatePage() {
         >
           <NavigationControl position="top-right" />
           <Marker 
-            // ★修正：NaNの時はviewState（地図の中心）を代わりに使ってクラッシュを防ぐ
             latitude={!isNaN(lat) ? lat : viewState.latitude} 
             longitude={!isNaN(lng) ? lng : viewState.longitude} 
             anchor="bottom" 
             draggable
             onDragEnd={(e) => { setLat(e.lngLat.lat); setLng(e.lngLat.lng); }}
           >
-            {/* NaNのときは半透明にして「場所未定」感を出す */}
             <div className={`animate-bounce ${isNaN(lat) ? 'opacity-50' : ''}`}>
               <IconAdminLetter className="w-10 h-10 drop-shadow-lg" />
             </div>
