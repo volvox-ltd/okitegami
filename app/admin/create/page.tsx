@@ -29,6 +29,7 @@ type Letter = {
   is_official?: boolean;
   password?: string | null;
   attached_stamp_id?: number | null;
+  is_post?: boolean; // ★追加：ポストかどうか
 };
 
 export default function AdminCreatePage() {
@@ -45,6 +46,9 @@ export default function AdminCreatePage() {
   const [hasStamp, setHasStamp] = useState(false);
   const [stampName, setStampName] = useState('');
   const [stampFile, setStampFile] = useState<File | null>(null);
+
+  // ★追加：ポスト機能（投稿受け入れ）の設定
+  const [isPost, setIsPost] = useState(false);
 
   const [lat, setLat] = useState(35.6288);
   const [lng, setLng] = useState(139.6842);
@@ -69,13 +73,13 @@ export default function AdminCreatePage() {
     if (data) setLetters(data);
   };
 
-  // ★追加：HTMLタグを除去して文字数をカウントする関数
+  // HTMLタグを除去して文字数をカウントする関数
   const getVisibleLength = (text: string) => {
     return text.replace(/<[^>]+>/g, '').length;
   };
 
   const handlePageChange = (index: number, value: string) => {
-    // ★修正：見た目の文字数で制限チェック
+    // 見た目の文字数で制限チェック
     if (getVisibleLength(value) > MAX_CHARS_PER_PAGE) return;
     
     const newPages = [...pages];
@@ -186,16 +190,18 @@ export default function AdminCreatePage() {
           image_url: letterImageUrl,
           is_official: true,
           password: isPrivate ? password : null,
-          attached_stamp_id: newStampId
+          attached_stamp_id: newStampId,
+          is_post: isPost // ★追加：これをtrueにすると、ユーザーが投稿できるポストになる
         }]);
 
       if (dbError) throw dbError;
 
-      alert('【運営】として手紙を置きました！');
+      alert(isPost ? '【運営】常設ポストを設置しました！' : '【運営】として手紙を置きました！');
       
       setTitle(''); setSpotName(''); setPages(['']); setImageFile(null);
       setIsPrivate(false); setPassword('');
       setHasStamp(false); setStampName(''); setStampFile(null);
+      setIsPost(false); // リセット
       fetchLetters();
 
     } catch (error: any) {
@@ -271,10 +277,10 @@ export default function AdminCreatePage() {
                       placeholder="手紙の内容" 
                       value={pageContent} 
                       onChange={e => handlePageChange(index, e.target.value)} 
-                      // ★修正：maxLengthを削除（HTMLタグを入力可能にするため）
+                      // maxLengthは削除済み（HTMLタグ入力のため）
                     />
                     <div className={`text-[10px] text-right mt-1 font-bold ${getVisibleLength(pageContent) >= MAX_CHARS_PER_PAGE ? 'text-red-500' : 'text-gray-400'}`}>
-                      {/* ★修正：getVisibleLengthを使って表示 */}
+                      {/* 見た目の文字数でカウント */}
                       {getVisibleLength(pageContent)} / {MAX_CHARS_PER_PAGE} 文字
                     </div>
                     {pages.length > 1 && (
@@ -339,6 +345,23 @@ export default function AdminCreatePage() {
                )}
             </div>
 
+            {/* ★追加：ポスト（投稿受け入れ）設定 */}
+            <div className="bg-green-50 p-4 rounded border border-green-200">
+               <label className="flex items-center gap-2 cursor-pointer">
+                 <input 
+                   type="checkbox" 
+                   checked={isPost} 
+                   onChange={() => setIsPost(!isPost)}
+                   className="w-4 h-4 accent-green-600"
+                 />
+                 <span className="text-sm font-bold text-green-900">📮 『常設ポスト』として開放する</span>
+               </label>
+               <p className="text-[10px] text-green-700 mt-1 pl-6">
+                 ONにすると、この手紙の詳細画面に「ここに手紙を書く」ボタンが表示され、ユーザーが投稿できるようになります。
+                 （投函された手紙には、自動的に上記の切手が付与されます）
+               </p>
+            </div>
+
             <div className="bg-orange-50 p-3 rounded border border-orange-200">
               <label className="block text-xs font-bold text-gray-600 mb-2">公開設定</label>
               <div className="flex gap-4 mb-2">
@@ -387,12 +410,16 @@ export default function AdminCreatePage() {
                   className="cursor-pointer flex items-center gap-2"
                   onClick={() => setViewState(prev => ({...prev, latitude: letter.lat, longitude: letter.lng, zoom: 16}))}
                 >
-                  <span title={letter.is_official ? "運営" : "ユーザー"}>{letter.is_official ? '👑' : '👤'}</span>
+                  <span title={letter.is_official ? "運営" : "ユーザー"}>
+                    {/* ★修正：ポストなら特別なアイコンを表示 */}
+                    {letter.is_post ? '📮' : (letter.is_official ? '👑' : '👤')}
+                  </span>
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="font-bold text-sm text-gray-700">{letter.title}</p>
                       {letter.password && <span className="text-xs bg-gray-600 text-white px-1 rounded">🔒</span>}
                     </div>
+                    {letter.is_post && <span className="text-[10px] text-green-600 font-bold">常設ポスト</span>}
                   </div>
                 </div>
                 <div className="flex gap-2">
@@ -434,6 +461,12 @@ export default function AdminCreatePage() {
             <Marker key={l.id} latitude={l.lat} longitude={l.lng} anchor="bottom" onClick={(e) => {e.originalEvent.stopPropagation(); router.push(`/admin/edit/${l.id}`)}}>
               <div className="hover:scale-125 transition-transform cursor-pointer drop-shadow-md relative">
                 {l.is_official ? <IconAdminLetter className="w-10 h-10" /> : <IconUserLetter className="w-10 h-10 opacity-70" />}
+                {/* ★追加：ポストの場合はマークを付ける */}
+                {l.is_post && (
+                  <div className="absolute -top-2 -right-2 bg-green-500 text-white rounded-full p-1 w-5 h-5 flex items-center justify-center text-[10px] shadow border border-white">
+                    📮
+                  </div>
+                )}
               </div>
             </Marker>
           ))}

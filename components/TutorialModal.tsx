@@ -85,7 +85,7 @@ export default function TutorialModal({ onClose }: Props) {
       icon: <IconMap />
     },
     {
-      title: "時間は24時間だけ",
+      title: "時間は48時間だけ",
       desc: "置かれた手紙は、1日経つと\n地図から消えてしまいます。\nその時だけの、儚いメッセージです。",
       icon: <IconTime />
     },

@@ -24,8 +24,9 @@ export default function Header({ currentUser, nickname, onAboutClick }: Props) {
       <div className="flex items-center gap-2 pointer-events-auto pl-1">
         <Logo className="w-10 h-10 md:w-10 md:h-10 text-bunko-ink" />
         <div className="flex flex-col">
-          <h1 className="font-serif text-sm md:text-lg tracking-widest text-bunko-ink leading-none">
+          <h1 className="font-serif text-sm md:text-lg tracking-widest text-bunko-ink leading-none flex items-baseline">
             おきてがみ
+            <span className="text-xs text-gray-400 font-sans font-normal tracking-widest relative -top-[3px]">（β版）</span>
           </h1>
         </div>
       </div>

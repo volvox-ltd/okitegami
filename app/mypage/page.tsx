@@ -4,9 +4,10 @@ import { createClient } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import LetterModal from '@/components/LetterModal';
+import PostModal from '@/components/PostModal'; 
 import IconUserLetter from '@/components/IconUserLetter';
 import IconAdminLetter from '@/components/IconAdminLetter';
-import FooterLinks from '@/components/FooterLinks'; // ★追加
+import FooterLinks from '@/components/FooterLinks';
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
 import SkeletonLetter from '@/components/SkeletonLetter';
 
@@ -29,6 +30,7 @@ type Letter = {
   password?: string | null;
   attached_stamp_id?: number | null;
   read_count?: number;
+  is_post?: boolean;
 };
 
 type Stamp = {
@@ -37,6 +39,7 @@ type Stamp = {
   image_url: string;
   description: string;
   has_obtained: boolean;
+  count?: number; 
 };
 
 export default function MyPage() {
@@ -51,6 +54,7 @@ export default function MyPage() {
   const [stamps, setStamps] = useState<Stamp[]>([]);
   
   const [selectedLetter, setSelectedLetter] = useState<Letter | null>(null);
+  const [selectedPost, setSelectedPost] = useState<Letter | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -103,15 +107,47 @@ export default function MyPage() {
 
   const fetchStamps = async (userId: string) => {
     const { data: allStamps } = await supabase.from('stamps').select('*').order('id');
-    const { data: myStamps } = await supabase.from('user_stamps').select('stamp_id').eq('user_id', userId);
+    const { data: myStamps } = await supabase.from('user_stamps').select('stamp_id, count').eq('user_id', userId);
     
     if (allStamps && myStamps) {
-      const myStampIds = new Set(myStamps.map((s: any) => s.stamp_id));
+      const myStampMap = new Map(myStamps.map((s: any) => [s.stamp_id, s.count]));
+      
       const formattedStamps = allStamps.map((s: any) => ({
         ...s,
-        has_obtained: myStampIds.has(s.id)
+        has_obtained: myStampMap.has(s.id),
+        count: myStampMap.get(s.id) || 0 
       }));
       setStamps(formattedStamps);
+    }
+  };
+
+  const handleStampClick = async (stampId: number) => {
+    setIsLoading(true);
+    try {
+      const { data: lettersWithStamp } = await supabase
+        .from('letters')
+        .select('*')
+        .eq('attached_stamp_id', stampId);
+
+      if (!lettersWithStamp || lettersWithStamp.length === 0) {
+        alert('この切手が付いている手紙は現在ありません（削除された可能性があります）');
+        setIsLoading(false);
+        return;
+      }
+
+      const target = lettersWithStamp[0]; 
+      
+      if (target.is_post) {
+        setSelectedPost(target as Letter);
+      } else {
+        setSelectedLetter(target as Letter);
+      }
+
+    } catch (e) {
+      console.error(e);
+      alert('手紙の読み込みに失敗しました');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -132,8 +168,6 @@ export default function MyPage() {
       
       {/* ヘッダー */}
       <div className="bg-white/90 backdrop-blur-sm px-6 py-4 shadow-sm text-center relative sticky top-0 z-10">
-        
-        {/* ★変更：iPhone風の戻るボタン（< アイコン） */}
         <Link 
           href="/" 
           className="absolute top-1/2 -translate-y-1/2 left-4 w-9 h-9 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm text-gray-600 hover:text-black transition-colors"
@@ -189,19 +223,46 @@ export default function MyPage() {
             {/* === 切手帳タブ === */}
             {activeTab === 'stamps' && (
               <div className="animate-fadeIn">
-                <div className="grid grid-cols-3 md:grid-cols-6 gap-4 px-2 max-w-5xl mx-auto">
+                <div className="grid grid-cols-3 md:grid-cols-6 gap-6 px-2 max-w-5xl mx-auto pt-4">
                   {obtainedStamps.map(stamp => (
-                    <div key={stamp.id} className="flex flex-col items-center">
-                      <div 
-                        className="aspect-[3/4] w-full rounded border border-gray-200 bg-white shadow-sm p-1 flex items-center justify-center mb-2"
-                      >
-                        <img 
-                          src={stamp.image_url} 
-                          alt={stamp.name} 
-                          className="w-full h-full object-contain"
-                        />
+                    <div 
+                      key={stamp.id} 
+                      className="flex flex-col items-center group cursor-pointer"
+                      onClick={() => handleStampClick(stamp.id)}
+                    >
+                      {/* 画像エリア（スタック効果） */}
+                      <div className="relative w-full aspect-[3/4]">
+                        
+                        {/* 3枚目以上の重なり（一番後ろ） */}
+                        {stamp.count && stamp.count >= 3 && (
+                          <div className="absolute inset-0 bg-white border border-gray-200 rounded shadow-sm transform rotate-6 scale-95 origin-bottom-right opacity-80" />
+                        )}
+                        
+                        {/* 2枚目以上の重なり（真ん中） */}
+                        {stamp.count && stamp.count >= 2 && (
+                          <div className="absolute inset-0 bg-white border border-gray-200 rounded shadow-sm transform rotate-3 scale-98 origin-bottom-right" />
+                        )}
+
+                        {/* メインの切手（最前面） */}
+                        <div 
+                          className="absolute inset-0 w-full h-full rounded border border-gray-200 bg-white shadow-sm p-1 flex items-center justify-center transition-transform group-hover:scale-105 group-hover:shadow-md"
+                        >
+                          <img 
+                            src={stamp.image_url} 
+                            alt={stamp.name} 
+                            className="w-full h-full object-contain"
+                          />
+                        </div>
+
+                        {/* 枚数バッジ (1枚より多い場合のみ表示) */}
+                        {stamp.count && stamp.count > 1 && (
+                          <div className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold w-6 h-6 flex items-center justify-center rounded-full shadow border-2 border-white z-10">
+                            x{stamp.count}
+                          </div>
+                        )}
                       </div>
-                      <p className="text-[10px] font-bold text-center text-bunko-ink">
+
+                      <p className="text-[10px] font-bold text-center text-bunko-ink truncate w-full mt-2">
                         {stamp.name}
                       </p>
                     </div>
@@ -226,19 +287,25 @@ export default function MyPage() {
                 )}
 
                 {(activeTab === 'posts' ? myPosts : favorites).map((letter) => {
-                  const expired = !letter.is_official && isExpired(letter.created_at);
+                  const expired = !letter.is_official && !letter.is_post && isExpired(letter.created_at);
                   
                   return (
                     <div 
                       key={letter.id}
-                      onClick={() => setSelectedLetter(letter)}
+                      onClick={() => {
+                        if (letter.is_post) setSelectedPost(letter);
+                        else setSelectedLetter(letter);
+                      }}
                       className={`bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4 cursor-pointer transition-transform hover:scale-[1.01] active:scale-[0.99] ${expired ? 'opacity-60 grayscale' : ''}`}
                     >
-                      <div className="shrink-0">
+                      <div className="shrink-0 relative">
                         {letter.is_official ? (
                           <IconAdminLetter className="w-10 h-10" />
                         ) : (
                           <IconUserLetter className="w-10 h-10" />
+                        )}
+                        {letter.is_post && (
+                          <div className="absolute -top-1 -right-1 bg-green-500 text-white rounded-full p-0.5 w-4 h-4 flex items-center justify-center text-[8px] shadow">📮</div>
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -284,7 +351,6 @@ export default function MyPage() {
         </button>
       </div>
 
-      {/* ★追加：共通フッター */}
       <FooterLinks />
 
       {/* モーダル */}
@@ -302,6 +368,16 @@ export default function MyPage() {
           }}
         />
       )}
+
+      {selectedPost && (
+        <PostModal 
+          post={selectedPost}
+          currentUser={user}
+          onClose={() => setSelectedPost(null)}
+          isReachable={true} // マイページからの閲覧は距離制限なし
+        />
+      )}
+
       <style jsx>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
