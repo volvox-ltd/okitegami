@@ -8,7 +8,6 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import IconUserLetter from '@/components/IconUserLetter';
 import { NG_WORDS } from '@/utils/ngWords';
-// 距離計算とPWA案内
 import { getDistance } from 'geolib';
 import AddToHomeScreen from '@/components/AddToHomeScreen';
 
@@ -18,11 +17,8 @@ const supabase = createClient(
 );
 
 const PAGE_DELIMITER = '<<<PAGE>>>';
-// ★変更：140文字に制限
 const MAX_CHARS_PER_PAGE = 140;
 const MAX_PAGES = 10;
-
-// 手紙同士が最低限離れていなければならない距離（メートル）
 const MIN_DISTANCE = 30; 
 
 export default function PostPage() {
@@ -34,7 +30,6 @@ export default function PostPage() {
   const [shareUrl, setShareUrl] = useState('');
   const [isCopied, setIsCopied] = useState(false);
   
-  // PWAプロンプト用
   const [showPwaPrompt, setShowPwaPrompt] = useState(false);
 
   const [title, setTitle] = useState('');
@@ -100,7 +95,6 @@ export default function PostPage() {
       return;
     }
 
-    // 近すぎる手紙がないかチェックする処理
     try {
       const { data: existingLetters, error: fetchError } = await supabase
         .from('letters')
@@ -120,7 +114,7 @@ export default function PostPage() {
         if (isTooClose) {
           alert(`この場所にはすでに誰かの手紙が置かれています。\n地図上のピンが重なってしまうため、\nここから${MIN_DISTANCE}mほど離れた場所に移動してください。`);
           setIsLoading(false);
-          return; // 投稿を中断
+          return; 
         }
       }
     } catch (e) {
@@ -174,8 +168,6 @@ export default function PostPage() {
       const shareLink = `${baseUrl}/?lat=${pinLocation.lat}&lng=${pinLocation.lng}`;
       setShareUrl(shareLink);
       setIsCompleted(true);
-
-      // 完了画面の少し後にPWA案内を表示
       setTimeout(() => setShowPwaPrompt(true), 2000);
     }
     
@@ -203,9 +195,11 @@ export default function PostPage() {
   const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
   return (
-    <div className="relative w-full h-screen overflow-hidden bg-gray-100">
+    // ★修正：flex-col にして、コンテンツ全体を縦に並べる
+    <div className="relative w-full h-full min-h-screen bg-gray-100 flex flex-col">
       
-      <div className="absolute inset-0 z-0">
+      {/* 1. 地図エリア（上半分に固定） */}
+      <div className="flex-1 relative z-0 min-h-[40vh]">
         {mapToken && (
           <Map
             {...viewState}
@@ -223,26 +217,29 @@ export default function PostPage() {
             </Marker>
           </Map>
         )}
+        
+        {/* キャンセルボタン（地図内に配置） */}
+        <Link href="/" className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur p-2 px-4 rounded-full shadow-md text-gray-600 font-bold text-xs hover:bg-white transition-colors">
+          ✕ キャンセル
+        </Link>
+
+        {!isExpanded && !isCompleted && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-10 pointer-events-none w-full text-center px-4">
+             <span className="bg-white/80 backdrop-blur text-gray-600 text-[10px] px-3 py-1 rounded-full shadow-sm border border-gray-200">
+               現在地に手紙を置きます
+             </span>
+          </div>
+        )}
       </div>
 
-      <Link href="/" className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur p-2 px-4 rounded-full shadow-md text-gray-600 font-bold text-xs hover:bg-white transition-colors">
-        ✕ キャンセル
-      </Link>
-
-      {!isExpanded && !isCompleted && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-10 pointer-events-none w-full text-center px-4">
-           <span className="bg-white/80 backdrop-blur text-gray-600 text-[10px] px-3 py-1 rounded-full shadow-sm border border-gray-200">
-             現在地に手紙を置きます
-           </span>
-        </div>
-      )}
-
+      {/* 2. 投稿フォームエリア（下からせり出し、最大で画面いっぱいまで広がる） */}
       {!isCompleted && (
         <div 
-          className={`absolute bottom-0 left-0 w-full bg-white rounded-t-3xl z-20 shadow-[0_-5px_20px_rgba(0,0,0,0.15)] transition-all duration-300 ease-in-out flex flex-col ${
-            isExpanded ? 'h-[85%] md:h-[80%]' : 'h-40'
+          className={`bg-white rounded-t-3xl shadow-[0_-5px_20px_rgba(0,0,0,0.15)] z-20 flex flex-col transition-all duration-300 ease-in-out ${
+            isExpanded ? 'h-[70vh] md:h-[80vh]' : 'h-24'
           }`}
         >
+          {/* ドラッグハンドル兼トグルボタン */}
           <div 
             className="w-full flex items-center justify-center pt-3 pb-2 cursor-pointer shrink-0 hover:bg-gray-50 rounded-t-3xl transition-colors"
             onClick={() => setIsExpanded(!isExpanded)}
@@ -262,7 +259,8 @@ export default function PostPage() {
             </div>
           </div>
           
-          <div className="flex-1 overflow-y-auto px-6 pb-8">
+          {/* スクロール可能なフォーム本体 */}
+          <div className="flex-1 overflow-y-auto px-6 pb-8 overscroll-contain">
             <div className="space-y-5 pt-2">
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1">手紙の名前</label>
@@ -373,6 +371,7 @@ export default function PostPage() {
         </div>
       )}
 
+      {/* 3. 完了＆招待状シェア画面 */}
       {isCompleted && (
         <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
           <div className="w-full max-w-sm relative">
@@ -446,6 +445,7 @@ export default function PostPage() {
         </div>
       )}
 
+      {/* PWAインストール案内 */}
       <AddToHomeScreen 
         isOpen={showPwaPrompt} 
         onClose={() => setShowPwaPrompt(false)}
