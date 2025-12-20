@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, TouchEvent } from 'react'; // TouchEventを追加
 import { createClient, User } from '@supabase/supabase-js';
 import Link from 'next/link';
 import IconUserLetter from './IconUserLetter';
@@ -48,9 +48,13 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
   const [gotStamp, setGotStamp] = useState<any>(null);
   const [isReported, setIsReported] = useState(false);
 
+  // ★追加：スワイプ検知用のState
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const minSwipeDistance = 50; // スワイプとみなす最小距離
+
   const isMyPost = currentUser && currentUser.id === letter.user_id;
 
-  // 初期化 & ロック判定
   useEffect(() => {
     setIsVisible(true);
     if (letter.password && !isMyPost) {
@@ -149,6 +153,22 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
   const handleNext = () => { if (currentPage < pages.length - 1) setCurrentPage(currentPage + 1); };
   const handlePrev = () => { if (currentPage > 0) setCurrentPage(currentPage - 1); };
 
+  // ★追加：スワイプ処理関数
+  const onTouchStart = (e: TouchEvent) => {
+    setTouchEnd(null); 
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+  const onTouchMove = (e: TouchEvent) => setTouchEnd(e.targetTouches[0].clientX);
+  const onTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > minSwipeDistance;
+    const isRightSwipe = distance < -minSwipeDistance;
+    
+    if (isLeftSwipe) handleNext();
+    if (isRightSwipe) handlePrev();
+  };
+
   const handleDelete = async () => {
     if (!confirm('本当に削除しますか？')) return;
     const { error } = await supabase.from('letters').delete().eq('id', letter.id);
@@ -172,7 +192,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
     }
   };
 
-  // リンク化関数
   const renderContent = (text: string) => {
     if (!letter.is_official) return text; 
 
@@ -221,11 +240,9 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
     <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose}></div>
 
-      {/* ★修正（Issue #5）：切手獲得モーダルのデザイン変更 */}
       {gotStamp && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none">
           <div className="bg-[#fdfcf5] p-8 rounded-sm shadow-2xl flex flex-col items-center animate-bounce-in pointer-events-auto border-4 border-double border-[#5d4037]/20 max-w-xs relative">
-            {/* 上部の装飾 */}
             <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#fdfcf5] px-2">
                <span className="text-[#5d4037] text-xl">★</span>
             </div>
@@ -253,11 +270,8 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
         </div>
       )}
 
-      {/* メインの手紙モーダル */}
-      {/* ★修正（Issue #6）：高さ固定(h-[600px])をやめ、モバイルではvh(h-[85vh])を使用 */}
       <div className={`relative w-full max-w-md h-[85vh] md:h-[600px] shadow-2xl rounded-2xl transform transition-all duration-300 border-4 ${borderColor} ${bgColor} flex flex-col ${isVisible ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}`}>
         
-        {/* ヘッダー */}
         <div className="h-20 flex items-center justify-between px-6 border-b border-gray-100/50 relative shrink-0">
           <div className="flex items-center gap-3 w-full pr-8">
              <div className="shrink-0 drop-shadow-sm"><Icon className="w-10 h-10" /></div>
@@ -271,7 +285,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
           <button onClick={handleClose} className="absolute right-4 text-gray-400 hover:text-gray-600 p-2">✕</button>
         </div>
 
-        {/* 編集ボタン等 */}
         {!isLocked && (
           <div className="absolute top-20 right-4 z-10 flex gap-2">
             {isMyPost ? (
@@ -292,8 +305,13 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
         )}
 
         {/* コンテンツエリア */}
-        <div className="flex-1 relative overflow-hidden overflow-x-auto pt-12 pb-8 px-6 md:pt-14 md:pb-10 md:px-8 flex items-center justify-center">
-          
+        {/* ★修正：タッチイベントハンドラを追加 */}
+        <div 
+          className="flex-1 relative overflow-hidden overflow-x-auto pt-12 pb-8 px-6 md:pt-14 md:pb-10 md:px-8 flex items-center justify-center touch-pan-y"
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
           {isLocked ? (
             <div className="flex flex-col items-center justify-center w-full h-full animate-fadeIn space-y-4">
               <div className="text-4xl">🔒</div>

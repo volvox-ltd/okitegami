@@ -25,7 +25,6 @@ export default function EditPage() {
   const [title, setTitle] = useState('');
   const [spotName, setSpotName] = useState('');
   
-  // ★変更：pagesで管理
   const [pages, setPages] = useState<string[]>(['']);
 
   const [lat, setLat] = useState(35.6288);
@@ -38,9 +37,12 @@ export default function EditPage() {
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState('');
 
+  // 切手関連
   const [currentStamp, setCurrentStamp] = useState<{id: number, name: string, image_url: string} | null>(null);
   const [isStampDeleted, setIsStampDeleted] = useState(false);
   const [isCreatingNewStamp, setIsCreatingNewStamp] = useState(false);
+  
+  // 切手編集用（新規・既存更新で共用）
   const [newStampName, setNewStampName] = useState('');
   const [newStampFile, setNewStampFile] = useState<File | null>(null);
 
@@ -75,13 +77,10 @@ export default function EditPage() {
         setTitle(letter.title);
         setSpotName(letter.spot_name || '');
         
-        // ★修正：コンテンツのパース処理
         const content = letter.content || '';
         if (content.includes(PAGE_DELIMITER)) {
-           // 区切り文字がある場合（新しい形式）
            setPages(content.split(PAGE_DELIMITER));
         } else {
-           // 区切り文字がない場合（古い形式）：文字数で分割して配列化
            const newPages = [];
            if (content.length === 0) {
              newPages.push('');
@@ -110,6 +109,7 @@ export default function EditPage() {
             .single();
           if (stampData) {
             setCurrentStamp(stampData);
+            setNewStampName(stampData.name); // ★追加：既存の名前をフォームに入れる
           }
         }
         
@@ -138,20 +138,44 @@ export default function EditPage() {
     setPages(newPages);
   };
 
+  // 切手画像アップロード用のヘルパー関数
+  const uploadStampImage = async (file: File) => {
+    let fileToUpload = file;
+    let fileExt = 'jpg';
+    let mimeType = 'image/jpeg';
+
+    if (file.type === 'image/png') {
+      fileExt = 'png';
+      mimeType = 'image/png';
+    } else {
+      fileToUpload = await compressImage(file);
+    }
+
+    const stampFileName = `stamp_${Date.now()}.${fileExt}`;
+    const { error: sUpErr } = await supabase.storage.from('stamp-images').upload(stampFileName, fileToUpload, { contentType: mimeType });
+    if (sUpErr) throw sUpErr;
+
+    const { data } = supabase.storage.from('stamp-images').getPublicUrl(stampFileName);
+    return data.publicUrl;
+  };
+
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // ★修正：結合してチェック
     const fullContent = pages.join('');
     if (!title || !fullContent.trim()) return alert('タイトルと内容を入力してください');
 
     if (isPrivate && !password) return alert('合言葉を入力してください');
-    if (isCreatingNewStamp && (!newStampName || !newStampFile)) return alert('新しい切手の名前と画像を指定してください');
+    
+    // バリデーション：切手を作る/更新する場合、名前必須
+    if ((isCreatingNewStamp || (currentStamp && !isStampDeleted)) && !newStampName) {
+       return alert('切手の名前を指定してください');
+    }
 
     setIsSubmitting(true);
 
     try {
-      // 1. 画像処理
+      // 1. 手紙の画像処理
       let finalImageUrl = currentImageUrl;
 
       if (isImageDeleted) {
@@ -178,51 +202,54 @@ export default function EditPage() {
         finalImageUrl = urlData.publicUrl;
       }
 
-      // 2. 切手処理
+      // 2. 切手処理 (★修正：ここを大幅変更)
       let finalStampId = currentStamp ? currentStamp.id : null;
 
       if (isStampDeleted) {
+        // A. 切手を削除する場合
         finalStampId = null;
-      }
-
-      if (isCreatingNewStamp && newStampName && newStampFile) {
-        let fileToUpload = newStampFile;
-        let fileExt = 'jpg';
-        let mimeType = 'image/jpeg';
-
-        if (newStampFile.type === 'image/png') {
-          fileToUpload = newStampFile;
-          fileExt = 'png';
-          mimeType = 'image/png';
-        } else {
-          fileToUpload = await compressImage(newStampFile);
-          fileExt = 'jpg';
-          mimeType = 'image/jpeg';
-        }
-
-        const stampFileName = `stamp_${Date.now()}.${fileExt}`;
-
-        const { error: sUpErr } = await supabase.storage.from('stamp-images').upload(stampFileName, fileToUpload, { contentType: mimeType });
-        if (sUpErr) throw sUpErr;
-
-        const { data: sUrlData } = supabase.storage.from('stamp-images').getPublicUrl(stampFileName);
+      } else if (isCreatingNewStamp) {
+        // B. まったく新しい切手を作る場合 (INSERT)
+        if (!newStampFile) throw new Error("新しい切手画像が必要です");
+        const sUrl = await uploadStampImage(newStampFile);
         
         const { data: newStamp, error: sDbErr } = await supabase
           .from('stamps')
           .insert({
             name: newStampName,
-            image_url: sUrlData.publicUrl,
+            image_url: sUrl,
             description: `${spotName}の記念切手`
           })
           .select()
           .single();
         
         if (sDbErr) throw sDbErr;
-        
         finalStampId = newStamp.id;
+
+      } else if (currentStamp) {
+        // C. 既存の切手を更新する場合 (UPDATE)
+        // IDは変えず、中身だけ変える
+        let updatedUrl = currentStamp.image_url;
+        if (newStampFile) {
+           updatedUrl = await uploadStampImage(newStampFile);
+        }
+
+        // 名前か画像が変わっていたらUPDATEを実行
+        if (updatedUrl !== currentStamp.image_url || newStampName !== currentStamp.name) {
+           const { error: updateErr } = await supabase
+             .from('stamps')
+             .update({
+               name: newStampName,
+               image_url: updatedUrl
+             })
+             .eq('id', currentStamp.id);
+           
+           if (updateErr) throw updateErr;
+        }
+        // finalStampIdはそのまま
       }
 
-      // 3. 更新処理（★修正：ページを結合して保存）
+      // 3. 更新処理
       const contentToSave = pages.join(PAGE_DELIMITER);
 
       const { error } = await supabase
@@ -323,7 +350,6 @@ export default function EditPage() {
             {newImageFile && <p className="text-[10px] text-green-600 mt-1">新しい画像を選択中</p>}
           </div>
 
-          {/* ★修正：ページごとの入力フォーム */}
           <div>
             <label className="block text-xs font-bold text-gray-500 mb-2">手紙の内容</label>
             <div className="space-y-4">
@@ -372,20 +398,38 @@ export default function EditPage() {
           <div className="border border-yellow-200 p-4 rounded bg-yellow-50 relative">
             <label className="block text-xs font-bold text-yellow-800 mb-2">🎁 切手の設定</label>
 
-            {currentStamp && !isStampDeleted && (
-              <div className="flex items-center gap-3 mb-2 bg-white p-2 rounded border border-yellow-100">
-                <img src={currentStamp.image_url} alt="stamp" className="w-10 h-auto border" />
-                <div className="flex-1">
-                  <p className="text-xs font-bold">{currentStamp.name}</p>
-                  <p className="text-[10px] text-gray-400">現在設定中</p>
+            {currentStamp && !isStampDeleted && !isCreatingNewStamp && (
+              <div className="mb-4">
+                <div className="flex items-center gap-3 mb-2 bg-white p-2 rounded border border-yellow-100">
+                  <img src={currentStamp.image_url} alt="stamp" className="w-10 h-auto border" />
+                  <div className="flex-1">
+                    <p className="text-xs font-bold">{currentStamp.name}</p>
+                    <p className="text-[10px] text-gray-400">現在設定中</p>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={() => setIsStampDeleted(true)}
+                    className="text-xs bg-red-100 text-red-500 px-2 py-1 rounded hover:bg-red-200"
+                  >
+                    外す
+                  </button>
                 </div>
-                <button 
-                  type="button" 
-                  onClick={() => setIsStampDeleted(true)}
-                  className="text-xs bg-red-100 text-red-500 px-2 py-1 rounded hover:bg-red-200"
-                >
-                  外す
-                </button>
+                
+                {/* ★追加：既存切手の更新フォーム */}
+                <div className="pl-2 border-l-2 border-yellow-300 space-y-2 mt-2">
+                   <p className="text-[10px] font-bold text-gray-500">この切手の情報を更新する:</p>
+                   <input 
+                     type="text" placeholder="名前を変更" 
+                     className="w-full p-2 border rounded text-xs"
+                     value={newStampName} onChange={e => setNewStampName(e.target.value)}
+                   />
+                   <input 
+                     type="file" accept="image/*"
+                     className="w-full text-xs text-gray-500"
+                     onChange={(e) => e.target.files?.[0] && setNewStampFile(e.target.files[0])}
+                   />
+                   {newStampFile && <p className="text-[10px] text-green-600">※新しい画像で上書きされます</p>}
+                </div>
               </div>
             )}
 
@@ -396,17 +440,19 @@ export default function EditPage() {
               </div>
             )}
 
-            {(!currentStamp || isStampDeleted) && (
+            {(!currentStamp || isStampDeleted || isCreatingNewStamp) && (
               <div className="mt-2">
-                <label className="flex items-center gap-2 cursor-pointer mb-2">
-                   <input 
-                     type="checkbox" 
-                     checked={isCreatingNewStamp} 
-                     onChange={() => setIsCreatingNewStamp(!isCreatingNewStamp)} 
-                     className="accent-orange-600"
-                   />
-                   <span className="text-xs font-bold">新しい切手を作成して付ける</span>
-                </label>
+                {!currentStamp && (
+                  <label className="flex items-center gap-2 cursor-pointer mb-2">
+                     <input 
+                       type="checkbox" 
+                       checked={isCreatingNewStamp} 
+                       onChange={() => setIsCreatingNewStamp(!isCreatingNewStamp)} 
+                       className="accent-orange-600"
+                     />
+                     <span className="text-xs font-bold">新しい切手を作成して付ける</span>
+                  </label>
+                )}
 
                 {isCreatingNewStamp && (
                   <div className="pl-4 border-l-2 border-yellow-300 space-y-2">
