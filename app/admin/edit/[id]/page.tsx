@@ -15,6 +15,7 @@ const supabase = createClient(
 
 // 仕様設定
 const PAGE_DELIMITER = '<<<PAGE>>>';
+// ★変更：140文字に制限
 const MAX_CHARS_PER_PAGE = 140;
 const MAX_PAGES_ADMIN = 20;
 
@@ -25,6 +26,7 @@ export default function EditPage() {
   const [title, setTitle] = useState('');
   const [spotName, setSpotName] = useState('');
   
+  // ★変更：pagesで管理
   const [pages, setPages] = useState<string[]>(['']);
 
   const [lat, setLat] = useState(35.6288);
@@ -77,10 +79,13 @@ export default function EditPage() {
         setTitle(letter.title);
         setSpotName(letter.spot_name || '');
         
+        // ★修正：コンテンツのパース処理
         const content = letter.content || '';
         if (content.includes(PAGE_DELIMITER)) {
+           // 区切り文字がある場合（新しい形式）
            setPages(content.split(PAGE_DELIMITER));
         } else {
+           // 区切り文字がない場合（古い形式）：文字数で分割して配列化
            const newPages = [];
            if (content.length === 0) {
              newPages.push('');
@@ -120,9 +125,16 @@ export default function EditPage() {
     fetchLetter();
   }, [id, router]);
 
+  // ★追加：HTMLタグを除去して文字数をカウントする関数
+  const getVisibleLength = (text: string) => {
+    return text.replace(/<[^>]+>/g, '').length;
+  };
+
   // ページ操作関数
   const handlePageChange = (index: number, value: string) => {
-    if (value.length > MAX_CHARS_PER_PAGE) return;
+    // ★修正：見た目の文字数で制限チェック
+    if (getVisibleLength(value) > MAX_CHARS_PER_PAGE) return;
+
     const newPages = [...pages];
     newPages[index] = value;
     setPages(newPages);
@@ -162,6 +174,7 @@ export default function EditPage() {
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // ★修正：結合してチェック
     const fullContent = pages.join('');
     if (!title || !fullContent.trim()) return alert('タイトルと内容を入力してください');
 
@@ -175,7 +188,7 @@ export default function EditPage() {
     setIsSubmitting(true);
 
     try {
-      // 1. 手紙の画像処理
+      // 1. 画像処理
       let finalImageUrl = currentImageUrl;
 
       if (isImageDeleted) {
@@ -202,7 +215,7 @@ export default function EditPage() {
         finalImageUrl = urlData.publicUrl;
       }
 
-      // 2. 切手処理 (★修正：ここを大幅変更)
+      // 2. 切手処理
       let finalStampId = currentStamp ? currentStamp.id : null;
 
       if (isStampDeleted) {
@@ -228,13 +241,11 @@ export default function EditPage() {
 
       } else if (currentStamp) {
         // C. 既存の切手を更新する場合 (UPDATE)
-        // IDは変えず、中身だけ変える
         let updatedUrl = currentStamp.image_url;
         if (newStampFile) {
            updatedUrl = await uploadStampImage(newStampFile);
         }
 
-        // 名前か画像が変わっていたらUPDATEを実行
         if (updatedUrl !== currentStamp.image_url || newStampName !== currentStamp.name) {
            const { error: updateErr } = await supabase
              .from('stamps')
@@ -246,10 +257,9 @@ export default function EditPage() {
            
            if (updateErr) throw updateErr;
         }
-        // finalStampIdはそのまま
       }
 
-      // 3. 更新処理
+      // 3. 更新処理（★修正：ページを結合して保存）
       const contentToSave = pages.join(PAGE_DELIMITER);
 
       const { error } = await supabase
@@ -350,6 +360,7 @@ export default function EditPage() {
             {newImageFile && <p className="text-[10px] text-green-600 mt-1">新しい画像を選択中</p>}
           </div>
 
+          {/* ★修正：ページごとの入力フォーム */}
           <div>
             <label className="block text-xs font-bold text-gray-500 mb-2">手紙の内容</label>
             <div className="space-y-4">
@@ -363,10 +374,11 @@ export default function EditPage() {
                       placeholder="手紙の内容" 
                       value={pageContent} 
                       onChange={e => handlePageChange(index, e.target.value)} 
-                      maxLength={MAX_CHARS_PER_PAGE}
+                      // ★修正：maxLengthを削除
                     />
-                    <div className={`text-[10px] text-right mt-1 font-bold ${pageContent.length >= MAX_CHARS_PER_PAGE ? 'text-red-500' : 'text-gray-400'}`}>
-                      {pageContent.length} / {MAX_CHARS_PER_PAGE} 文字
+                    <div className={`text-[10px] text-right mt-1 font-bold ${getVisibleLength(pageContent) >= MAX_CHARS_PER_PAGE ? 'text-red-500' : 'text-gray-400'}`}>
+                      {/* ★修正：getVisibleLengthを使って表示 */}
+                      {getVisibleLength(pageContent)} / {MAX_CHARS_PER_PAGE} 文字
                     </div>
                     {pages.length > 1 && (
                       <button 

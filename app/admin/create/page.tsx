@@ -69,8 +69,15 @@ export default function AdminCreatePage() {
     if (data) setLetters(data);
   };
 
+  // ★追加：HTMLタグを除去して文字数をカウントする関数
+  const getVisibleLength = (text: string) => {
+    return text.replace(/<[^>]+>/g, '').length;
+  };
+
   const handlePageChange = (index: number, value: string) => {
-    if (value.length > MAX_CHARS_PER_PAGE) return;
+    // ★修正：見た目の文字数で制限チェック
+    if (getVisibleLength(value) > MAX_CHARS_PER_PAGE) return;
+    
     const newPages = [...pages];
     newPages[index] = value;
     setPages(newPages);
@@ -264,10 +271,11 @@ export default function AdminCreatePage() {
                       placeholder="手紙の内容" 
                       value={pageContent} 
                       onChange={e => handlePageChange(index, e.target.value)} 
-                      maxLength={MAX_CHARS_PER_PAGE}
+                      // ★修正：maxLengthを削除（HTMLタグを入力可能にするため）
                     />
-                    <div className={`text-[10px] text-right mt-1 font-bold ${pageContent.length >= MAX_CHARS_PER_PAGE ? 'text-red-500' : 'text-gray-400'}`}>
-                      {pageContent.length} / {MAX_CHARS_PER_PAGE} 文字
+                    <div className={`text-[10px] text-right mt-1 font-bold ${getVisibleLength(pageContent) >= MAX_CHARS_PER_PAGE ? 'text-red-500' : 'text-gray-400'}`}>
+                      {/* ★修正：getVisibleLengthを使って表示 */}
+                      {getVisibleLength(pageContent)} / {MAX_CHARS_PER_PAGE} 文字
                     </div>
                     {pages.length > 1 && (
                       <button 
