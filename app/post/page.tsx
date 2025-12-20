@@ -195,11 +195,11 @@ export default function PostPage() {
   const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
   return (
-    // ★修正：flex-col にして、コンテンツ全体を縦に並べる
-    <div className="relative w-full h-full min-h-screen bg-gray-100 flex flex-col">
+    // ★修正：レイアウトを元に戻す（h-screen, overflow-hidden）
+    <div className="relative w-full h-screen overflow-hidden bg-gray-100">
       
-      {/* 1. 地図エリア（上半分に固定） */}
-      <div className="flex-1 relative z-0 min-h-[40vh]">
+      {/* 1. 地図エリア */}
+      <div className="absolute inset-0 z-0">
         {mapToken && (
           <Map
             {...viewState}
@@ -207,39 +207,50 @@ export default function PostPage() {
             style={{ width: '100%', height: '100%' }}
             mapStyle="mapbox://styles/mapbox/streets-v12"
             mapboxAccessToken={mapToken}
+            // ★追加：地図の背景（アイコン以外）をクリックしたらトップに戻る
+            onClick={(e) => {
+              // ピンをクリックした時は発火しないように制御されているはずですが、
+              // 念のため router.push('/') を実行
+              router.push('/');
+            }}
           >
             <NavigationControl position="top-right" style={{ marginTop: '80px' }} />
             <GeolocateControl position="top-right" />
-            <Marker latitude={pinLocation.lat} longitude={pinLocation.lng} anchor="bottom">
+            
+            {/* ピン自体をクリックしてもイベントが伝播しないようにする */}
+            <Marker 
+              latitude={pinLocation.lat} 
+              longitude={pinLocation.lng} 
+              anchor="bottom"
+              onClick={e => e.originalEvent.stopPropagation()} 
+            >
               <div className="animate-bounce drop-shadow-lg">
                 <IconUserLetter className="w-12 h-12" />
               </div>
             </Marker>
           </Map>
         )}
-        
-        {/* キャンセルボタン（地図内に配置） */}
-        <Link href="/" className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur p-2 px-4 rounded-full shadow-md text-gray-600 font-bold text-xs hover:bg-white transition-colors">
-          ✕ キャンセル
-        </Link>
-
-        {!isExpanded && !isCompleted && (
-          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-10 pointer-events-none w-full text-center px-4">
-             <span className="bg-white/80 backdrop-blur text-gray-600 text-[10px] px-3 py-1 rounded-full shadow-sm border border-gray-200">
-               現在地に手紙を置きます
-             </span>
-          </div>
-        )}
       </div>
 
-      {/* 2. 投稿フォームエリア（下からせり出し、最大で画面いっぱいまで広がる） */}
+      <Link href="/" className="absolute top-4 left-4 z-10 bg-white/90 backdrop-blur p-2 px-4 rounded-full shadow-md text-gray-600 font-bold text-xs hover:bg-white transition-colors">
+        ✕ キャンセル
+      </Link>
+
+      {!isExpanded && !isCompleted && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-10 pointer-events-none w-full text-center px-4">
+           <span className="bg-white/80 backdrop-blur text-gray-600 text-[10px] px-3 py-1 rounded-full shadow-sm border border-gray-200">
+             現在地に手紙を置きます
+           </span>
+        </div>
+      )}
+
+      {/* 2. 投稿フォームエリア（完了時は非表示） */}
       {!isCompleted && (
         <div 
-          className={`bg-white rounded-t-3xl shadow-[0_-5px_20px_rgba(0,0,0,0.15)] z-20 flex flex-col transition-all duration-300 ease-in-out ${
-            isExpanded ? 'h-[70vh] md:h-[80vh]' : 'h-24'
+          className={`absolute bottom-0 left-0 w-full bg-white rounded-t-3xl z-20 shadow-[0_-5px_20px_rgba(0,0,0,0.15)] transition-all duration-300 ease-in-out flex flex-col ${
+            isExpanded ? 'h-[85%] md:h-[80%]' : 'h-40'
           }`}
         >
-          {/* ドラッグハンドル兼トグルボタン */}
           <div 
             className="w-full flex items-center justify-center pt-3 pb-2 cursor-pointer shrink-0 hover:bg-gray-50 rounded-t-3xl transition-colors"
             onClick={() => setIsExpanded(!isExpanded)}
@@ -259,8 +270,7 @@ export default function PostPage() {
             </div>
           </div>
           
-          {/* スクロール可能なフォーム本体 */}
-          <div className="flex-1 overflow-y-auto px-6 pb-8 overscroll-contain">
+          <div className="flex-1 overflow-y-auto px-6 pb-8">
             <div className="space-y-5 pt-2">
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1">手紙の名前</label>
@@ -445,7 +455,7 @@ export default function PostPage() {
         </div>
       )}
 
-      {/* PWAインストール案内 */}
+      {/* PWAインストール案内（投稿完了時） */}
       <AddToHomeScreen 
         isOpen={showPwaPrompt} 
         onClose={() => setShowPwaPrompt(false)}
