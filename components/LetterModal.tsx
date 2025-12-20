@@ -31,7 +31,7 @@ type Props = {
   onDeleted?: () => void;
 };
 
-// 1ページあたりの文字数（改行などを考慮して安全圏に設定）
+// 1ページあたりの文字数
 const CHARS_PER_PAGE = 140; 
 
 export default function LetterModal({ letter, currentUser, onClose, onDeleted }: Props) {
@@ -172,11 +172,10 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
     }
   };
 
-  // リンク化関数（正規表現でHTMLタグ風の文字列をパース）
+  // リンク化関数
   const renderContent = (text: string) => {
     if (!letter.is_official) return text; 
 
-    // <a href="URL">TEXT</a> を検出する正規表現
     const regex = /<a\s+href="([^"]+)"[^>]*>(.*?)<\/a>/g;
     
     const parts = [];
@@ -194,7 +193,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
           href={match[1]} 
           target="_blank" 
           rel="noopener noreferrer"
-          // ★修正：mx-1 を削除し、テキストの流れを阻害しないように
           className="text-blue-600 underline decoration-blue-400 decoration-1 underline-offset-2 hover:text-blue-800"
           style={{ textCombineUpright: 'none' }} 
         >
@@ -223,17 +221,31 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
     <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose}></div>
 
+      {/* ★修正（Issue #5）：切手獲得モーダルのデザイン変更 */}
       {gotStamp && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none">
-          <div className="bg-white/95 p-6 rounded-lg shadow-2xl flex flex-col items-center animate-bounce-in pointer-events-auto border-4 border-yellow-400 max-w-xs">
-            <h3 className="font-bold text-orange-600 mb-2 font-serif text-lg tracking-widest">切手を拾いました！</h3>
-            <div className="w-24 h-32 border-4 border-white shadow-md rotate-3 mb-4 bg-white">
-              <img src={gotStamp.image_url} className="w-full h-full object-cover" alt="stamp" />
+          <div className="bg-[#fdfcf5] p-8 rounded-sm shadow-2xl flex flex-col items-center animate-bounce-in pointer-events-auto border-4 border-double border-[#5d4037]/20 max-w-xs relative">
+            {/* 上部の装飾 */}
+            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#fdfcf5] px-2">
+               <span className="text-[#5d4037] text-xl">★</span>
             </div>
-            <p className="font-bold text-sm text-gray-800 mb-4">{gotStamp.name}</p>
+
+            <h3 className="font-bold text-[#5d4037] mb-4 font-serif text-lg tracking-widest text-center leading-relaxed">
+              切手を受け取りました
+            </h3>
+            
+            <div className="w-24 h-32 border-4 border-white shadow-lg rotate-3 mb-5 bg-white p-1">
+              <div className="w-full h-full border border-gray-100 flex items-center justify-center bg-gray-50">
+                <img src={gotStamp.image_url} className="w-full h-full object-contain" alt="stamp" />
+              </div>
+            </div>
+            
+            <p className="font-bold text-sm text-[#5d4037] mb-1 font-serif">{gotStamp.name}</p>
+            <p className="text-[10px] text-gray-400 mb-6 font-serif">切手帳に記録されました</p>
+            
             <button 
               onClick={() => setGotStamp(null)}
-              className="bg-green-700 text-white text-xs font-bold px-6 py-2 rounded-full shadow hover:bg-green-800 transition-colors"
+              className="bg-[#5d4037] text-white text-xs font-bold px-8 py-2.5 rounded-full shadow hover:bg-[#4a332d] transition-colors tracking-wider"
             >
               閉じる
             </button>
@@ -241,7 +253,9 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
         </div>
       )}
 
-      <div className={`relative w-full max-w-md h-[600px] shadow-2xl rounded-2xl transform transition-all duration-300 border-4 ${borderColor} ${bgColor} flex flex-col ${isVisible ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}`}>
+      {/* メインの手紙モーダル */}
+      {/* ★修正（Issue #6）：高さ固定(h-[600px])をやめ、モバイルではvh(h-[85vh])を使用 */}
+      <div className={`relative w-full max-w-md h-[85vh] md:h-[600px] shadow-2xl rounded-2xl transform transition-all duration-300 border-4 ${borderColor} ${bgColor} flex flex-col ${isVisible ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}`}>
         
         {/* ヘッダー */}
         <div className="h-20 flex items-center justify-between px-6 border-b border-gray-100/50 relative shrink-0">
@@ -278,7 +292,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
         )}
 
         {/* コンテンツエリア */}
-        {/* ★修正：overflow-x-auto, pt-12, pb-8 を適用し、paddingを確保して切れを防ぐ */}
         <div className="flex-1 relative overflow-hidden overflow-x-auto pt-12 pb-8 px-6 md:pt-14 md:pb-10 md:px-8 flex items-center justify-center">
           
           {isLocked ? (
@@ -311,7 +324,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
                  </div>
               )}
               {pageData && pageData.type === 'text' && (
-                // ★修正：flex系のクラスを全て削除し、ブロック/インラインの自然なフローに戻す
                 <div className={`w-full h-full text-base md:text-lg leading-loose font-serif tracking-widest [writing-mode:vertical-rl] whitespace-pre-wrap ${textColor} animate-fadeIn`}>
                   {renderContent(pageData.content)}
                 </div>

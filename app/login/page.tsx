@@ -1,18 +1,22 @@
 'use client';
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { createClient } from '@supabase/supabase-js';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Logo from '@/components/Logo';
-import FooterLinks from '@/components/FooterLinks'; // ★追加
+import FooterLinks from '@/components/FooterLinks';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // ★修正：URLから戻り先を取得（なければトップへ）
+  const nextUrl = searchParams.get('next') || '/';
+
   const [isLoginMode, setIsLoginMode] = useState(true);
   
   const [emailOrNickname, setEmailOrNickname] = useState('');
@@ -55,7 +59,8 @@ export default function LoginPage() {
 
       if (error) throw error;
       
-      router.push('/');
+      // ★修正：指定されたページへ戻る
+      router.push(nextUrl);
       router.refresh();
 
     } catch (error: any) {
@@ -92,7 +97,7 @@ export default function LoginPage() {
         password,
         options: {
           data: { nickname },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${nextUrl}`, // ★修正：OAuth戻り先にもnextを渡す
         },
       });
 
@@ -114,7 +119,8 @@ export default function LoginPage() {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        // ★修正：Googleログイン後も元のページに戻れるようパラメータを付与
+        redirectTo: `${window.location.origin}/auth/callback?next=${nextUrl}`,
       },
     });
   };
@@ -122,9 +128,8 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex flex-col bg-[#f7f4ea] font-sans text-gray-800 relative">
       
-      {/* ★変更：統一デザインの戻るボタン */}
       <Link 
-        href="/" 
+        href={nextUrl === '/' ? '/' : nextUrl} // ★修正：キャンセル時も元の場所に戻る
         className="fixed top-4 left-4 z-50 w-10 h-10 flex items-center justify-center rounded-full bg-white/80 hover:bg-white text-gray-600 hover:text-black transition-colors shadow-sm border border-gray-200"
       >
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
@@ -132,7 +137,6 @@ export default function LoginPage() {
         </svg>
       </Link>
 
-      {/* メインコンテンツ（中央寄せ） */}
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-12">
         <div className="mb-6 flex flex-col items-center">
           <Link href="/">
@@ -266,9 +270,17 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* ★追加：共通フッター */}
       <FooterLinks />
 
     </div>
+  );
+}
+
+// ★修正：ビルドエラーを防ぐため、useSearchParamsを使うコンポーネントをSuspenseで包む
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#f7f4ea]">Loading...</div>}>
+      <LoginContent />
+    </Suspense>
   );
 }

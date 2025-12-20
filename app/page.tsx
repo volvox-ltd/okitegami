@@ -249,7 +249,8 @@ export default function Home() {
       
       localStorage.setItem('visit_count', nextCount.toString());
 
-      if (nextCount === 2) {
+      // ★修正：前回のStep2で変更した「4回目」の設定を維持
+      if (nextCount === 4) {
         setTimeout(() => setShowPwaPrompt(true), 3000);
       }
     };
@@ -271,9 +272,11 @@ export default function Home() {
       )}
 
       <Header currentUser={currentUser} nickname={myNickname} onAboutClick={() => setShowAbout(true)} />
+
+      {/* ★修正：前回のStep1で変更した「セーフエリア対応の位置調整」を維持 */}
       <div 
         className="absolute left-4 z-10 transition-all"
-        style={{ top: 'calc(env(safe-area-inset-top) + 80px)' }} // ヘッダーの高さ(約60px) + 余白(20px)
+        style={{ top: 'calc(env(safe-area-inset-top) + 80px)' }}
       >
         <div className="flex items-center bg-white/90 backdrop-blur px-3 py-2 rounded-full shadow-md border border-gray-100">
           <span className="text-[10px] font-bold text-gray-600 mr-2">みんなの手紙</span>
@@ -373,12 +376,10 @@ export default function Home() {
                 <div className={`bg-white/95 backdrop-blur px-3 py-2 rounded-lg shadow-md text-[10px] mb-2 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border flex flex-col items-center
                   ${isReachable ? 'border-orange-500 text-orange-600' : isNear ? 'border-gray-400 text-gray-600' : 'border-bunko-gray/10 text-bunko-ink'}`}>
                    
-                   {/* ユーザー名/公式名 */}
                    <span className="font-bold">
                      {letter.is_official ? '木林文庫の手紙' : (letter.nickname ? `${letter.nickname}さんの手紙` : '')}
                    </span>
 
-                   {/* ★追加：場所名（入力がある場合のみ表示） */}
                    {letter.spot_name && letter.spot_name !== '名もなき場所' && (
                      <span className="text-[8px] text-gray-400 mt-0.5 font-sans">
                        📍 {letter.spot_name}
@@ -501,13 +502,15 @@ export default function Home() {
       <div className="fixed bottom-8 right-4 z-40 flex flex-col items-end gap-2">
         <div 
           className="bg-white/90 p-2 rounded-lg shadow-sm text-[10px] text-gray-600 font-bold animate-bounce cursor-pointer relative"
-          onClick={() => router.push(currentUser ? '/post' : '/login')}
+          // ★修正：未ログイン時は ?next=/post を付与してリダイレクト先を指定
+          onClick={() => router.push(currentUser ? '/post' : '/login?next=/post')}
         >
            {currentUser ? '手紙を書く' : 'ログインして手紙を書く'}
            <div className="absolute right-4 top-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white/90"></div>
         </div>
         
-        <Link href={currentUser ? "/post" : "/login"}>
+        {/* ★修正：こちらも同様に ?next=/post を付与 */}
+        <Link href={currentUser ? "/post" : "/login?next=/post"}>
           <button
             className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-105 active:scale-95 border-2 border-white ${currentUser ? 'bg-green-700 hover:bg-green-800 text-white' : 'bg-gray-400 hover:bg-gray-500 text-white'}`}
           >
@@ -522,7 +525,7 @@ export default function Home() {
         <TutorialModal onClose={handleCloseTutorial} />
       )}
 
-      {/* PWAインストール案内（2回目訪問時） */}
+      {/* PWAインストール案内 */}
       <AddToHomeScreen 
         isOpen={showPwaPrompt} 
         onClose={() => setShowPwaPrompt(false)}

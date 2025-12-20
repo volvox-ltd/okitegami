@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: 'おきてがみ',
     short_name: 'おきてがみ',
-    description: '地図に手紙を置くアプリ',
+    description: '48時間だけ読める、場所と記憶のタイムカプセル',
     start_url: '/',
     display: 'standalone', // これでブラウザのバーが消えます
     background_color: '#fdfcf5',
