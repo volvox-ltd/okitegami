@@ -1,5 +1,5 @@
 import './globals.css';
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next'; // ★修正：Viewport型を追加
 // Google Fontsからフォントを読み込む
 import { Zen_Maru_Gothic, Shippori_Mincho } from 'next/font/google';
 
@@ -7,7 +7,7 @@ import { Zen_Maru_Gothic, Shippori_Mincho } from 'next/font/google';
 const gothic = Zen_Maru_Gothic({
   weight: ['400', '700'],
   subsets: ['latin'],
-  variable: '--font-gothic', // 後でCSS変数として使えるようにする
+  variable: '--font-gothic',
   display: 'swap',
 });
 
@@ -19,10 +19,10 @@ const mincho = Shippori_Mincho({
   display: 'swap',
 });
 
-// ★修正：SNSシェア用の設定 (OGP)
+// SNSシェア用の設定 (OGP)
 export const metadata: Metadata = {
   title: 'おきてがみ',
-  description: '地図に手紙を置くアプリ',
+  description: '48時間だけ読める、場所と記憶のタイムカプセル',
   openGraph: {
     title: 'おきてがみ',
     description: '散歩のついでに、言葉の宝探しをしてみませんか。',
@@ -35,7 +35,16 @@ export const metadata: Metadata = {
     title: 'おきてがみ',
     description: '散歩のついでに、言葉の宝探しをしてみませんか。',
   },
-  // アイコン設定はNext.jsが自動検出しますが、念のため明記も可能
+};
+
+// ★修正：ビューポート設定を追加（これが入力時のズームを防ぎます）
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false, // ユーザーによるピンチズームを禁止（ネイティブアプリ風の挙動にする）
+  // キーボードが出た時のレイアウト崩れを防ぐ設定（iOS/Android両対応）
+  interactiveWidget: 'resizes-visual', 
 };
 
 export default function RootLayout({
