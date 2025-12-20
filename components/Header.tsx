@@ -12,26 +12,28 @@ type Props = {
 
 export default function Header({ currentUser, nickname, onAboutClick }: Props) {
   return (
-    // paddingを元の p-3 に戻しました
-    <div className="absolute top-0 left-0 z-10 w-full p-3 px-4 bg-white/90 backdrop-blur-sm shadow-sm flex justify-between items-center pointer-events-none transition-all">
+    // ★修正：top-0 ではなく top-safe (またはパディング調整) を行いたいですが、
+    // absolute配置なので、env(safe-area-inset-top) を margin-top に適用するのが最も安全です。
+    // また、z-indexを上げて地図より手前に来ることを確実にします。
+    <div 
+      className="absolute left-0 z-50 w-full p-3 px-4 bg-white/90 backdrop-blur-sm shadow-sm flex justify-between items-center pointer-events-none transition-all"
+      style={{ top: 'env(safe-area-inset-top)' }} // ★ここを追加：セーフエリアの下に配置
+    >
       
       {/* 左側：ロゴ & タイトル */}
       <div className="flex items-center gap-2 pointer-events-auto pl-1">
-        {/* ★修正：ロゴだけ少し大きく (w-9 h-9) */}
         <Logo className="w-10 h-10 md:w-10 md:h-10 text-bunko-ink" />
         <div className="flex flex-col">
-          {/* ★修正：文字サイズは元通り (text-sm/lg) */}
           <h1 className="font-serif text-sm md:text-lg tracking-widest text-bunko-ink leading-none">
             おきてがみ
           </h1>
-          {/* サブタイトルは削除済み */}
         </div>
       </div>
       
       {/* 右側：ボタンエリア */}
       <div className="pointer-events-auto flex items-center gap-3 pr-1">
         
-        {/* 遊び方ボタン (元のサイズ w-8 h-8 に戻し) */}
+        {/* 遊び方ボタン */}
         {onAboutClick && (
           <button 
             onClick={onAboutClick}
@@ -41,7 +43,7 @@ export default function Header({ currentUser, nickname, onAboutClick }: Props) {
           </button>
         )}
 
-        {/* ログイン / マイページボタン (元のサイズ感に戻し) */}
+        {/* ログイン / マイページボタン */}
         {currentUser ? (
           <Link href="/mypage">
             <span className="text-[10px] text-gray-500 font-serif border border-gray-300 rounded-full px-3 py-1 bg-white hover:bg-gray-50 hover:text-green-700 hover:border-green-700 transition-colors cursor-pointer block shadow-sm">

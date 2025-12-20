@@ -271,8 +271,10 @@ export default function Home() {
       )}
 
       <Header currentUser={currentUser} nickname={myNickname} onAboutClick={() => setShowAbout(true)} />
-
-      <div className="absolute top-20 left-4 z-10">
+      <div 
+        className="absolute left-4 z-10 transition-all"
+        style={{ top: 'calc(env(safe-area-inset-top) + 80px)' }} // ヘッダーの高さ(約60px) + 余白(20px)
+      >
         <div className="flex items-center bg-white/90 backdrop-blur px-3 py-2 rounded-full shadow-md border border-gray-100">
           <span className="text-[10px] font-bold text-gray-600 mr-2">みんなの手紙</span>
           <label className="relative inline-flex items-center cursor-pointer">
