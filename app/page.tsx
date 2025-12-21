@@ -1,10 +1,10 @@
 'use client';
 import { compressImage } from '@/utils/compressImage';
-import { useState, useEffect, Suspense } from 'react'; // ★修正: Suspenseを追加
+import { useState, useEffect } from 'react';
 import Map, { Marker, NavigationControl, GeolocateControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { createClient } from '@supabase/supabase-js';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation'; // useSearchParams は削除
 import Link from 'next/link';
 import IconUserLetter from '@/components/IconUserLetter';
 import { NG_WORDS } from '@/utils/ngWords';
@@ -21,10 +21,10 @@ const MAX_CHARS_PER_PAGE = 140;
 const MAX_PAGES = 10;
 const MIN_DISTANCE = 30; 
 
-// ★変更点1: ここを export default ではなく、ただの関数コンポーネントに変更し、名前を PostContent にする
-function PostContent() {
+// ★修正: SuspenseやPostContentの分割をやめて、元のシンプルな形に戻します
+export default function PostPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  // const searchParams = useSearchParams(); // ★削除: これがエラーの原因でした
 
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
@@ -46,15 +46,19 @@ function PostContent() {
   const [pinLocation, setPinLocation] = useState({ lat: 35.6288, lng: 139.6842 });
 
   useEffect(() => {
-    const latParam = searchParams.get('lat');
-    const lngParam = searchParams.get('lng');
+    // ★修正: ブラウザ標準の機能でURLパラメータを取得（これでビルドエラーを回避）
+    const params = new URLSearchParams(window.location.search);
+    const latParam = params.get('lat');
+    const lngParam = params.get('lng');
 
     if (latParam && lngParam) {
+      // URLに座標がある場合
       const lat = parseFloat(latParam);
       const lng = parseFloat(lngParam);
       setViewState((prev) => ({ ...prev, latitude: lat, longitude: lng }));
       setPinLocation({ lat, lng });
     } else {
+      // URLに座標がない場合のみGPSを取得
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition((position) => {
           const { latitude, longitude } = position.coords;
@@ -65,7 +69,7 @@ function PostContent() {
         });
       }
     }
-  }, [searchParams]); // searchParamsを依存配列に追加
+  }, []); // 初回のみ実行でOK
 
   const handlePageChange = (index: number, value: string) => {
     if (value.length > MAX_CHARS_PER_PAGE) return;
@@ -471,14 +475,5 @@ function PostContent() {
         .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
       `}</style>
     </div>
-  );
-}
-
-// ★変更点2: 最後に export default で Suspense 付きのコンポーネントを返す
-export default function PostPage() {
-  return (
-    <Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-100 text-gray-500 text-sm">読み込み中...</div>}>
-      <PostContent />
-    </Suspense>
   );
 }
