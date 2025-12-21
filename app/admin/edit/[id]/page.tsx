@@ -49,6 +49,21 @@ export default function EditPage() {
 
   const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
+  const handleMapLoad = (evt: any) => {
+    const map = evt.target;
+    map.getStyle().layers.forEach((layer: any) => {
+      if (layer.layout && layer.layout['text-field']) {
+        try {
+          map.setLayoutProperty(layer.id, 'text-field', [
+            'coalesce',
+            ['get', 'name_ja'],
+            ['get', 'name']
+          ]);
+        } catch (e) {}
+      }
+    });
+  };
+
   useEffect(() => {
     const fetchLetter = async () => {
       if(!id) return;
@@ -345,6 +360,7 @@ export default function EditPage() {
         <MapGL
           {...viewState}
           onMove={evt => setViewState(evt.viewState)}
+          onLoad={handleMapLoad}
           style={{ width: '100%', height: '100%' }}
           mapStyle="mapbox://styles/mapbox/streets-v12"
           mapboxAccessToken={mapToken}

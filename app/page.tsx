@@ -84,6 +84,27 @@ export default function Home() {
     zoom: 15
   });
 
+  // ★追加: 地図読み込み時に日本語化する関数
+  const handleMapLoad = (evt: any) => {
+    const map = evt.target;
+    // スタイル内のすべてのレイヤーをチェック
+    map.getStyle().layers.forEach((layer: any) => {
+      // テキスト表示があるレイヤー（ラベルなど）に対して
+      if (layer.layout && layer.layout['text-field']) {
+        try {
+          // 'name_ja' (日本語) を優先し、なければ 'name' (デフォルト) を使うように変更
+          map.setLayoutProperty(layer.id, 'text-field', [
+            'coalesce',
+            ['get', 'name_ja'],
+            ['get', 'name']
+          ]);
+        } catch (e) {
+          // エラーは無視（特定のレイヤーでプロパティが合わない場合など）
+        }
+      }
+    });
+  };
+
   // ユーザーチェック & 監視
   useEffect(() => {
     const checkUser = async () => {
@@ -341,7 +362,7 @@ export default function Home() {
           }}
         >
            <div className="bg-white/90 backdrop-blur-md p-3 pl-4 rounded-l-2xl shadow-lg border-y border-l border-gray-300 flex items-center gap-3 max-w-[180px] cursor-pointer hover:bg-white transition-colors">
-              <span className="text-xl animate-pulse">✨</span>
+              <span className="text-xl animate-pulse"></span>
               <div className="flex flex-col">
                 <span className="text-[10px] font-bold text-gray-400"></span>
                 <span className="text-xs font-bold text-gray-700 leading-tight">
@@ -355,6 +376,7 @@ export default function Home() {
       <Map
         {...viewState}
         onMove={evt => setViewState(evt.viewState)}
+        onLoad={handleMapLoad}
         style={{ width: '100%', height: '100%' }}
         mapStyle="mapbox://styles/mapbox/streets-v12" 
         mapboxAccessToken={mapToken}
