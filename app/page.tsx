@@ -283,34 +283,41 @@ function HomeContent() {
             if ((new Date().getTime() - new Date(letter.created_at).getTime()) / 3600000 > LETTER_EXPIRATION_HOURS) return null;
           }
           if (!letter.is_official && !showUserPosts) return null;
+          
           const distance = calculateDistance(letter.lat, letter.lng);
           const isMyPost = currentUser && currentUser.id === letter.user_id;
           const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
           const isReachable = (distance !== null && distance <= UNLOCK_DISTANCE) || isMyPost || isAdmin;
           const isNear = distance !== null && distance <= NOTIFICATION_DISTANCE && !isReachable;
+          
           const isRead = readLetterIds.includes(letter.id);
+
+          // ★修正：全データ(allLetters)の中から、このポスト(letter.id)を親に持つ手紙があるか判定
+          const postHasLetters = allLetters.some(l => l.parent_id === letter.id);
 
           return (
             <Marker key={letter.id} latitude={letter.lat} longitude={letter.lng} anchor="bottom" onClick={(e) => { e.originalEvent.stopPropagation(); setPopupInfo(letter); }} style={{ zIndex: isReachable ? 10 : isNear ? 5 : 1 }}>
-              <div className={`flex flex-col items-center group cursor-pointer ${isRead ? 'opacity-80' : ''}`}>
+              <div className={`flex flex-col items-center group cursor-pointer ${isRead ? 'opacity-70' : ''}`}>
                 <div className={`bg-white/95 backdrop-blur px-3 py-2 rounded-lg shadow-md text-[10px] mb-2 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border flex flex-col items-center ${isReachable ? 'border-orange-500 text-orange-600' : isNear ? 'border-gray-400 text-gray-600' : 'border-bunko-gray/10 text-bunko-ink'}`}>
                    <span className="font-bold">{letter.is_post ? '常設ポスト' : (letter.is_official ? '木林文庫の手紙' : (letter.nickname ? `${letter.nickname}さんの手紙` : ''))}</span>
-                   {letter.spot_name && letter.spot_name !== '名もなき場所' && <span className="text-[8px] text-gray-400 mt-0.5 font-sans">📍 {letter.spot_name}</span>}
                    {isReachable && <span className="block text-[8px] font-bold text-orange-500 text-center mt-1">{letter.is_post ? '投函できます！' : '読めます！'}</span>}
                 </div>
+                
                 <div className={`transition-transform duration-300 drop-shadow-md relative ${isReachable ? 'animate-bounce' : isNear ? 'animate-pulse scale-110' : 'hover:scale-110'}`}>
                    {letter.is_post ? (
                      <div className={isReachable ? "text-red-600" : isNear ? "text-red-500" : "text-red-700"}>
-                        <IconPost className="w-12 h-12" hasLetters={allLetters.some(l => l.parent_id === letter.id)} />
+                        <IconPost className="w-12 h-12" hasLetters={postHasLetters} />
                      </div>
                    ) : (
                      <div className={isReachable ? (letter.is_official ? "text-yellow-500" : "text-orange-500") : "text-bunko-ink"}>
                         {letter.is_official ? <IconAdminLetter className="w-8 h-8" /> : <IconUserLetter className="w-8 h-8" />}
                      </div>
                    )}
-                   {isRead && !isReachable && (
-                      <div className="absolute bottom-0 -right-1 bg-white/80 rounded-full w-3 h-3 flex items-center justify-center shadow-sm">
-                        <span className="text-[8px] text-bunko-ink font-bold">✔︎</span>
+                   
+                   {/* ★修正: !isReachable の条件を削除し、読んだら常に ✔︎ を出す */}
+                   {isRead && (
+                      <div className="absolute -bottom-1 -right-1 bg-white rounded-full w-4 h-4 flex items-center justify-center shadow-md border border-gray-100 z-30">
+                        <span className="text-[10px] text-green-600 font-bold">✔︎</span>
                       </div>
                    )}
                 </div>
@@ -320,22 +327,28 @@ function HomeContent() {
         })}
 
         {popupInfo && (
-          <Popup latitude={popupInfo.lat} longitude={popupInfo.lng} anchor="bottom" offset={[0, -40]} onClose={() => setPopupInfo(null)} closeOnClick={false} className="z-50 font-serif">
-            <div className="p-2 min-w-[160px] text-center pt-4">
-              <h3 className="font-bold text-sm mb-1 text-bunko-ink">{popupInfo.title}</h3>
+          <Popup latitude={popupInfo.lat} longitude={popupInfo.lng} anchor="bottom" offset={[0, -40]} onClose={() => setPopupInfo(null)} closeOnClick={false} className="z-50">
+            {/* ポップアップ全体に font-sans を適用し、タイトルのみ font-serif に */}
+            <div className="p-2 min-w-[160px] text-center pt-4 font-sans"> 
+              <h3 className="font-bold text-sm mb-1 text-bunko-ink font-serif">{popupInfo.title}</h3>
               <p className="text-[10px] text-gray-500 mb-1">{popupInfo.is_post ? '常設ポスト' : (popupInfo.is_official ? '木林文庫の手紙' : (popupInfo.nickname ? `${popupInfo.nickname}さんの置き手紙` : '置き手紙'))}</p>
+              
               {(() => {
                 const dist = calculateDistance(popupInfo.lat, popupInfo.lng);
                 const isReachable = (dist !== null && dist <= UNLOCK_DISTANCE) || (currentUser?.email && ADMIN_EMAILS.includes(currentUser.email)) || (currentUser && currentUser.id === popupInfo.user_id);
+                
                 if (dist === null) return <p className="text-xs text-gray-400">確認中...</p>;
                 if (isReachable) {
                   return (
-                    <button onClick={() => { if (popupInfo.is_post) setReadingPost(popupInfo); else setReadingLetter(popupInfo); markAsRead(popupInfo.id); }} className="w-full text-white text-xs py-2 px-4 rounded-full transition-colors shadow-sm font-bold bg-green-700 hover:bg-green-800">
+                    <button 
+                      onClick={() => { if (popupInfo.is_post) setReadingPost(popupInfo); else setReadingLetter(popupInfo); markAsRead(popupInfo.id); }} 
+                      className="w-full text-white text-xs py-2 px-4 rounded-full transition-colors shadow-sm font-bold bg-green-700 hover:bg-green-800 font-sans"
+                    >
                       {popupInfo.is_post ? 'ポストを開く' : '手紙を開く'}
                     </button>
                   );
                 }
-                return <div className="bg-gray-100 text-gray-500 text-xs py-2 px-2 rounded-full border border-gray-200">🔒 あと {dist}m</div>;
+                return <div className="bg-gray-100 text-gray-500 text-xs py-2 px-2 rounded-full border border-gray-200 font-sans">🔒 あと {dist}m</div>;
               })()}
             </div>
           </Popup>

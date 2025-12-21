@@ -56,7 +56,10 @@ export default function Header({ currentUser, nickname, onAboutClick, isHidden }
             </div>
           </Link>
         ) : (
-          <Link href="/login" className="text-xs font-bold bg-bunko-ink/90 text-white px-4 py-2 rounded-full shadow hover:bg-bunko-ink transition-all font-serif">
+          <Link 
+            href="/login" 
+            className="text-xs font-bold bg-white/80 backdrop-blur text-gray-700 px-5 py-2 rounded-full border border-gray-200 shadow-sm hover:shadow-md transition-all font-sans"
+          >
             ログイン
           </Link>
         )}
