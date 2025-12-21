@@ -44,8 +44,8 @@ type Letter = {
 };
 
 // 距離設定（メートル）
-const UNLOCK_DISTANCE = 50;      
-const NOTIFICATION_DISTANCE = 300; 
+const UNLOCK_DISTANCE = 30;      
+const NOTIFICATION_DISTANCE = 100; 
 
 export default function Home() {
   const ADMIN_EMAILS = [
@@ -56,13 +56,14 @@ export default function Home() {
   const router = useRouter();
   
   const [letters, setLetters] = useState<Letter[]>([]);
-  // ★追加: フィルタリング前の全データを保持（ポストの中身判定用）
-  const [allLetters, setAllLetters] = useState<Letter[]>([]);
+  const [allLetters, setAllLetters] = useState<Letter[]>([]); // ポストの中身判定用
   
   const [popupInfo, setPopupInfo] = useState<Letter | null>(null);
   
   const [readingLetter, setReadingLetter] = useState<Letter | null>(null);
   const [readingPost, setReadingPost] = useState<Letter | null>(null);
+
+  const [readLetterIds, setReadLetterIds] = useState<string[]>([]);
 
   const [showAbout, setShowAbout] = useState(false);
   const [showUserPosts, setShowUserPosts] = useState(true);
@@ -84,28 +85,39 @@ export default function Home() {
     zoom: 15
   });
 
-  // ★追加: 地図読み込み時に日本語化する関数
+  // ★地図読み込み時の設定（日本語化 ＋ 不要なアイコン削除）
   const handleMapLoad = (evt: any) => {
+    // ★ここで map を定義しています。これがないとエラーになります。
     const map = evt.target;
-    // スタイル内のすべてのレイヤーをチェック
+    
+    // 1. 日本語化処理
     map.getStyle().layers.forEach((layer: any) => {
-      // テキスト表示があるレイヤー（ラベルなど）に対して
       if (layer.layout && layer.layout['text-field']) {
         try {
-          // 'name_ja' (日本語) を優先し、なければ 'name' (デフォルト) を使うように変更
           map.setLayoutProperty(layer.id, 'text-field', [
             'coalesce',
             ['get', 'name_ja'],
             ['get', 'name']
           ]);
-        } catch (e) {
-          // エラーは無視（特定のレイヤーでプロパティが合わない場合など）
-        }
+        } catch (e) {}
+      }
+    });
+
+    // 2. 不要なアイコン（バス停、お店、道路番号など）を非表示にする
+    const layersToHide = [
+      'road-number-shield', // 青い道路標識（国道番号など）
+      'road-exit-shield'    // 高速道路の出口番号など
+    ];
+
+    layersToHide.forEach(id => {
+      // そのレイヤーが存在する場合のみ非表示にする
+      if (map.getLayer(id)) {
+        map.setLayoutProperty(id, 'visibility', 'none');
       }
     });
   };
 
-  // ユーザーチェック & 監視
+  // ユーザーチェック & 既読ロード
   useEffect(() => {
     const checkUser = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -119,15 +131,17 @@ export default function Home() {
           .eq('id', user.id)
           .single();
         
-        if (profile) {
-          setMyNickname(profile.nickname);
-        } else {
-          setShowNicknameModal(true);
-        }
+        if (profile) setMyNickname(profile.nickname);
+        else setShowNicknameModal(true);
       }
     };
 
     checkUser();
+
+    const storedReads = localStorage.getItem('read_letter_ids');
+    if (storedReads) {
+      setReadLetterIds(JSON.parse(storedReads));
+    }
 
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
@@ -141,6 +155,14 @@ export default function Home() {
     };
   }, [router]);
 
+  const markAsRead = (id: string) => {
+    if (!readLetterIds.includes(id)) {
+      const newIds = [...readLetterIds, id];
+      setReadLetterIds(newIds);
+      localStorage.setItem('read_letter_ids', JSON.stringify(newIds));
+    }
+  };
+
   // 手紙データの取得
   const fetchLetters = async () => {
     try {
@@ -152,12 +174,9 @@ export default function Home() {
       }
       if (!lettersData) return;
 
-      // ★追加: 全データを保存（ポストの中身判定に使うため）
       setAllLetters(lettersData as Letter[]);
 
-      // parent_id が null または undefined のものだけを表示（地図用）
       const rootLetters = lettersData.filter((l: any) => l.parent_id === null || l.parent_id === undefined);
-
       const userIds = Array.from(new Set(rootLetters.map(l => l.user_id).filter(Boolean)));
 
       let nicknameMap: Record<string, string> = {};
@@ -279,6 +298,7 @@ export default function Home() {
             } else {
                 setReadingLetter(targetPost);
             }
+            markAsRead(targetPost.id); // 自動で開いた場合も既読に
             
             setViewState(prev => ({
               ...prev,
@@ -308,9 +328,17 @@ export default function Home() {
         setTimeout(() => setShowPwaPrompt(true), 3000);
       }
     };
-    
     checkVisitCount();
   }, []);
+
+  // 投稿URL生成関数
+  const getPostUrl = () => {
+    if (!currentUser) return '/login?next=/post';
+    if (userLocation) {
+      return `/post?lat=${userLocation.lat}&lng=${userLocation.lng}`;
+    }
+    return '/post';
+  };
 
   return (
     <main className="w-full h-screen relative bg-[#f7f4ea]">
@@ -347,7 +375,7 @@ export default function Home() {
 
       {nearestNotificationLetter && !popupInfo && (
         <div 
-          className="fixed right-0 top-32 z-40 animate-slideInRight"
+          className="fixed right-4 top-32 z-40 animate-slideInRight"
           onClick={() => {
             const targetLetter = nearestNotificationLetter;
             if (!targetLetter) return;
@@ -361,14 +389,9 @@ export default function Home() {
             }));
           }}
         >
-           <div className="bg-white/90 backdrop-blur-md p-3 pl-4 rounded-l-2xl shadow-lg border-y border-l border-gray-300 flex items-center gap-3 max-w-[180px] cursor-pointer hover:bg-white transition-colors">
-              <span className="text-xl animate-pulse"></span>
-              <div className="flex flex-col">
-                <span className="text-[10px] font-bold text-gray-400"></span>
-                <span className="text-xs font-bold text-gray-700 leading-tight">
-                  近くに手紙が<br/>あります...
-                </span>
-              </div>
+           <div className="bg-white/80 backdrop-blur-sm px-3 py-2 rounded-full shadow-sm border border-gray-200 flex items-center gap-2 cursor-pointer hover:bg-white transition-colors">
+              <span className="text-sm animate-bounce">✨</span>
+              <span className="text-[10px] font-bold text-gray-600">近くに手紙があります</span>
            </div>
         </div>
       )}
@@ -411,6 +434,8 @@ export default function Home() {
 
           const isReachable = (distance !== null && distance <= UNLOCK_DISTANCE) || isMyPost || isAdmin;
           const isNear = distance !== null && distance <= NOTIFICATION_DISTANCE && !isReachable;
+          
+          const isRead = readLetterIds.includes(letter.id);
 
           return (
             <Marker 
@@ -424,7 +449,7 @@ export default function Home() {
               }}
               style={{ zIndex: isReachable ? 10 : isNear ? 5 : 1 }}
             >
-              <div className="flex flex-col items-center group cursor-pointer">
+              <div className={`flex flex-col items-center group cursor-pointer ${isRead ? 'opacity-80' : ''}`}>
                 <div className={`bg-white/95 backdrop-blur px-3 py-2 rounded-lg shadow-md text-[10px] mb-2 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border flex flex-col items-center
                   ${isReachable ? 'border-orange-500 text-orange-600' : isNear ? 'border-gray-400 text-gray-600' : 'border-bunko-gray/10 text-bunko-ink'}`}>
                    
@@ -444,21 +469,21 @@ export default function Home() {
                 </div>
 
                 <div className={`transition-transform duration-300 drop-shadow-md relative ${isReachable ? 'animate-bounce' : isNear ? 'animate-pulse scale-110' : 'hover:scale-110'}`}>
+                   
                    {letter.is_post ? (
                      <div className={isReachable ? "text-red-600" : isNear ? "text-red-500" : "text-red-700"}>
-                        {/* ★修正: ポストの中に手紙があるか判定してIconPostに伝える */}
                         <IconPost 
-                          className="w-14 h-14" 
+                          className="w-12 h-12" 
                           hasLetters={allLetters.some(l => l.parent_id === letter.id)} 
                         />
                      </div>
                    ) : letter.is_official ? (
                      <div className={isReachable ? "text-yellow-500" : isNear ? "text-yellow-300" : "text-bunko-ink"}>
-                        <IconAdminLetter className="w-10 h-10" />
+                        <IconAdminLetter className="w-8 h-8" />
                      </div>
                    ) : (
                      <div className={isReachable ? "text-orange-500" : isNear ? "text-cyan-500" : "text-bunko-ink"}>
-                        <IconUserLetter className="w-10 h-10" />
+                        <IconUserLetter className="w-8 h-8" />
                      </div>
                    )}
                    
@@ -473,6 +498,12 @@ export default function Home() {
                         <span className="text-[8px] font-bold">!</span>
                       </div>
                    )}
+
+                   {isRead && !isReachable && (
+                      <div className="absolute bottom-0 -right-1 bg-white/80 rounded-full w-3 h-3 flex items-center justify-center shadow-sm">
+                        <span className="text-[8px] text-bunko-ink font-bold">✔︎</span>
+                      </div>
+                   )}
                 </div>
               </div>
             </Marker>
@@ -484,7 +515,7 @@ export default function Home() {
             latitude={popupInfo.lat}
             longitude={popupInfo.lng}
             anchor="bottom"
-            offset={[0, -50]}
+            offset={[0, -40]}
             onClose={() => setPopupInfo(null)}
             closeOnClick={false}
             className="z-50 font-serif"
@@ -511,7 +542,10 @@ export default function Home() {
                   if (popupInfo.is_post) {
                     return (
                       <button 
-                        onClick={() => setReadingPost(popupInfo)}
+                        onClick={() => {
+                          setReadingPost(popupInfo);
+                          markAsRead(popupInfo.id);
+                        }}
                         className="w-full text-white text-xs py-2 px-4 rounded-full transition-colors shadow-sm font-bold bg-green-700 hover:bg-green-800"
                       >
                         ポストを開く
@@ -521,7 +555,10 @@ export default function Home() {
 
                   return (
                     <button 
-                      onClick={() => setReadingLetter(popupInfo)}
+                      onClick={() => {
+                        setReadingLetter(popupInfo);
+                        markAsRead(popupInfo.id);
+                      }}
                       className={`w-full text-white text-xs py-2 px-4 rounded-full transition-colors shadow-sm font-bold ${
                         isAdmin ? "bg-yellow-600 hover:bg-yellow-700" : "bg-orange-500 hover:bg-red-600"
                       }`}
@@ -578,13 +615,13 @@ export default function Home() {
       <div className="fixed bottom-8 right-4 z-40 flex flex-col items-end gap-2">
         <div 
           className="bg-white/90 p-2 rounded-lg shadow-sm text-[10px] text-gray-600 font-bold animate-bounce cursor-pointer relative"
-          onClick={() => router.push(currentUser ? '/post' : '/login?next=/post')}
+          onClick={() => router.push(getPostUrl())}
         >
            {currentUser ? '手紙を書く' : 'ログインして手紙を書く'}
            <div className="absolute right-4 top-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white/90"></div>
         </div>
         
-        <Link href={currentUser ? "/post" : "/login?next=/post"}>
+        <Link href={getPostUrl()}>
           <button
             className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-105 active:scale-95 border-2 border-white ${currentUser ? 'bg-green-700 hover:bg-green-800 text-white' : 'bg-gray-400 hover:bg-gray-500 text-white'}`}
           >

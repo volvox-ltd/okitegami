@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import Map, { Marker, NavigationControl, GeolocateControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { createClient } from '@supabase/supabase-js';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation'; // ★修正：useSearchParamsを追加
 import Link from 'next/link';
 import IconUserLetter from '@/components/IconUserLetter';
 import { NG_WORDS } from '@/utils/ngWords';
@@ -23,6 +23,8 @@ const MIN_DISTANCE = 30;
 
 export default function PostPage() {
   const router = useRouter();
+  const searchParams = useSearchParams(); // ★追加
+
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
   
@@ -43,16 +45,29 @@ export default function PostPage() {
   const [pinLocation, setPinLocation] = useState({ lat: 35.6288, lng: 139.6842 });
 
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((position) => {
-        const { latitude, longitude } = position.coords;
-        setViewState((prev) => ({ ...prev, latitude, longitude }));
-        setPinLocation({ lat: latitude, lng: longitude });
-      }, (error) => {
-        console.error("位置情報の取得に失敗しました", error);
-      });
+    // ★修正：URLパラメータのチェックを優先
+    const latParam = searchParams.get('lat');
+    const lngParam = searchParams.get('lng');
+
+    if (latParam && lngParam) {
+      // URLに座標がある場合（地図画面から引き継がれた場合）
+      const lat = parseFloat(latParam);
+      const lng = parseFloat(lngParam);
+      setViewState((prev) => ({ ...prev, latitude: lat, longitude: lng }));
+      setPinLocation({ lat, lng });
+    } else {
+      // URLに座標がない場合のみGPSを取得
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((position) => {
+          const { latitude, longitude } = position.coords;
+          setViewState((prev) => ({ ...prev, latitude, longitude }));
+          setPinLocation({ lat: latitude, lng: longitude });
+        }, (error) => {
+          console.error("位置情報の取得に失敗しました", error);
+        });
+      }
     }
-  }, []);
+  }, []); // 依存配列は空でOK
 
   const handlePageChange = (index: number, value: string) => {
     if (value.length > MAX_CHARS_PER_PAGE) return;
@@ -195,7 +210,6 @@ export default function PostPage() {
   const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
   return (
-    // ★修正：レイアウトを元に戻す（h-screen, overflow-hidden）
     <div className="relative w-full h-screen overflow-hidden bg-gray-100">
       
       {/* 1. 地図エリア */}
@@ -207,17 +221,13 @@ export default function PostPage() {
             style={{ width: '100%', height: '100%' }}
             mapStyle="mapbox://styles/mapbox/streets-v12"
             mapboxAccessToken={mapToken}
-            // ★追加：地図の背景（アイコン以外）をクリックしたらトップに戻る
             onClick={(e) => {
-              // ピンをクリックした時は発火しないように制御されているはずですが、
-              // 念のため router.push('/') を実行
               router.push('/');
             }}
           >
             <NavigationControl position="top-right" style={{ marginTop: '80px' }} />
             <GeolocateControl position="top-right" />
             
-            {/* ピン自体をクリックしてもイベントが伝播しないようにする */}
             <Marker 
               latitude={pinLocation.lat} 
               longitude={pinLocation.lng} 
@@ -387,16 +397,12 @@ export default function PostPage() {
           <div className="w-full max-w-sm relative">
             
             <div className="bg-[#fdfcf5] rounded-xl p-6 shadow-2xl relative border-4 border-white mb-6">
-              <div className="absolute top-4 right-4 w-12 h-14 bg-red-50 border-2 border-dotted border-red-200 flex items-center justify-center rotate-3 shadow-sm">
-                <span className="text-[8px] text-red-300 font-bold">POST</span>
-              </div>
-              
               <div className="text-center mt-4">
                 <h3 className="font-serif text-lg font-bold text-bunko-ink mb-2 tracking-widest">
                   お手紙を置きました
                 </h3>
                 <div className="w-full h-px bg-gray-300 my-4 relative">
-                  <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 bg-[#fdfcf5] px-2 text-gray-400 text-xs">✉</div>
+                  <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 bg-[#fdfcf5] px-2 text-gray-400 text-xs"></div>
                 </div>
                 
                 <div className="space-y-2 font-serif text-sm text-gray-700">

@@ -1,62 +1,66 @@
-'use client';
-
 import Link from 'next/link';
 import { User } from '@supabase/supabase-js';
-import Logo from './Logo';
+import Image from 'next/image';
 
 type Props = {
   currentUser: User | null;
   nickname: string | null;
-  onAboutClick?: () => void; 
+  onAboutClick: () => void;
+  isHidden: boolean;
 };
 
-export default function Header({ currentUser, nickname, onAboutClick }: Props) {
+export default function Header({ currentUser, nickname, onAboutClick, isHidden }: Props) {
   return (
-    // ★修正：top-0 ではなく top-safe (またはパディング調整) を行いたいですが、
-    // absolute配置なので、env(safe-area-inset-top) を margin-top に適用するのが最も安全です。
-    // また、z-indexを上げて地図より手前に来ることを確実にします。
-    <div 
-      className="absolute left-0 z-50 w-full p-3 px-4 bg-white/90 backdrop-blur-sm shadow-sm flex justify-between items-center pointer-events-none transition-all"
-      style={{ top: 'env(safe-area-inset-top)' }} // ★ここを追加：セーフエリアの下に配置
+    <header
+      // ★修正: py-3 -> py-2 に変更して上下の余白を詰める
+      className={`fixed top-0 left-0 w-full z-50 bg-[#fdfcf5]/80 backdrop-blur-md border-b border-[#e6e2d3] px-4 py-2 flex justify-between items-center transition-transform duration-500 shadow-sm pointer-events-none ${
+        isHidden ? '-translate-y-full' : 'translate-y-0'
+      }`}
     >
-      
-      {/* 左側：ロゴ & タイトル */}
-      <div className="flex items-center gap-2 pointer-events-auto pl-1">
-        <Logo className="w-10 h-10 md:w-10 md:h-10 text-bunko-ink" />
-        <div className="flex flex-col">
-          <h1 className="font-serif text-sm md:text-lg tracking-widest text-bunko-ink leading-none flex items-baseline">
-            おきてがみ
-            <span className="text-xs text-gray-400 font-sans font-normal tracking-widest relative -top-[3px]">（β版）</span>
-          </h1>
-        </div>
-      </div>
-      
-      {/* 右側：ボタンエリア */}
-      <div className="pointer-events-auto flex items-center gap-3 pr-1">
-        
-        {/* 遊び方ボタン */}
-        {onAboutClick && (
-          <button 
-            onClick={onAboutClick}
-            className="w-8 h-8 rounded-full bg-white border border-gray-300 flex items-center justify-center text-gray-500 hover:text-green-700 hover:border-green-700 transition-colors shadow-sm"
-          >
-            <span className="text-xs font-bold font-serif">?</span>
-          </button>
-        )}
+      {/* 左側：ロゴ & タイトル画像 */}
+      <Link href="/" className="pointer-events-auto">
+        <Image
+          src="/logo-title.png"
+          alt="おきてがみ"
+          // width/heightはアスペクト比計算用（1000:335）
+          width={1000} 
+          height={335} 
+          // ★修正: h-12 md:h-14 -> h-9 md:h-11 に変更して画像を小さく
+          className="h-9 md:h-11 w-auto object-contain pl-1"
+          priority
+        />
+      </Link>
 
-        {/* ログイン / マイページボタン */}
+      {/* 右側メニュー */}
+      <div className="flex items-center gap-2 pointer-events-auto">
+        
+        {/* 「？」アイコンボタン */}
+        <button 
+          onClick={onAboutClick} 
+          // ★修正: ヘッダー高さに合わせてボタンも少し小さく (w-9 h-9 -> w-8 h-8), アイコンも小さく (w-5 h-5 -> w-4 h-4)
+          className="flex items-center justify-center w-8 h-8 text-gray-500 hover:text-bunko-ink transition-colors bg-white/60 hover:bg-white rounded-full border border-transparent hover:border-gray-200 shadow-sm"
+          aria-label="おきてがみとは？"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M12 17.25h.007v.008H12v-.008z" />
+          </svg>
+        </button>
+        
         {currentUser ? (
           <Link href="/mypage">
-            <span className="text-[10px] text-gray-500 font-serif border border-gray-300 rounded-full px-3 py-1 bg-white hover:bg-gray-50 hover:text-green-700 hover:border-green-700 transition-colors cursor-pointer block shadow-sm">
-              {nickname ? nickname : 'マイページ'}
-            </span>
+            <div className="flex items-center gap-2 bg-white/80 backdrop-blur px-3 py-1.5 rounded-full border border-gray-200 shadow-sm hover:shadow-md transition-all cursor-pointer">
+              <span className="text-xs font-bold text-gray-700 max-w-[80px] truncate font-serif">
+                {nickname || 'マイページ'}
+              </span>
+              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+            </div>
           </Link>
         ) : (
-          <Link href="/login" className="text-[10px] font-bold text-green-700 bg-white px-3 py-1.5 rounded-full border border-green-700 shadow-sm hover:bg-green-50 transition-colors">
+          <Link href="/login" className="text-xs font-bold bg-bunko-ink/90 text-white px-4 py-2 rounded-full shadow hover:bg-bunko-ink transition-all font-serif">
             ログイン
           </Link>
         )}
       </div>
-    </div>
+    </header>
   );
 }

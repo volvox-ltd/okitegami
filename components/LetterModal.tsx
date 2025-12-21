@@ -244,7 +244,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
         <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none">
           <div className="bg-[#fdfcf5] p-8 rounded-sm shadow-2xl flex flex-col items-center animate-bounce-in pointer-events-auto border-4 border-double border-[#5d4037]/20 max-w-xs relative">
             <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#fdfcf5] px-2">
-               <span className="text-[#5d4037] text-xl">★</span>
+               <span className="text-[#5d4037] text-xl"></span>
             </div>
 
             <h3 className="font-bold text-[#5d4037] mb-4 font-serif text-lg tracking-widest text-center leading-relaxed">
