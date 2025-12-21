@@ -353,8 +353,12 @@ export default function Home() {
         />
       )}
 
-      <Header currentUser={currentUser} nickname={myNickname} onAboutClick={() => setShowAbout(true)} />
-
+      <Header 
+        currentUser={currentUser} 
+        nickname={myNickname} 
+        onAboutClick={() => setShowAbout(true)} 
+        isHidden={false}  // ★これを追加！
+      />
       <div 
         className="absolute left-4 z-10 transition-all"
         style={{ top: 'calc(env(safe-area-inset-top) + 80px)' }}
