@@ -1,10 +1,11 @@
 'use client';
+
 import { compressImage } from '@/utils/compressImage';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react'; // Suspenseを追加
 import Map, { Marker, NavigationControl, GeolocateControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { createClient } from '@supabase/supabase-js';
-import { useRouter } from 'next/navigation'; // useSearchParams は削除
+import { useRouter, useSearchParams } from 'next/navigation'; // useSearchParamsを復活
 import Link from 'next/link';
 import IconUserLetter from '@/components/IconUserLetter';
 import { NG_WORDS } from '@/utils/ngWords';
@@ -21,10 +22,10 @@ const MAX_CHARS_PER_PAGE = 140;
 const MAX_PAGES = 10;
 const MIN_DISTANCE = 30; 
 
-// ★修正: SuspenseやPostContentの分割をやめて、元のシンプルな形に戻します
-export default function PostPage() {
+// ★変更1: 中身のロジックを「PostContent」という名前にして、export defaultを外す
+function PostContent() {
   const router = useRouter();
-  // const searchParams = useSearchParams(); // ★削除: これがエラーの原因でした
+  const searchParams = useSearchParams(); // ★ここで安全に使用
 
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
@@ -46,19 +47,16 @@ export default function PostPage() {
   const [pinLocation, setPinLocation] = useState({ lat: 35.6288, lng: 139.6842 });
 
   useEffect(() => {
-    // ★修正: ブラウザ標準の機能でURLパラメータを取得（これでビルドエラーを回避）
-    const params = new URLSearchParams(window.location.search);
-    const latParam = params.get('lat');
-    const lngParam = params.get('lng');
+    // ★修正: useSearchParamsを使って取得（Suspense内なので安全）
+    const latParam = searchParams.get('lat');
+    const lngParam = searchParams.get('lng');
 
     if (latParam && lngParam) {
-      // URLに座標がある場合
       const lat = parseFloat(latParam);
       const lng = parseFloat(lngParam);
       setViewState((prev) => ({ ...prev, latitude: lat, longitude: lng }));
       setPinLocation({ lat, lng });
     } else {
-      // URLに座標がない場合のみGPSを取得
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition((position) => {
           const { latitude, longitude } = position.coords;
@@ -69,7 +67,7 @@ export default function PostPage() {
         });
       }
     }
-  }, []); // 初回のみ実行でOK
+  }, [searchParams]);
 
   const handlePageChange = (index: number, value: string) => {
     if (value.length > MAX_CHARS_PER_PAGE) return;
@@ -475,5 +473,14 @@ export default function PostPage() {
         .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
       `}</style>
     </div>
+  );
+}
+
+// ★変更2: 最後にexport defaultで、全体をSuspenseで囲むコンポーネントを返す
+export default function PostPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-screen bg-gray-100 text-gray-500 text-sm">読み込み中...</div>}>
+      <PostContent />
+    </Suspense>
   );
 }
