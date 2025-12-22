@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, TouchEvent } from 'react'; // TouchEventを追加
+import { useState, useEffect, TouchEvent } from 'react';
 import { createClient, User } from '@supabase/supabase-js';
 import Link from 'next/link';
 import IconUserLetter from './IconUserLetter';
@@ -22,6 +22,7 @@ type Letter = {
   user_id?: string;
   password?: string | null;
   attached_stamp_id?: number | null;
+  parent_id?: string | null; // ★追加：ポスト投函判別用
 };
 
 type Props = {
@@ -31,29 +32,26 @@ type Props = {
   onDeleted?: () => void;
 };
 
-// 1ページあたりの文字数
 const CHARS_PER_PAGE = 140; 
 
 export default function LetterModal({ letter, currentUser, onClose, onDeleted }: Props) {
   const [isVisible, setIsVisible] = useState(false);
-  
   const [isLocked, setIsLocked] = useState(false);
   const [inputPassword, setInputPassword] = useState('');
   const [unlockError, setUnlockError] = useState(false);
-
   const [currentPage, setCurrentPage] = useState(0); 
   const [pages, setPages] = useState<any[]>([]);
   const [isFavorited, setIsFavorited] = useState(false);
-
   const [gotStamp, setGotStamp] = useState<any>(null);
   const [isReported, setIsReported] = useState(false);
 
-  // ★追加：スワイプ検知用のState
+  // スワイプ検知
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
-  const minSwipeDistance = 50; // スワイプとみなす最小距離
+  const minSwipeDistance = 50;
 
   const isMyPost = currentUser && currentUser.id === letter.user_id;
+  const isPostedInBox = !!letter.parent_id; // ★追加：ポストに投函された手紙か
 
   useEffect(() => {
     setIsVisible(true);
@@ -83,16 +81,10 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
           stamp_id: letter.attached_stamp_id
         });
         if (!error) {
-          const { data: stampData } = await supabase
-            .from('stamps')
-            .select('*')
-            .eq('id', letter.attached_stamp_id)
-            .single();
+          const { data: stampData } = await supabase.from('stamps').select('*').eq('id', letter.attached_stamp_id).single();
           if (stampData) setGotStamp(stampData);
         }
-      } catch (e) {
-        // 重複エラーは無視
-      }
+      } catch (e) {}
     }
   };
 
@@ -128,18 +120,13 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
 
   useEffect(() => {
     const newPages = [];
-    if (letter.image_url) {
-      newPages.push({ type: 'image', content: letter.image_url });
-    }
+    if (letter.image_url) newPages.push({ type: 'image', content: letter.image_url });
 
     if (!letter.content) {
       newPages.push({ type: 'text', content: '' });
     } else {
       if (letter.content.includes(PAGE_DELIMITER)) {
-        const splitPages = letter.content.split(PAGE_DELIMITER);
-        splitPages.forEach(p => {
-          newPages.push({ type: 'text', content: p });
-        });
+        letter.content.split(PAGE_DELIMITER).forEach(p => newPages.push({ type: 'text', content: p }));
       } else {
         for (let i = 0; i < letter.content.length; i += CHARS_PER_PAGE) {
           newPages.push({ type: 'text', content: letter.content.slice(i, i + CHARS_PER_PAGE) });
@@ -153,20 +140,13 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
   const handleNext = () => { if (currentPage < pages.length - 1) setCurrentPage(currentPage + 1); };
   const handlePrev = () => { if (currentPage > 0) setCurrentPage(currentPage - 1); };
 
-  // ★追加：スワイプ処理関数
-  const onTouchStart = (e: TouchEvent) => {
-    setTouchEnd(null); 
-    setTouchStart(e.targetTouches[0].clientX);
-  };
+  const onTouchStart = (e: TouchEvent) => { setTouchEnd(null); setTouchStart(e.targetTouches[0].clientX); };
   const onTouchMove = (e: TouchEvent) => setTouchEnd(e.targetTouches[0].clientX);
   const onTouchEnd = () => {
     if (!touchStart || !touchEnd) return;
     const distance = touchStart - touchEnd;
-    const isLeftSwipe = distance > minSwipeDistance;
-    const isRightSwipe = distance < -minSwipeDistance;
-    
-    if (isLeftSwipe) handleNext();
-    if (isRightSwipe) handlePrev();
+    if (distance > minSwipeDistance) handleNext();
+    if (distance < -minSwipeDistance) handlePrev();
   };
 
   const handleDelete = async () => {
@@ -179,53 +159,24 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
   const handleReport = async () => {
     if (!confirm('この手紙を不適切なコンテンツとして通報しますか？')) return;
     try {
-      const { error } = await supabase.from('reports').insert({
-        letter_id: letter.id,
-        reporter_id: currentUser?.id || null,
-        reason: '不適切なコンテンツ'
-      });
-      if (error) throw error;
-      alert('通報を受け付けました。\nご協力ありがとうございます。');
+      await supabase.from('reports').insert({ letter_id: letter.id, reporter_id: currentUser?.id || null, reason: '不適切なコンテンツ' });
+      alert('通報を受け付けました。');
       setIsReported(true);
-    } catch (e) {
-      alert('送信に失敗しました');
-    }
+    } catch (e) { alert('送信に失敗しました'); }
   };
 
   const renderContent = (text: string) => {
     if (!letter.is_official) return text; 
-
     const regex = /<a\s+href="([^"]+)"[^>]*>(.*?)<\/a>/g;
-    
     const parts = [];
     let lastIndex = 0;
     let match;
-
     while ((match = regex.exec(text)) !== null) {
-      if (match.index > lastIndex) {
-        parts.push(text.substring(lastIndex, match.index));
-      }
-      
-      parts.push(
-        <a 
-          key={match.index} 
-          href={match[1]} 
-          target="_blank" 
-          rel="noopener noreferrer"
-          className="text-blue-600 underline decoration-blue-400 decoration-1 underline-offset-2 hover:text-blue-800"
-          style={{ textCombineUpright: 'none' }} 
-        >
-          {match[2]} 
-        </a>
-      );
-      
+      if (match.index > lastIndex) parts.push(text.substring(lastIndex, match.index));
+      parts.push(<a key={match.index} href={match[1]} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline decoration-blue-400 hover:text-blue-800">{match[2]}</a>);
       lastIndex = regex.lastIndex;
     }
-
-    if (lastIndex < text.length) {
-      parts.push(text.substring(lastIndex));
-    }
-
+    if (lastIndex < text.length) parts.push(text.substring(lastIndex));
     return parts.length > 0 ? parts : text;
   };
 
@@ -242,30 +193,16 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
 
       {gotStamp && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none">
-          <div className="bg-[#fdfcf5] p-8 rounded-sm shadow-2xl flex flex-col items-center animate-bounce-in pointer-events-auto border-4 border-double border-[#5d4037]/20 max-w-xs relative">
-            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#fdfcf5] px-2">
-               <span className="text-[#5d4037] text-xl"></span>
-            </div>
-
-            <h3 className="font-bold text-[#5d4037] mb-4 font-serif text-lg tracking-widest text-center leading-relaxed">
-              切手を受け取りました
-            </h3>
-            
+          <div className="bg-[#fdfcf5] p-8 rounded-sm shadow-2xl flex flex-col items-center animate-bounce-in pointer-events-auto border-4 border-double border-[#5d4037]/20 max-w-xs text-center font-sans">
+            <h3 className="font-bold text-[#5d4037] mb-4 font-serif text-lg tracking-widest leading-relaxed">切手を受け取りました</h3>
             <div className="w-24 h-32 border-4 border-white shadow-lg rotate-3 mb-5 bg-white p-1">
               <div className="w-full h-full border border-gray-100 flex items-center justify-center bg-gray-50">
                 <img src={gotStamp.image_url} className="w-full h-full object-contain" alt="stamp" />
               </div>
             </div>
-            
             <p className="font-bold text-sm text-[#5d4037] mb-1 font-serif">{gotStamp.name}</p>
             <p className="text-[10px] text-gray-400 mb-6 font-serif">切手帳に記録されました</p>
-            
-            <button 
-              onClick={() => setGotStamp(null)}
-              className="bg-[#5d4037] text-white text-xs font-bold px-8 py-2.5 rounded-full shadow hover:bg-[#4a332d] transition-colors tracking-wider"
-            >
-              閉じる
-            </button>
+            <button onClick={() => setGotStamp(null)} className="bg-[#5d4037] text-white text-xs font-bold px-8 py-2.5 rounded-full shadow hover:bg-[#4a332d] transition-colors tracking-wider font-sans">閉じる</button>
           </div>
         </div>
       )}
@@ -282,21 +219,24 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
                <p className="text-xs text-gray-400 font-serif mt-1 truncate">📍 {letter.spot_name}</p>
              </div>
           </div>
-          <button onClick={handleClose} className="absolute right-4 text-gray-400 hover:text-gray-600 p-2">✕</button>
+          <button onClick={handleClose} className="absolute right-4 text-gray-400 hover:text-gray-600 p-2 font-sans">✕</button>
         </div>
 
         {!isLocked && (
-          <div className="absolute top-20 right-4 z-10 flex gap-2">
+          <div className="absolute top-20 right-4 z-10 flex gap-2 font-sans">
             {isMyPost ? (
               <>
-                <Link href={`/post/edit/${letter.id}`}>
-                  <button className="bg-gray-100 text-gray-600 text-xs px-3 py-1 rounded-full shadow hover:bg-gray-200">編集</button>
-                </Link>
-                <button onClick={handleDelete} className="bg-red-50 text-red-500 text-xs px-3 py-1 rounded-full shadow hover:bg-red-100">削除</button>
+                {/* ★ポスト投函ではない場合のみ編集ボタンを表示 */}
+                {!isPostedInBox && (
+                  <Link href={`/post/edit/${letter.id}`}>
+                    <button className="bg-gray-100 text-gray-600 text-xs px-3 py-1 rounded-full shadow hover:bg-gray-200 font-bold transition-colors">書き直す</button>
+                  </Link>
+                )}
+                <button onClick={handleDelete} className="bg-red-50 text-red-500 text-xs px-3 py-1 rounded-full shadow hover:bg-red-100 font-bold transition-colors">削除</button>
               </>
             ) : (
               currentUser && (
-                <button onClick={toggleFavorite} className={`flex items-center gap-1 text-xs px-3 py-1 rounded-full shadow transition-colors ${isFavorited ? 'bg-pink-50 text-pink-500 border border-pink-200' : 'bg-white text-gray-400 border border-gray-200 hover:text-pink-400'}`}>
+                <button onClick={toggleFavorite} className={`flex items-center gap-1 text-xs px-3 py-1 rounded-full shadow transition-colors font-bold ${isFavorited ? 'bg-pink-50 text-pink-500 border border-pink-200' : 'bg-white text-gray-400 border border-gray-200 hover:text-pink-400'}`}>
                   {isFavorited ? '♥ お気に入り' : '♡ お気に入り'}
                 </button>
               )
@@ -304,69 +244,42 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
           </div>
         )}
 
-        {/* コンテンツエリア */}
-        {/* ★修正：タッチイベントハンドラを追加 */}
-        <div 
-          className="flex-1 relative overflow-hidden overflow-x-auto pt-12 pb-8 px-6 md:pt-14 md:pb-10 md:px-8 flex items-center justify-center touch-pan-y"
-          onTouchStart={onTouchStart}
-          onTouchMove={onTouchMove}
-          onTouchEnd={onTouchEnd}
-        >
+        <div className="flex-1 relative overflow-hidden overflow-x-auto pt-12 pb-8 px-6 md:pt-14 md:pb-10 md:px-8 flex items-center justify-center touch-pan-y" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
           {isLocked ? (
-            <div className="flex flex-col items-center justify-center w-full h-full animate-fadeIn space-y-4">
+            <div className="flex flex-col items-center justify-center w-full h-full animate-fadeIn space-y-4 font-sans">
               <div className="text-4xl">🔒</div>
               <p className="font-serif text-gray-600 text-sm tracking-widest">合言葉が必要です</p>
-              
               <div className="w-full max-w-[200px]">
-                <input 
-                  type="text" 
-                  value={inputPassword}
-                  onChange={(e) => setInputPassword(e.target.value)}
-                  className="w-full border border-gray-300 rounded p-2 text-center mb-2 font-serif placeholder:text-gray-300"
-                  placeholder="合言葉"
-                />
-                <button 
-                  onClick={handleUnlock}
-                  className="w-full bg-green-700 text-white font-bold py-2 rounded shadow hover:bg-green-800 text-sm"
-                >
-                  開ける
-                </button>
+                <input type="text" value={inputPassword} onChange={(e) => setInputPassword(e.target.value)} className="w-full border border-gray-300 rounded p-2 text-center mb-2 font-serif" placeholder="合言葉" />
+                <button onClick={handleUnlock} className="w-full bg-green-700 text-white font-bold py-2 rounded shadow hover:bg-green-800 text-sm font-sans">開ける</button>
                 {unlockError && <p className="text-red-500 text-xs text-center mt-2">合言葉が違います</p>}
               </div>
             </div>
           ) : (
             <>
-              {pageData && pageData.type === 'image' && (
+              {pageData?.type === 'image' && (
                  <div className="w-full h-full flex items-center justify-center animate-fadeIn p-2">
                    <img src={pageData.content} alt="Photo" className="max-w-full max-h-full object-contain rounded shadow-md border-4 border-white transform rotate-1" />
                  </div>
               )}
-              {pageData && pageData.type === 'text' && (
+              {pageData?.type === 'text' && (
                 <div className={`w-full h-full text-base md:text-lg leading-loose font-serif tracking-widest [writing-mode:vertical-rl] whitespace-pre-wrap ${textColor} animate-fadeIn`}>
                   {renderContent(pageData.content)}
                 </div>
               )}
             </>
           )}
-
         </div>
 
         {!isLocked && (
-          <div className="h-16 border-t border-gray-100/50 flex items-center justify-between px-6 shrink-0 bg-white/30 backdrop-blur-sm rounded-b-xl relative">
-            
+          <div className="h-16 border-t border-gray-100/50 flex items-center justify-between px-6 shrink-0 bg-white/30 backdrop-blur-sm rounded-b-xl relative font-sans">
             <div className="absolute left-6 top-1/2 -translate-y-1/2">
                {!isMyPost && !isOfficial && (
-                 <button 
-                   onClick={handleReport}
-                   disabled={isReported}
-                   className="text-gray-300 hover:text-red-400 p-2 transition-colors disabled:text-gray-200"
-                   title="不適切な投稿を通報"
-                 >
+                 <button onClick={handleReport} disabled={isReported} className="text-gray-300 hover:text-red-400 p-2 transition-colors disabled:text-gray-200">
                    {isReported ? '✓' : '⚐'}
                  </button>
                )}
             </div>
-
             <div className="flex-1 flex justify-center items-center gap-4">
               <div className="flex items-center">
                 {currentPage < pages.length - 1 ? (
