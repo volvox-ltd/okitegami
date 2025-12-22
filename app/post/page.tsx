@@ -1,10 +1,10 @@
 'use client';
 import { compressImage } from '@/utils/compressImage';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react'; // ★Suspenseを追加
 import Map, { Marker, NavigationControl, GeolocateControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { createClient } from '@supabase/supabase-js';
-import { useRouter, useSearchParams } from 'next/navigation'; // ★修正：useSearchParamsを追加
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import IconUserLetter from '@/components/IconUserLetter';
 import { NG_WORDS } from '@/utils/ngWords';
@@ -21,9 +21,10 @@ const MAX_CHARS_PER_PAGE = 140;
 const MAX_PAGES = 10;
 const MIN_DISTANCE = 30; 
 
-export default function PostPage() {
+// メインのフォームロジックを切り出し（一切の機能を削っていません）
+function PostForm() {
   const router = useRouter();
-  const searchParams = useSearchParams(); // ★追加
+  const searchParams = useSearchParams();
 
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
@@ -45,18 +46,15 @@ export default function PostPage() {
   const [pinLocation, setPinLocation] = useState({ lat: 35.6288, lng: 139.6842 });
 
   useEffect(() => {
-    // ★修正：URLパラメータのチェックを優先
     const latParam = searchParams.get('lat');
     const lngParam = searchParams.get('lng');
 
     if (latParam && lngParam) {
-      // URLに座標がある場合（地図画面から引き継がれた場合）
       const lat = parseFloat(latParam);
       const lng = parseFloat(lngParam);
       setViewState((prev) => ({ ...prev, latitude: lat, longitude: lng }));
       setPinLocation({ lat, lng });
     } else {
-      // URLに座標がない場合のみGPSを取得
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition((position) => {
           const { latitude, longitude } = position.coords;
@@ -67,7 +65,7 @@ export default function PostPage() {
         });
       }
     }
-  }, []); // 依存配列は空でOK
+  }, [searchParams]);
 
   const handlePageChange = (index: number, value: string) => {
     if (value.length > MAX_CHARS_PER_PAGE) return;
@@ -461,7 +459,6 @@ export default function PostPage() {
         </div>
       )}
 
-      {/* PWAインストール案内（投稿完了時） */}
       <AddToHomeScreen 
         isOpen={showPwaPrompt} 
         onClose={() => setShowPwaPrompt(false)}
@@ -473,5 +470,18 @@ export default function PostPage() {
         .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
       `}</style>
     </div>
+  );
+}
+
+// ここが重要：PostPageコンポーネントをSuspenseでラップしてエクスポート
+export default function PostPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-screen bg-[#f7f4ea]">
+        <p className="text-sm text-green-800 font-serif">読み込み中...</p>
+      </div>
+    }>
+      <PostForm />
+    </Suspense>
   );
 }
