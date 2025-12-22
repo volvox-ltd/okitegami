@@ -1,19 +1,15 @@
 'use client';
-
 import { compressImage } from '@/utils/compressImage';
-import { useState, useEffect, Suspense } from 'react'; // ★Suspenseを追加
+import { useState, useEffect } from 'react';
 import Map, { Marker, NavigationControl, GeolocateControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { createClient } from '@supabase/supabase-js';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation'; // ★修正：useSearchParamsを追加
 import Link from 'next/link';
 import IconUserLetter from '@/components/IconUserLetter';
 import { NG_WORDS } from '@/utils/ngWords';
 import { getDistance } from 'geolib';
 import AddToHomeScreen from '@/components/AddToHomeScreen';
-
-// ★ビルドエラー回避の決定打：静的生成を無効化
-export const dynamic = 'force-dynamic';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -25,16 +21,17 @@ const MAX_CHARS_PER_PAGE = 140;
 const MAX_PAGES = 10;
 const MIN_DISTANCE = 30; 
 
-// --- メインのロジック ---
-function PostForm() {
+export default function PostPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams(); // ★追加
 
   const [isLoading, setIsLoading] = useState(false);
   const [isExpanded, setIsExpanded] = useState(true);
+  
   const [isCompleted, setIsCompleted] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
   const [isCopied, setIsCopied] = useState(false);
+  
   const [showPwaPrompt, setShowPwaPrompt] = useState(false);
 
   const [title, setTitle] = useState('');
@@ -48,15 +45,18 @@ function PostForm() {
   const [pinLocation, setPinLocation] = useState({ lat: 35.6288, lng: 139.6842 });
 
   useEffect(() => {
+    // ★修正：URLパラメータのチェックを優先
     const latParam = searchParams.get('lat');
     const lngParam = searchParams.get('lng');
 
     if (latParam && lngParam) {
+      // URLに座標がある場合（地図画面から引き継がれた場合）
       const lat = parseFloat(latParam);
       const lng = parseFloat(lngParam);
       setViewState((prev) => ({ ...prev, latitude: lat, longitude: lng }));
       setPinLocation({ lat, lng });
     } else {
+      // URLに座標がない場合のみGPSを取得
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition((position) => {
           const { latitude, longitude } = position.coords;
@@ -67,7 +67,7 @@ function PostForm() {
         });
       }
     }
-  }, [searchParams]);
+  }, []); // 依存配列は空でOK
 
   const handlePageChange = (index: number, value: string) => {
     if (value.length > MAX_CHARS_PER_PAGE) return;
@@ -395,42 +395,83 @@ function PostForm() {
       {isCompleted && (
         <div className="absolute inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn">
           <div className="w-full max-w-sm relative">
+            
             <div className="bg-[#fdfcf5] rounded-xl p-6 shadow-2xl relative border-4 border-white mb-6">
               <div className="text-center mt-4">
-                <h3 className="font-serif text-lg font-bold text-bunko-ink mb-2 tracking-widest">お手紙を置きました</h3>
-                <p className="text-xs text-gray-400 mt-6 leading-relaxed">この場所を通る誰かが、あなたの手紙を見つけてくれるはずです。</p>
+                <h3 className="font-serif text-lg font-bold text-bunko-ink mb-2 tracking-widest">
+                  お手紙を置きました
+                </h3>
+                <div className="w-full h-px bg-gray-300 my-4 relative">
+                  <div className="absolute left-1/2 -translate-x-1/2 -top-1.5 bg-[#fdfcf5] px-2 text-gray-400 text-xs"></div>
+                </div>
+                
+                <div className="space-y-2 font-serif text-sm text-gray-700">
+                  <p>場所：<span className="font-bold border-b border-gray-300 pb-0.5">{spotName || '名もなき場所'}</span></p>
+                  {isPrivate && (
+                    <p className="mt-2 text-orange-600 font-bold bg-orange-50 inline-block px-3 py-1 rounded-full text-xs border border-orange-100">
+                      合言葉：{password}
+                    </p>
+                  )}
+                </div>
+
+                <p className="text-xs text-gray-400 mt-6 leading-relaxed">
+                  この場所を通る誰かが、<br/>
+                  あなたの手紙を見つけてくれるはずです。
+                </p>
               </div>
             </div>
+
             <div className="flex flex-col gap-3">
-              <button onClick={handleLineShare} className="w-full py-3.5 bg-[#06C755] text-white rounded-full font-bold shadow-lg">LINEで招待状を送る</button>
-              <button onClick={handleCopyLink} className="w-full py-3.5 bg-white text-gray-600 rounded-full font-bold shadow-md border">{isCopied ? 'URLをコピーしました！' : 'URLをコピー'}</button>
-              <button onClick={() => router.push('/')} className="mt-2 text-sm font-bold text-gray-400 hover:text-white transition-colors">閉じて地図に戻る</button>
+              <button 
+                onClick={handleLineShare}
+                className="w-full py-3.5 bg-[#06C755] text-white rounded-full font-bold shadow-lg hover:brightness-95 transition-all flex items-center justify-center gap-2"
+              >
+                <svg viewBox="0 0 24 24" className="w-5 h-5 fill-current"><path d="M12 2C6.48 2 2 5.88 2 10.66c0 2.67 1.41 5.06 3.64 6.63.4.28.62.91.43 1.62-.2 1.39-1.25 4.38-1.35 4.71-.16.54.49 1.06 1.01.69.73-.52 4.19-2.9 5.76-3.88.38-.23.82-.35 1.27-.35h.09c5.96.12 10.79-3.79 10.79-8.57C23.64 5.88 18.28 2 12 2z"/></svg>
+                LINEで招待状を送る
+              </button>
+
+              <button 
+                onClick={handleCopyLink}
+                className={`w-full py-3.5 rounded-full font-bold shadow-md transition-all flex items-center justify-center gap-2 border ${
+                  isCopied ? 'bg-gray-800 text-white border-gray-800' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                }`}
+              >
+                {isCopied ? (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                    URLをコピーしました！
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" /></svg>
+                    URLをコピー
+                  </>
+                )}
+              </button>
+
+              <button 
+                onClick={() => router.push('/')}
+                className="mt-2 text-sm font-bold text-gray-400 hover:text-white transition-colors"
+              >
+                閉じて地図に戻る
+              </button>
             </div>
+
           </div>
         </div>
       )}
 
+      {/* PWAインストール案内（投稿完了時） */}
       <AddToHomeScreen 
         isOpen={showPwaPrompt} 
         onClose={() => setShowPwaPrompt(false)}
         message="いつでも手紙の場所を確認できるように、ホーム画面に追加しておきませんか？"
       />
-    </div>
-  );
-}
 
-// --- ★最終的なエクスポート（ここが重要） ---
-export default function PostPage() {
-  return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center h-screen bg-[#f7f4ea]">
-        <div className="text-center">
-          <div className="animate-spin h-8 w-8 border-4 border-green-700 border-t-transparent rounded-full mx-auto mb-4"></div>
-          <p className="text-sm text-green-800 font-serif">読み込み中...</p>
-        </div>
-      </div>
-    }>
-      <PostForm />
-    </Suspense>
+      <style jsx global>{`
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
+      `}</style>
+    </div>
   );
 }

@@ -22,7 +22,7 @@ type Letter = {
   user_id?: string;
   password?: string | null;
   attached_stamp_id?: number | null;
-  parent_id?: string | null; // ★追加：ポスト投函判別用
+  parent_id?: string | null;
 };
 
 type Props = {
@@ -45,13 +45,12 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
   const [gotStamp, setGotStamp] = useState<any>(null);
   const [isReported, setIsReported] = useState(false);
 
-  // スワイプ検知
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
   const minSwipeDistance = 50;
 
   const isMyPost = currentUser && currentUser.id === letter.user_id;
-  const isPostedInBox = !!letter.parent_id; // ★追加：ポストに投函された手紙か
+  const isPostedInBox = !!letter.parent_id;
 
   useEffect(() => {
     setIsVisible(true);
@@ -73,18 +72,45 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
     });
   };
 
+  // ★修正：切手獲得・累積カウントロジック
   const checkStamp = async () => {
     if (currentUser && letter.attached_stamp_id && !isMyPost) {
       try {
-        const { error } = await supabase.from('user_stamps').insert({
-          user_id: currentUser.id,
-          stamp_id: letter.attached_stamp_id
-        });
-        if (!error) {
-          const { data: stampData } = await supabase.from('stamps').select('*').eq('id', letter.attached_stamp_id).single();
-          if (stampData) setGotStamp(stampData);
+        // 1. まず現在の所持状況を確認
+        const { data: existing } = await supabase
+          .from('user_stamps')
+          .select('count')
+          .eq('user_id', currentUser.id)
+          .eq('stamp_id', letter.attached_stamp_id)
+          .single();
+
+        if (existing) {
+          // 2. 既に持っていれば count を +1 更新
+          await supabase
+            .from('user_stamps')
+            .update({ count: (existing.count || 1) + 1 })
+            .eq('user_id', currentUser.id)
+            .eq('stamp_id', letter.attached_stamp_id);
+        } else {
+          // 3. 持っていなければ新規挿入 (count: 1)
+          await supabase.from('user_stamps').insert({
+            user_id: currentUser.id,
+            stamp_id: letter.attached_stamp_id,
+            count: 1
+          });
         }
-      } catch (e) {}
+
+        // 切手情報を取得して獲得演出を表示
+        const { data: stampData } = await supabase
+          .from('stamps')
+          .select('*')
+          .eq('id', letter.attached_stamp_id)
+          .single();
+        if (stampData) setGotStamp(stampData);
+
+      } catch (e) {
+        console.error("切手処理エラー:", e);
+      }
     }
   };
 
@@ -173,7 +199,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
     let match;
     while ((match = regex.exec(text)) !== null) {
       if (match.index > lastIndex) parts.push(text.substring(lastIndex, match.index));
-      parts.push(<a key={match.index} href={match[1]} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline decoration-blue-400 hover:text-blue-800">{match[2]}</a>);
+      parts.push(<a key={match.index} href={match[1]} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline decoration-blue-400 hover:text-blue-800 font-sans">{match[2]}</a>);
       lastIndex = regex.lastIndex;
     }
     if (lastIndex < text.length) parts.push(text.substring(lastIndex));
@@ -216,7 +242,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
                <h2 className={`font-bold font-serif text-base md:text-lg leading-tight line-clamp-2 ${textColor}`}>
                  {isLocked ? '秘密の手紙' : letter.title}
                </h2>
-               <p className="text-xs text-gray-400 font-serif mt-1 truncate">📍 {letter.spot_name}</p>
+               <p className="text-xs text-gray-400 font-serif mt-1 truncate font-sans">📍 {letter.spot_name}</p>
              </div>
           </div>
           <button onClick={handleClose} className="absolute right-4 text-gray-400 hover:text-gray-600 p-2 font-sans">✕</button>
@@ -226,7 +252,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
           <div className="absolute top-20 right-4 z-10 flex gap-2 font-sans">
             {isMyPost ? (
               <>
-                {/* ★ポスト投函ではない場合のみ編集ボタンを表示 */}
                 {!isPostedInBox && (
                   <Link href={`/post/edit/${letter.id}`}>
                     <button className="bg-gray-100 text-gray-600 text-xs px-3 py-1 rounded-full shadow hover:bg-gray-200 font-bold transition-colors">書き直す</button>
@@ -302,17 +327,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
           </div>
         )}
       </div>
-      <style jsx>{`
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes bounceIn {
-          0% { transform: scale(0.3); opacity: 0; }
-          50% { transform: scale(1.05); opacity: 1; }
-          70% { transform: scale(0.9); }
-          100% { transform: scale(1); }
-        }
-        .animate-fadeIn { animation: fadeIn 0.5s ease-out forwards; }
-        .animate-bounce-in { animation: bounceIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
-      `}</style>
     </div>
   );
 }

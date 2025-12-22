@@ -202,9 +202,15 @@ function HomeContent() {
         const { data: targetPost } = await supabase.from('letters').select('*').eq('id', openPostId).single();
         if (targetPost) {
           setTimeout(() => {
-            if (targetPost.is_post) setReadingPost(targetPost);
-            else setReadingLetter(targetPost);
-            markAsRead(targetPost.id);
+            if (targetPost.is_post) {
+              setReadingPost(targetPost);
+            } else {
+              setReadingLetter(targetPost);
+              // ★修正：ポストではなく、かつ自分の投稿でもない場合のみ既読にする
+              if (targetPost.user_id !== currentUser?.id) {
+                markAsRead(targetPost.id);
+              }
+            }
             setViewState(prev => ({ ...prev, latitude: targetPost.lat, longitude: targetPost.lng, zoom: 16 }));
             window.history.replaceState(null, '', '/');
           }, 500);
@@ -212,7 +218,7 @@ function HomeContent() {
       }
     };
     handleOpenPostParam();
-  }, []);
+  }, [currentUser]); // currentUserが変わった時も再実行できるように依存配列に追加
 
   const getPostUrl = () => {
     if (!currentUser) return '/login?next=/post';
@@ -237,9 +243,14 @@ function HomeContent() {
 
       <div className="absolute left-4 z-20 transition-all" style={{ top: 'calc(env(safe-area-inset-top) + 80px)' }}>
         <div className="flex items-center bg-white/90 backdrop-blur px-3 py-2 rounded-full shadow-md border border-gray-100">
-          <span className="text-[10px] font-bold text-gray-600 mr-2">みんなの手紙</span>
+          <span className="text-[10px] font-bold text-gray-600 mr-2 font-sans">みんなの手紙</span>
           <label className="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" className="sr-only peer" checked={showUserPosts} onChange={() => setShowUserPosts(!showUserPosts)} />
+            <input 
+              type="checkbox" 
+              className="sr-only peer" 
+              checked={showUserPosts} 
+              onChange={() => setShowUserPosts(!showUserPosts)} 
+            />
             <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
           </label>
         </div>
@@ -252,7 +263,7 @@ function HomeContent() {
         }}>
            <div className="bg-white/80 backdrop-blur-sm px-3 py-2 rounded-full shadow-sm border border-gray-200 flex items-center gap-2 cursor-pointer hover:bg-white">
               <span className="text-sm animate-bounce">✨</span>
-              <span className="text-[10px] font-bold text-gray-600">近くに手紙があります</span>
+              <span className="text-[10px] font-bold text-gray-600 font-sans">近くに手紙があります</span>
            </div>
         </div>
       )}
@@ -291,16 +302,14 @@ function HomeContent() {
           const isNear = distance !== null && distance <= NOTIFICATION_DISTANCE && !isReachable;
           
           const isRead = readLetterIds.includes(letter.id);
-
-          // ★修正：全データ(allLetters)の中から、このポスト(letter.id)を親に持つ手紙があるか判定
           const postHasLetters = allLetters.some(l => l.parent_id === letter.id);
 
           return (
             <Marker key={letter.id} latitude={letter.lat} longitude={letter.lng} anchor="bottom" onClick={(e) => { e.originalEvent.stopPropagation(); setPopupInfo(letter); }} style={{ zIndex: isReachable ? 10 : isNear ? 5 : 1 }}>
               <div className={`flex flex-col items-center group cursor-pointer ${isRead ? 'opacity-70' : ''}`}>
-                <div className={`bg-white/95 backdrop-blur px-3 py-2 rounded-lg shadow-md text-[10px] mb-2 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border flex flex-col items-center ${isReachable ? 'border-orange-500 text-orange-600' : isNear ? 'border-gray-400 text-gray-600' : 'border-bunko-gray/10 text-bunko-ink'}`}>
+                <div className={`bg-white/95 backdrop-blur px-3 py-2 rounded-lg shadow-md text-[10px] mb-2 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border flex flex-col items-center ${isReachable ? 'border-orange-500 text-orange-600' : 'border-gray-200 text-gray-500'}`}>
                    <span className="font-bold">{letter.is_post ? '常設ポスト' : (letter.is_official ? '木林文庫の手紙' : (letter.nickname ? `${letter.nickname}さんの手紙` : ''))}</span>
-                   {isReachable && <span className="block text-[8px] font-bold text-orange-500 text-center mt-1">{letter.is_post ? '投函できます！' : '読めます！'}</span>}
+                   {isReachable && <span className="block text-[8px] font-bold text-orange-500 text-center mt-1 font-sans">{letter.is_post ? '投函できます！' : '読めます！'}</span>}
                 </div>
                 
                 <div className={`transition-transform duration-300 drop-shadow-md relative ${isReachable ? 'animate-bounce' : isNear ? 'animate-pulse scale-110' : 'hover:scale-110'}`}>
@@ -314,8 +323,8 @@ function HomeContent() {
                      </div>
                    )}
                    
-                   {/* ★修正: !isReachable の条件を削除し、読んだら常に ✔︎ を出す */}
-                   {isRead && (
+                   {/* ★修正: 既読マークの表示条件を変更。ポストではない、かつ、自分の投稿ではない場合のみ表示 */}
+                   {isRead && !letter.is_post && !isMyPost && (
                       <div className="absolute -bottom-1 -right-1 bg-white rounded-full w-4 h-4 flex items-center justify-center shadow-md border border-gray-100 z-30">
                         <span className="text-[10px] text-green-600 font-bold">✔︎</span>
                       </div>
@@ -328,20 +337,31 @@ function HomeContent() {
 
         {popupInfo && (
           <Popup latitude={popupInfo.lat} longitude={popupInfo.lng} anchor="bottom" offset={[0, -40]} onClose={() => setPopupInfo(null)} closeOnClick={false} className="z-50">
-            {/* ポップアップ全体に font-sans を適用し、タイトルのみ font-serif に */}
             <div className="p-2 min-w-[160px] text-center pt-4 font-sans"> 
               <h3 className="font-bold text-sm mb-1 text-bunko-ink font-serif">{popupInfo.title}</h3>
-              <p className="text-[10px] text-gray-500 mb-1">{popupInfo.is_post ? '常設ポスト' : (popupInfo.is_official ? '木林文庫の手紙' : (popupInfo.nickname ? `${popupInfo.nickname}さんの置き手紙` : '置き手紙'))}</p>
+              <p className="text-[10px] text-gray-500 mb-1 font-sans">{popupInfo.is_post ? '常設ポスト' : (popupInfo.is_official ? '木林文庫の手紙' : (popupInfo.nickname ? `${popupInfo.nickname}さんの置き手紙` : '置き手紙'))}</p>
               
               {(() => {
                 const dist = calculateDistance(popupInfo.lat, popupInfo.lng);
-                const isReachable = (dist !== null && dist <= UNLOCK_DISTANCE) || (currentUser?.email && ADMIN_EMAILS.includes(currentUser.email)) || (currentUser && currentUser.id === popupInfo.user_id);
+                const isMyPost = currentUser && currentUser.id === popupInfo.user_id;
+                const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
+                const isReachable = (dist !== null && dist <= UNLOCK_DISTANCE) || isAdmin || isMyPost;
                 
-                if (dist === null) return <p className="text-xs text-gray-400">確認中...</p>;
+                if (dist === null) return <p className="text-xs text-gray-400 font-sans">確認中...</p>;
                 if (isReachable) {
                   return (
                     <button 
-                      onClick={() => { if (popupInfo.is_post) setReadingPost(popupInfo); else setReadingLetter(popupInfo); markAsRead(popupInfo.id); }} 
+                      onClick={() => { 
+                        if (popupInfo.is_post) {
+                          setReadingPost(popupInfo); 
+                        } else {
+                          setReadingLetter(popupInfo);
+                          // ★修正：ポストではなく、かつ自分の投稿ではない場合のみ既読にする
+                          if (!isMyPost) {
+                            markAsRead(popupInfo.id); 
+                          }
+                        }
+                      }} 
                       className="w-full text-white text-xs py-2 px-4 rounded-full transition-colors shadow-sm font-bold bg-green-700 hover:bg-green-800 font-sans"
                     >
                       {popupInfo.is_post ? 'ポストを開く' : '手紙を開く'}
@@ -355,11 +375,8 @@ function HomeContent() {
         )}
       </Map>
 
-      {readingLetter && <LetterModal letter={readingLetter} currentUser={currentUser} onClose={() => setReadingLetter(null)} onDeleted={() => { setReadingLetter(null); fetchLetters(); }} />}
-      {readingPost && <PostModal post={readingPost} currentUser={currentUser} onClose={() => setReadingPost(null)} isReachable={true} />}
-      {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}
-
-      <div className="fixed bottom-8 right-4 z-40 flex flex-col items-end gap-2">
+      {/* フローティングボタン、モーダル、スタイル等の残りの部分は既存のまま */}
+      <div className="fixed bottom-8 right-4 z-40 flex flex-col items-end gap-2 font-sans">
         <div className="bg-white/90 p-2 rounded-lg shadow-sm text-[10px] text-gray-600 font-bold animate-bounce cursor-pointer relative" onClick={() => router.push(getPostUrl())}>
            {currentUser ? '手紙を書く' : 'ログインして手紙を書く'}
            <div className="absolute right-4 top-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white/90"></div>
@@ -371,6 +388,9 @@ function HomeContent() {
         </Link>
       </div>
 
+      {readingLetter && <LetterModal letter={readingLetter} currentUser={currentUser} onClose={() => setReadingLetter(null)} onDeleted={() => { setReadingLetter(null); fetchLetters(); }} />}
+      {readingPost && <PostModal post={readingPost} currentUser={currentUser} onClose={() => setReadingPost(null)} isReachable={true} />}
+      {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}
       {showTutorial && <TutorialModal onClose={handleCloseTutorial} />}
       <AddToHomeScreen isOpen={showPwaPrompt} onClose={() => setShowPwaPrompt(false)} message="また来てくれてありがとうございます。ホーム画面に追加すると、すぐに地図を開けます。" />
 
@@ -382,7 +402,6 @@ function HomeContent() {
   );
 }
 
-// 最終的なエクスポート：Suspense境界でビルド時の CSR bailout を防ぐ
 export default function Home() {
   return (
     <Suspense fallback={<div className="w-full h-screen bg-[#f7f4ea] flex items-center justify-center">読み込み中...</div>}>
