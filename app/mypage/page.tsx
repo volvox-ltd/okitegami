@@ -198,13 +198,13 @@ export default function MyPage() {
                   <div key={stamp.id} className="flex flex-col items-center group cursor-pointer" onClick={() => handleStampClick(stamp.id)}>
                     <div className="relative w-full aspect-[3/4]">
                       
-                      {/* ★3枚以上の重なり演出 */}
-                      {stamp.count >= 3 && (
+                      {/* ★3枚以上の重なり演出（修正：stamp.count && を追加） */}
+                      {stamp.count && stamp.count >= 3 && (
                         <div className="absolute inset-0 bg-white border border-gray-200 rounded shadow-sm transform rotate-6 translate-x-1.5 translate-y-1 scale-100 origin-bottom-right opacity-60 z-0" />
                       )}
                       
-                      {/* ★2枚以上の重なり演出 */}
-                      {stamp.count >= 2 && (
+                      {/* ★2枚以上の重なり演出（修正：stamp.count && を追加） */}
+                      {stamp.count && stamp.count >= 2 && (
                         <div className="absolute inset-0 bg-white border border-gray-200 rounded shadow-sm transform rotate-3 translate-x-0.5 translate-y-0.5 scale-100 origin-bottom-right z-0" />
                       )}
 
@@ -213,8 +213,8 @@ export default function MyPage() {
                         <img src={stamp.image_url} alt={stamp.name} className="w-full h-full object-contain" />
                       </div>
 
-                      {/* ★枚数バッジ（2枚以上の時だけ表示） */}
-                      {stamp.count > 1 && (
+                      {/* ★枚数バッジ（修正：stamp.count && を追加） */}
+                      {stamp.count && stamp.count > 1 && (
                         <div className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-lg border-2 border-white z-20 font-sans">
                           {stamp.count}
                         </div>
