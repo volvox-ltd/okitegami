@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { createClient, User } from '@supabase/supabase-js';
 import Link from 'next/link';
+import IconUserLetter from '@/components/IconUserLetter'; // ★アイコンをインポート
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -114,7 +115,6 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
 
       // 2. 切手付与ロジック
       if (post.attached_stamp_id) {
-        // 現在の枚数を正確に取得
         const { data: existingEntry } = await supabase
           .from('user_stamps')
           .select('count')
@@ -124,7 +124,6 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
 
         const newCount = (existingEntry?.count || 0) + 1;
 
-        // DB更新（Upsert: 既存なら更新、なければ新規作成）
         const { error: stampError } = await supabase
           .from('user_stamps')
           .upsert({
@@ -139,7 +138,6 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
         if (stampError) {
           console.error('切手DB更新エラー:', stampError);
         } else {
-          // 演出用データの取得
           const { data: stampData } = await supabase
             .from('stamps')
             .select('name, image_url')
@@ -147,12 +145,9 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
             .single();
             
           if (stampData) {
-            // ★修正ポイント：一旦nullにしてからセットすることで、
-            // Reactに変化を検知させ、2回目以降もアニメーションを最初から発動させる
+            // ★体感速度向上のため、リセットとセットを極力早く行う
             setObtainedStamp(null);
-            setTimeout(() => {
-              setObtainedStamp(stampData);
-            }, 50);
+            setObtainedStamp(stampData);
           }
         }
       } else {
@@ -203,13 +198,16 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
         </div>
       )}
 
-      {/* ポスト本体 */}
-      <div className="relative w-full max-w-md h-[85vh] md:h-[600px] bg-[#fdfcf5] rounded-xl shadow-2xl flex flex-col overflow-hidden border-4 border-green-800 font-sans">
+      {/* ポスト本体：★枠線を border-red-600 に変更 */}
+      <div className="relative w-full max-w-md h-[85vh] md:h-[600px] bg-[#fdfcf5] rounded-xl shadow-2xl flex flex-col overflow-hidden border-4 border-red-600 font-sans">
         
-        {/* ヘッダー */}
-        <div className="bg-green-800 text-white p-4 shrink-0 flex items-center justify-between">
+        {/* ヘッダー：★背景色を bg-red-600 に変更 */}
+        <div className="bg-red-600 text-white p-4 shrink-0 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="text-3xl">📮</div>
+            {/* ★アイコンを地図と同じ IconUserLetter に変更 */}
+            <div className="w-10 h-10 flex items-center justify-center bg-white/20 rounded-full">
+               <IconUserLetter className="w-6 h-6 text-white" />
+            </div>
             <div>
               <h2 className="font-bold font-serif text-lg tracking-widest">{post.title}</h2>
               <p className="text-[10px] opacity-80">これまでに {totalCount} 通の手紙が届いています</p>
@@ -222,7 +220,7 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
         <div className="flex border-b border-gray-200 shrink-0 bg-white">
           <button 
             onClick={() => setActiveTab('read')} 
-            className={`flex-1 py-3 text-sm font-bold ${activeTab === 'read' ? 'text-green-800 border-b-2 border-green-800' : 'text-gray-400'}`}
+            className={`flex-1 py-3 text-sm font-bold ${activeTab === 'read' ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-400'}`}
           >
             手紙を見る
           </button>
@@ -239,8 +237,8 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
           
           {activeTab === 'read' && (
             <div className="space-y-6">
-              <div className="bg-white p-4 rounded border border-green-200 shadow-sm relative font-serif">
-                <div className="absolute -top-3 left-4 bg-green-100 text-green-800 text-[10px] font-bold px-2 py-0.5 rounded font-sans">
+              <div className="bg-white p-4 rounded border border-red-100 shadow-sm relative font-serif">
+                <div className="absolute -top-3 left-4 bg-red-50 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded font-sans">
                   {post.spot_name || post.title}の手紙
                 </div>
                 
@@ -278,6 +276,12 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
                   </div>
                 )}
               </div>
+              
+              <div className="text-center pt-2">
+                <button className="text-xs text-gray-400 underline hover:text-red-600 font-sans font-bold">
+                  すべてのアーカイブを読む（{totalCount}通）
+                </button>
+              </div>
             </div>
           )}
 
@@ -286,7 +290,7 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
               {!currentUser ? (
                 <div className="text-center mt-10">
                   <p className="text-sm text-gray-600 mb-4 font-bold">手紙を投函するにはログインが必要です。</p>
-                  <Link href={`/login?next=${encodeURIComponent('/?open_post=' + post.id)}`} className="bg-green-700 text-white px-6 py-2 rounded-full text-xs font-bold shadow-md">
+                  <Link href={`/login?next=${encodeURIComponent('/?open_post=' + post.id)}`} className="bg-red-600 text-white px-6 py-2 rounded-full text-xs font-bold shadow-md">
                   ログインする
                   </Link>
                 </div>
@@ -310,7 +314,7 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
                   </div>
 
                   <textarea
-                    className="w-full flex-1 p-4 border border-gray-300 rounded-lg resize-none font-serif text-sm leading-loose focus:border-green-600 focus:ring-1 focus:ring-green-600 outline-none mb-2"
+                    className="w-full flex-1 p-4 border border-gray-300 rounded-lg resize-none font-serif text-sm leading-loose focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none mb-2"
                     placeholder="ここに手紙を書いてください（140文字以内）"
                     maxLength={140}
                     value={content}
