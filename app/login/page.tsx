@@ -39,6 +39,7 @@ function LoginContent() {
     try {
       let loginEmail = emailOrNickname;
 
+      // ニックネームでログインしようとしている場合の処理
       if (!loginEmail.includes('@')) {
         const { data, error } = await supabase
           .from('profiles')
@@ -52,6 +53,7 @@ function LoginContent() {
         loginEmail = data.email;
       }
 
+      // Supabaseでログイン実行
       const { error } = await supabase.auth.signInWithPassword({
         email: loginEmail,
         password,
@@ -59,14 +61,21 @@ function LoginContent() {
 
       if (error) throw error;
       
-      // ★修正：指定されたページへ戻る
-      router.push(nextUrl);
-      router.refresh();
+      // ★修正：ログイン成功時のメッセージを表示
+      setMessage('おかえりなさい。まもなく地図が開きます...');
+
+      // ★修正：3秒待ってからリダイレクト（余韻を作る）
+      setTimeout(() => {
+        router.push(nextUrl);
+        router.refresh();
+      }, 3000);
 
     } catch (error: any) {
+      // エラーメッセージの表示
       setMessage(error.message || 'ログインに失敗しました');
     } finally {
-      setLoading(false);
+      // 3秒待機する間もローディング状態を維持してボタンを連打させない
+      // ただしエラー時はすぐにボタンを戻したいので、成功時のみここで止める
     }
   };
 

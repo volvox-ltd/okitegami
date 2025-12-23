@@ -1,4 +1,4 @@
-// 1. Deno.writeAll のエラーを回避するためのコードを追加
+// 1. エラー回避のためのポリフィル（穴埋め）を追加
 if (typeof (Deno as any).writeAll !== 'function') {
   (Deno as any).writeAll = async (w: any, arr: Uint8Array) => {
     let n = 0;
@@ -8,15 +8,16 @@ if (typeof (Deno as any).writeAll !== 'function') {
   };
 }
 
-// 2. 新しい書き方の Deno.serve を使用
 import nodemailer from "npm:nodemailer"
 
+// 2. 新しい書き方の Deno.serve を使用
 Deno.serve(async (req) => {
   try {
     const { record } = await req.json()
     const email = record.email
     const nickname = record.nickname || '旅人'
 
+    // ロリポップのSMTP設定
     const transporter = nodemailer.createTransport({
       host: Deno.env.get("SMTP_HOSTNAME") || "smtp.lolipop.jp",
       port: 465,
@@ -54,9 +55,9 @@ Deno.serve(async (req) => {
       `,
     });
 
-    return new Response(JSON.stringify({ message: "Welcome email sent successfully" }), { 
+    return new Response(JSON.stringify({ message: "Success" }), { 
       status: 200,
-      headers: { "Content-Type": "application/json" } 
+      headers: { "Content-Type": "application/json" }
     })
   } catch (error) {
     console.error("Email Error:", error.message)
