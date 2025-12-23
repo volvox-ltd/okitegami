@@ -3,7 +3,8 @@
 import { useState, useEffect, useMemo, Suspense } from 'react';
 import dynamic from 'next/dynamic';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { createClient, User } from '@supabase/supabase-js';
+import { User } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr'; // SSR対応クライアントに変更
 import { getDistance } from 'geolib';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -28,11 +29,6 @@ const Popup = dynamic(() => import('react-map-gl').then(mod => mod.Popup), { ssr
 const NavigationControl = dynamic(() => import('react-map-gl').then(mod => mod.NavigationControl), { ssr: false });
 const GeolocateControl = dynamic(() => import('react-map-gl').then(mod => mod.GeolocateControl), { ssr: false });
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
 type Letter = {
   id: string; title: string; spot_name: string; content: string;
   lat: number; lng: number; image_url?: string; is_official?: boolean;
@@ -45,6 +41,12 @@ const UNLOCK_DISTANCE = 30;
 const NOTIFICATION_DISTANCE = 100; 
 
 function HomeContent() {
+  // コンポーネント内でクライアントを初期化（Cookie同期のため）
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+
   const ADMIN_EMAILS = ["marei.suyama@gmail.com", "contact@volvox-ltd.com"];
   const router = useRouter();
   
@@ -87,18 +89,26 @@ function HomeContent() {
     });
   };
 
+  // ユーザーチェックと監視の修正
   useEffect(() => {
     const checkUser = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      const user = session?.user || null;
+      // getSessionよりgetUserの方がCookie同期が安定します
+      const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
       if (user) {
-        const { data: profile } = await supabase.from('profiles').select('nickname').eq('id', user.id).single();
-        if (profile) setMyNickname(profile.nickname);
-        else setShowNicknameModal(true);
+        const { data: profile } = await supabase.from('profiles').select('nickname').eq('id', user.id).maybeSingle();
+        if (profile?.nickname) {
+          setMyNickname(profile.nickname);
+        } else {
+          setShowNicknameModal(true);
+        }
+      } else {
+        setMyNickname(null);
       }
     };
+
     checkUser();
+
     const storedReads = localStorage.getItem('read_letter_ids');
     if (storedReads) setReadLetterIds(JSON.parse(storedReads));
 
@@ -109,7 +119,7 @@ function HomeContent() {
       }
     });
     return () => authListener.subscription.unsubscribe();
-  }, [router]);
+  }, [router, supabase]);
 
   const markAsRead = (id: string) => {
     if (!readLetterIds.includes(id)) {
@@ -206,7 +216,6 @@ function HomeContent() {
               setReadingPost(targetPost);
             } else {
               setReadingLetter(targetPost);
-              // ★修正：ポストではなく、かつ自分の投稿でもない場合のみ既読にする
               if (targetPost.user_id !== currentUser?.id) {
                 markAsRead(targetPost.id);
               }
@@ -218,7 +227,7 @@ function HomeContent() {
       }
     };
     handleOpenPostParam();
-  }, [currentUser]); // currentUserが変わった時も再実行できるように依存配列に追加
+  }, [currentUser]); 
 
   const getPostUrl = () => {
     if (!currentUser) return '/login?next=/post';
@@ -323,7 +332,6 @@ function HomeContent() {
                      </div>
                    )}
                    
-                   {/* ★修正: 既読マークの表示条件を変更。ポストではない、かつ、自分の投稿ではない場合のみ表示 */}
                    {isRead && !letter.is_post && !isMyPost && (
                       <div className="absolute -bottom-1 -right-1 bg-white rounded-full w-4 h-4 flex items-center justify-center shadow-md border border-gray-100 z-30">
                         <span className="text-[10px] text-green-600 font-bold">✔︎</span>
@@ -356,7 +364,6 @@ function HomeContent() {
                           setReadingPost(popupInfo); 
                         } else {
                           setReadingLetter(popupInfo);
-                          // ★修正：ポストではなく、かつ自分の投稿ではない場合のみ既読にする
                           if (!isMyPost) {
                             markAsRead(popupInfo.id); 
                           }
@@ -375,7 +382,6 @@ function HomeContent() {
         )}
       </Map>
 
-      {/* フローティングボタン、モーダル、スタイル等の残りの部分は既存のまま */}
       <div className="fixed bottom-8 right-4 z-40 flex flex-col items-end gap-2 font-sans">
         <div className="bg-white/90 p-2 rounded-lg shadow-sm text-[10px] text-gray-600 font-bold animate-bounce cursor-pointer relative" onClick={() => router.push(getPostUrl())}>
            {currentUser ? '手紙を書く' : 'ログインして手紙を書く'}

@@ -1,16 +1,13 @@
 'use client';
 import { useState, useEffect, TouchEvent } from 'react';
-import { createClient, User } from '@supabase/supabase-js';
-import { useRouter } from 'next/navigation'; // ★追加
+// ★ createClient ではなく createBrowserClient を使います
+import { createBrowserClient } from '@supabase/ssr'; 
+import { User } from '@supabase/supabase-js';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import IconUserLetter from './IconUserLetter';
 import IconAdminLetter from './IconAdminLetter';
-import IconPost from './IconPost'; // ★追加
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import IconPost from './IconPost';
 
 type Letter = {
   id: string;
@@ -37,7 +34,13 @@ type Props = {
 const CHARS_PER_PAGE = 140; 
 
 export default function LetterModal({ letter, currentUser, onClose, onDeleted }: Props) {
-  const router = useRouter(); // ★追加
+  // ★ Cookieに対応した最新のクライアントを作成
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+
+  const router = useRouter();
   const [isVisible, setIsVisible] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
   const [inputPassword, setInputPassword] = useState('');
@@ -61,11 +64,19 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
       setIsLocked(true);
     } else {
       setIsLocked(false);
-      // checkStamp(); // ★ここでは呼び出さない（読了時へ移動）
       recordRead(); 
     }
-    checkFavorite();
-  }, [letter, currentUser]); 
+    
+    // 手紙が開かれた際の状態チェック
+    const initModal = async () => {
+      if (!currentUser) {
+        console.log("Debug: ログインユーザーがいません");
+        return;
+      }
+      await checkFavorite();
+    };
+    initModal();
+  }, [letter.id, currentUser]); 
 
   const recordRead = async () => {
     if (currentUser && currentUser.id === letter.user_id) return;
@@ -76,16 +87,14 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
   };
 
   const checkStamp = async () => {
-    // 既に演出が表示されている、または自分の投稿、または切手がない場合はスキップ
     if (gotStamp || isMyPost || !letter.attached_stamp_id || !currentUser) return;
-
     try {
       const { data: existing } = await supabase
         .from('user_stamps')
         .select('count')
         .eq('user_id', currentUser.id)
         .eq('stamp_id', letter.attached_stamp_id)
-        .single();
+        .maybeSingle();
 
       if (existing) {
         await supabase
@@ -100,53 +109,63 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
           count: 1
         });
       }
-
-      const { data: stampData } = await supabase
-        .from('stamps')
-        .select('*')
-        .eq('id', letter.attached_stamp_id)
-        .single();
+      const { data: stampData } = await supabase.from('stamps').select('*').eq('id', letter.attached_stamp_id).maybeSingle();
       if (stampData) setGotStamp(stampData);
-
-    } catch (e) {
-      console.error("切手処理エラー:", e);
-    }
+    } catch (e) { console.error("切手処理エラー:", e); }
   };
 
   const handleUnlock = () => {
     if (inputPassword === letter.password) {
       setIsLocked(false);
       setUnlockError(false);
-      // checkStamp(); // ★ここでは呼び出さない
       recordRead(); 
     } else {
       setUnlockError(true);
     }
   };
 
+  // ★お気に入りチェック関数の強化（デバッグログ付き）
   const checkFavorite = async () => {
-    if (!currentUser) return;
-    const { data } = await supabase.from('favorites').select('id').eq('user_id', currentUser.id).eq('letter_id', letter.id).single();
-    if (data) setIsFavorited(true);
+    if (!currentUser || !letter.id) return;
+    
+    console.log(`Debug: ${letter.title} のお気に入りを確認中...`);
+    
+    const { data, error } = await supabase
+      .from('favorites')
+      .select('id')
+      .eq('user_id', currentUser.id)
+      .eq('letter_id', letter.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Debug: お気に入り取得でエラー発生:", error.message);
+      return;
+    }
+
+    if (data) {
+      console.log("Debug: お気に入り登録済みです");
+      setIsFavorited(true);
+    } else {
+      console.log("Debug: お気に入り未登録です");
+      setIsFavorited(false);
+    }
   };
 
   const toggleFavorite = async () => {
     if (!currentUser) return alert('ログインが必要です');
     if (isFavorited) {
-      await supabase.from('favorites').delete().eq('user_id', currentUser.id).eq('letter_id', letter.id);
-      setIsFavorited(false);
+      const { error } = await supabase.from('favorites').delete().eq('user_id', currentUser.id).eq('letter_id', letter.id);
+      if (!error) setIsFavorited(false);
     } else {
-      await supabase.from('favorites').insert({ user_id: currentUser.id, letter_id: letter.id });
-      setIsFavorited(true);
+      const { error } = await supabase.from('favorites').insert({ user_id: currentUser.id, letter_id: letter.id });
+      if (!error) setIsFavorited(true);
     }
   };
 
   const PAGE_DELIMITER = '<<<PAGE>>>';
-
   useEffect(() => {
     const newPages = [];
     if (letter.image_url) newPages.push({ type: 'image', content: letter.image_url });
-
     if (!letter.content) {
       newPages.push({ type: 'text', content: '' });
     } else {
@@ -163,10 +182,8 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
 
   const handleClose = () => { setIsVisible(false); setTimeout(onClose, 300); };
   
-  // ★修正：「読み終わる」ボタンを押した時に切手付与ロジックを走らせる
   const handleFinish = () => {
     checkStamp();
-    // 切手演出がない場合はすぐに閉じる。ある場合は演出側の「閉じる」ボタンで閉じられる。
     if (!letter.attached_stamp_id || isMyPost) {
       handleClose();
     }
@@ -220,7 +237,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
   const bgColor = isOfficial ? 'bg-[#fdfcf5]' : 'bg-white';
   const textColor = isOfficial ? 'text-[#5d4037]' : 'text-gray-800';
   
-  // ★修正：ポストへの投函なら IconPost を優先
   const Icon = isPostedInBox ? IconPost : (isOfficial ? IconAdminLetter : IconUserLetter);
   const pageData = pages[currentPage];
 
@@ -230,7 +246,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
 
       {gotStamp && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none">
-          {/* 背景クリックでも閉じられるように透明な板を敷く */}
           <div className="absolute inset-0 pointer-events-auto" onClick={handleClose}></div>
           <div className="bg-[#fdfcf5] p-8 rounded-sm shadow-2xl flex flex-col items-center animate-bounce-in pointer-events-auto border-4 border-double border-[#5d4037]/20 max-w-xs text-center font-sans relative">
             <h3 className="font-bold text-[#5d4037] mb-4 font-serif text-lg tracking-widest leading-relaxed">切手を受け取りました</h3>
@@ -250,7 +265,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
         
         <div className="h-24 md:h-28 flex items-center justify-between px-6 border-b border-gray-100/50 relative shrink-0">
           <div className="flex items-center gap-3 w-full pr-8">
-             {/* ★アイコンの表示部分：ポスト投函時は赤色にする等の装飾 */}
              <div className={`shrink-0 drop-shadow-sm ${isPostedInBox ? 'text-red-600' : ''}`}><Icon className="w-10 h-10" /></div>
              <div className="overflow-hidden w-full">
                <h2 className={`font-bold font-serif text-base md:text-lg leading-tight line-clamp-2 ${textColor}`}>
@@ -258,7 +272,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
                </h2>
                <p className="text-xs text-gray-400 font-serif mt-0.5 truncate font-sans">📍 {letter.spot_name}</p>
                
-               {/* ★追加：アーカイブへのリンクボタン */}
                {isPostedInBox && !isLocked && (
                  <button 
                   onClick={() => router.push(`/post/${letter.parent_id}`)}
@@ -272,7 +285,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
           <button onClick={handleClose} className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 p-2 font-sans">✕</button>
         </div>
 
-        {/* ...（中略：書き直し/削除/お気に入りボタン部分はそのまま）... */}
         {!isLocked && (
           <div className="absolute top-24 md:top-28 right-4 z-10 flex gap-2 font-sans">
             {isMyPost ? (
@@ -337,7 +349,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted }:
                     <span className="text-lg">←</span> 次へ
                   </button>
                 ) : (
-                  // ★修正：最後のページで「読み終わる」を押した時に handleFinish を実行
                   <button onClick={handleFinish} className={`px-5 py-2 rounded-full text-white text-xs font-bold shadow-sm transition-transform active:scale-95 ${isOfficial ? 'bg-[#826d36]' : 'bg-green-700'}`}>
                     読み終わる
                   </button>

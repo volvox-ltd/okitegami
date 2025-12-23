@@ -1,35 +1,36 @@
 'use client';
-import { useState, Suspense } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { useState, useEffect, Suspense } from 'react';
+import { createBrowserClient } from '@supabase/ssr';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Logo from '@/components/Logo';
 import FooterLinks from '@/components/FooterLinks';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
 function LoginContent() {
+  // ★修正：クライアント側も SSR 対応のクライアントを作成
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+
   const router = useRouter();
   const searchParams = useSearchParams();
-  // ★修正：URLから戻り先を取得（なければトップへ）
   const nextUrl = searchParams.get('next') || '/';
 
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
   const [isLoginMode, setIsLoginMode] = useState(true);
-  
   const [emailOrNickname, setEmailOrNickname] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [nickname, setNickname] = useState('');
-
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const isValidNickname = (name: string) => {
-    return /^[a-zA-Z0-9]{1,20}$/.test(name);
-  };
+  if (!mounted) return null;
+
+  const isValidNickname = (name: string) => /^[a-zA-Z0-9]{1,20}$/.test(name);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,21 +40,12 @@ function LoginContent() {
     try {
       let loginEmail = emailOrNickname;
 
-      // ニックネームでログインしようとしている場合の処理
       if (!loginEmail.includes('@')) {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('email')
-          .eq('nickname', loginEmail)
-          .single();
-        
-        if (error || !data) {
-          throw new Error('そのニックネームは見つかりませんでした');
-        }
-        loginEmail = data.email;
+        const { data: foundEmail, error: rpcError } = await supabase.rpc('get_email_from_nickname', { input_nickname: loginEmail });
+        if (rpcError || !foundEmail) throw new Error('そのニックネームは見つかりませんでした');
+        loginEmail = foundEmail;
       }
 
-      // Supabaseでログイン実行
       const { error } = await supabase.auth.signInWithPassword({
         email: loginEmail,
         password,
@@ -61,21 +53,18 @@ function LoginContent() {
 
       if (error) throw error;
       
-      // ★修正：ログイン成功時のメッセージを表示
       setMessage('おかえりなさい。まもなく地図が開きます...');
 
-      // ★修正：3秒待ってからリダイレクト（余韻を作る）
       setTimeout(() => {
-        router.push(nextUrl);
-        router.refresh();
-      }, 3000);
+        // next パラメータ（%2Fadmin など）をデコードして正しいパスにする
+        const decodedNext = decodeURIComponent(nextUrl);
+        // 完全な URL（http://localhost:3000/admin）を作って飛ばす
+        window.location.href = window.location.origin + decodedNext;
+      }, 1500);
 
     } catch (error: any) {
-      // エラーメッセージの表示
       setMessage(error.message || 'ログインに失敗しました');
-    } finally {
-      // 3秒待機する間もローディング状態を維持してボタンを連打させない
-      // ただしエラー時はすぐにボタンを戻したいので、成功時のみここで止める
+      setLoading(false);
     }
   };
 
@@ -91,23 +80,14 @@ function LoginContent() {
     }
 
     try {
-      // ニックネームの重複チェックだけは事前に行う
-      const { data: existingUser } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('nickname', nickname)
-        .maybeSingle();
+      const { data: existingUser } = await supabase.from('profiles').select('id').eq('nickname', nickname).maybeSingle();
+      if (existingUser) throw new Error('そのニックネームは既に使用されています');
 
-      if (existingUser) {
-        throw new Error('そのニックネームは既に使用されています');
-      }
-
-      // サインアップを実行（これだけでトリガーによりプロフィールも自動生成される）
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: { nickname }, // ここに渡したデータがトリガーに渡されます
+          data: { nickname },
           emailRedirectTo: `${window.location.origin}/auth/callback?next=${nextUrl}`,
         },
       });
@@ -117,12 +97,12 @@ function LoginContent() {
       if (data.user) {
         setMessage('ようこそ、おきてがみの世界へ。まもなく地図が開きます...');
         setTimeout(() => {
-          router.push(nextUrl);
-          router.refresh();
-        }, 3000);
+          window.location.href = window.location.origin + (nextUrl.startsWith('/') ? nextUrl : `/${nextUrl}`);
+        }, 1500);
       }
     } catch (error: any) {
       setMessage(error.message || '登録中にエラーが発生しました');
+      setLoading(false);
     }
   };
 
@@ -130,7 +110,6 @@ function LoginContent() {
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        // ★修正：Googleログイン後も元のページに戻れるようパラメータを付与
         redirectTo: `${window.location.origin}/auth/callback?next=${nextUrl}`,
       },
     });
@@ -138,11 +117,7 @@ function LoginContent() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f7f4ea] font-sans text-gray-800 relative">
-      
-      <Link 
-        href={nextUrl === '/' ? '/' : nextUrl} // ★修正：キャンセル時も元の場所に戻る
-        className="fixed top-4 left-4 z-50 w-10 h-10 flex items-center justify-center rounded-full bg-white/80 hover:bg-white text-gray-600 hover:text-black transition-colors shadow-sm border border-gray-200"
-      >
+      <Link href={nextUrl === '/' ? '/' : nextUrl} className="fixed top-4 left-4 z-50 w-10 h-10 flex items-center justify-center rounded-full bg-white/80 hover:bg-white text-gray-600 hover:text-black transition-colors shadow-sm border border-gray-200">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
           <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
         </svg>
@@ -157,29 +132,17 @@ function LoginContent() {
         </div>
 
         <div className="bg-white p-6 md:p-8 rounded-3xl shadow-xl w-full max-w-md border border-gray-100">
-          
           <div className="flex mb-6 bg-gray-100 p-1 rounded-full">
-            <button
-              className={`flex-1 py-2 rounded-full text-sm font-bold transition-all ${isLoginMode ? 'bg-white shadow text-green-800' : 'text-gray-500'}`}
-              onClick={() => { setIsLoginMode(true); setMessage(null); }}
-            >
+            <button className={`flex-1 py-2 rounded-full text-sm font-bold transition-all ${isLoginMode ? 'bg-white shadow text-green-800' : 'text-gray-500'}`} onClick={() => { setIsLoginMode(true); setMessage(null); }}>
               ログイン
             </button>
-            <button
-              className={`flex-1 py-2 rounded-full text-sm font-bold transition-all ${!isLoginMode ? 'bg-white shadow text-green-800' : 'text-gray-500'}`}
-              onClick={() => { setIsLoginMode(false); setMessage(null); }}
-            >
+            <button className={`flex-1 py-2 rounded-full text-sm font-bold transition-all ${!isLoginMode ? 'bg-white shadow text-green-800' : 'text-gray-500'}`} onClick={() => { setIsLoginMode(false); setMessage(null); }}>
               新規登録
             </button>
           </div>
 
           {message && (
-            <div className={`p-3 rounded-lg text-sm mb-4 ${
-              // ★ここを修正：「送信しました」「ようこそ」「おかえりなさい」が含まれていれば緑にする
-              message.includes('送信しました') || message.includes('ようこそ') || message.includes('おかえりなさい')
-                ? 'bg-green-50 text-green-700 border border-green-200' 
-                : 'bg-red-50 text-red-600 border border-red-200'
-            }`}>
+            <div className={`p-3 rounded-lg text-sm mb-4 ${message.includes('送信しました') || message.includes('ようこそ') || message.includes('おかえりなさい') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-600 border border-red-200'}`}>
               {message}
             </div>
           )}
@@ -188,36 +151,19 @@ function LoginContent() {
             <form onSubmit={handleLogin} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1">メールアドレス または ニックネーム</label>
-                <input
-                  type="text"
-                  required
-                  value={emailOrNickname}
-                  onChange={(e) => setEmailOrNickname(e.target.value)}
-                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all"
-                  placeholder="user1234"
-                />
+                <input type="text" required value={emailOrNickname} onChange={(e) => setEmailOrNickname(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all" placeholder="user1234" />
               </div>
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="block text-xs font-bold text-gray-500">パスワード</label>
-                  <Link href="/forgot-password" className="text-xs text-green-600 hover:underline">
+                  {/* ★修正：className を正しく適用 */}
+                  <Link href="/forgot-password" title="忘れた場合" className="text-xs text-green-600 hover:underline">
                     忘れた場合
                   </Link>
                 </div>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all"
-                  placeholder="••••••••"
-                />
+                <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all" placeholder="••••••••" />
               </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3.5 bg-green-700 text-white rounded-full font-bold shadow-lg shadow-green-700/30 hover:bg-green-800 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:bg-gray-300 disabled:shadow-none"
-              >
+              <button type="submit" disabled={loading} className="w-full py-3.5 bg-green-700 text-white rounded-full font-bold shadow-lg shadow-green-700/30 hover:bg-green-800 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:bg-gray-300">
                 {loading ? 'ログイン中...' : 'ログイン'}
               </button>
             </form>
@@ -225,45 +171,17 @@ function LoginContent() {
             <form onSubmit={handleSignUp} className="space-y-4">
                <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1">ニックネーム (半角英数20文字以内)</label>
-                <input
-                  type="text"
-                  required
-                  pattern="^[a-zA-Z0-9]{1,20}$"
-                  title="半角英数字20文字以内で入力してください"
-                  value={nickname}
-                  onChange={(e) => setNickname(e.target.value)}
-                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all"
-                  placeholder="okitegami01"
-                />
+                <input type="text" required pattern="^[a-zA-Z0-9]{1,20}$" value={nickname} onChange={(e) => setNickname(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all" placeholder="okitegami01" />
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1">メールアドレス</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all"
-                  placeholder="example@email.com"
-                />
+                <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all" placeholder="example@email.com" />
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-1">パスワード</label>
-                <input
-                  type="password"
-                  required
-                  minLength={6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all"
-                  placeholder="6文字以上"
-                />
+                <input type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-green-500 outline-none transition-all" placeholder="6文字以上" />
               </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3.5 bg-green-700 text-white rounded-full font-bold shadow-lg shadow-green-700/30 hover:bg-green-800 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:bg-gray-300 disabled:shadow-none"
-              >
+              <button type="submit" disabled={loading} className="w-full py-3.5 bg-green-700 text-white rounded-full font-bold shadow-lg shadow-green-700/30 hover:bg-green-800 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:bg-gray-300">
                 {loading ? '登録処理中...' : 'メールアドレスで登録'}
               </button>
             </form>
@@ -274,25 +192,17 @@ function LoginContent() {
             <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-gray-400">または</span></div>
           </div>
 
-          <button
-            type="button"
-            onClick={handleGoogleLogin}
-            className="w-full flex items-center justify-center gap-3 py-3 border border-gray-300 rounded-full hover:bg-gray-50 transition-colors"
-          >
+          <button type="button" onClick={handleGoogleLogin} className="w-full flex items-center justify-center gap-3 py-3 border border-gray-300 rounded-full hover:bg-gray-50 transition-colors">
             <img src="https://www.svgrepo.com/show/475656/google-color.svg" className="w-5 h-5" alt="Google" />
             <span className="text-sm font-bold text-gray-600">Googleで{isLoginMode ? 'ログイン' : '登録'}</span>
           </button>
-
         </div>
       </div>
-
       <FooterLinks />
-
     </div>
   );
 }
 
-// ★修正：ビルドエラーを防ぐため、useSearchParamsを使うコンポーネントをSuspenseで包む
 export default function LoginPage() {
   return (
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#f7f4ea]">Loading...</div>}>

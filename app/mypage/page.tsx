@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import LetterModal from '@/components/LetterModal';
@@ -11,11 +11,6 @@ import IconPost from '@/components/IconPost';
 import FooterLinks from '@/components/FooterLinks';
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
 import SkeletonLetter from '@/components/SkeletonLetter';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 type Letter = {
   id: string;
@@ -46,6 +41,10 @@ type Stamp = {
 
 export default function MyPage() {
   const router = useRouter();
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
   const [user, setUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   // ★修正：'settings' タブを追加
@@ -68,10 +67,7 @@ export default function MyPage() {
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/login');
-        return;
-      }
+      if (!user) return;
       setUser(user);
       setNewEmail(user.email || '');
 
@@ -84,7 +80,7 @@ export default function MyPage() {
       setIsLoading(false);
     };
     init();
-  }, []);
+  }, [supabase]);
 
   const fetchMyPosts = async (userId: string) => {
     const { data } = await supabase
@@ -188,8 +184,10 @@ export default function MyPage() {
   };
 
   const handleLogout = async () => {
+    // 1. Supabaseからサインアウト（ブラウザのメモリを消去）
     await supabase.auth.signOut();
-    router.push('/');
+    // 2. トップページへ強制遷移（Cookieを破棄し、Middlewareを再走らせる）
+    window.location.href = '/';
   };
 
   const isExpired = (createdAt: string) => {

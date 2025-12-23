@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { createBrowserClient } from '@supabase/ssr';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import imageCompression from 'browser-image-compression'; 
@@ -9,13 +9,14 @@ import IconUserLetter from '@/components/IconUserLetter';
 import IconPost from '@/components/IconPost';
 import { compressStamp } from '@/utils/imageControl';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
 export default function AdminDashboard() {
   const router = useRouter();
+
+  const supabase = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'official' | 'posts' | 'users' | 'members' | 'stats' | 'create' | 'stamps'>('posts');
 
@@ -28,25 +29,16 @@ export default function AdminDashboard() {
   const [isCleaning, setIsCleaning] = useState(false);
   const [cleanLog, setCleanLog] = useState<string>('');
 
+  // admin/page.tsx
   useEffect(() => {
-    const checkAdmin = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        router.push('/login');
-        return;
-      }
-      const { data: profile } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single();
-      if (!profile || !profile.is_admin) {
-        alert("管理者権限がありません");
-        router.push('/');
-        return;
-      }
+    const init = async () => {
+      // Middlewareで弾かれている前提なので、ここではデータの取得だけでOK
       fetchData();
-      fetchStamps(); // ★切手情報も取得
+      fetchStamps();
       setLoading(false);
     };
-    checkAdmin();
-  }, [router]);
+    init();
+  }, []);
 
   const fetchData = async () => {
     try {
