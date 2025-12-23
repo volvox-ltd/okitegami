@@ -1,31 +1,32 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
-import { SmtpClient } from "https://deno.land/x/smtp@v0.7.0/mod.ts"
+import nodemailer from "npm:nodemailer"
 
 serve(async (req) => {
-  // Webhookからのデータ受け取り
-  const { record } = await req.json()
-  const email = record.email
-  const nickname = record.nickname || '旅人'
-
-  const client = new SmtpClient()
-
   try {
-    // ロリポップのSMTP設定（環境変数から読み込み）
-    await client.connectTLS({
-      hostname: Deno.env.get("SMTP_HOSTNAME") || "smtp.lolipop.jp",
-      port: 465,
-      username: Deno.env.get("SMTP_USERNAME") || "info@okitegami.online",
-      password: Deno.env.get("SMTP_PASSWORD") || "Arancebionde1235",
-    })
+    // Webhookからのデータ受け取り
+    const { record } = await req.json()
+    const email = record.email
+    const nickname = record.nickname || '旅人'
 
-    await client.send({
-      from: "info@okitegami.online", 
+    // ロリポップのSMTP設定
+    const transporter = nodemailer.createTransport({
+      host: Deno.env.get("SMTP_HOSTNAME") || "smtp.lolipop.jp",
+      port: 465,
+      secure: true, // 465番ポートの場合は true
+      auth: {
+        user: Deno.env.get("SMTP_USERNAME") || "info@okitegami.online",
+        pass: Deno.env.get("SMTP_PASSWORD") || "Arancebionde1235",
+      },
+    });
+
+    await transporter.sendMail({
+      from: `"おきてがみ" <${Deno.env.get("SMTP_USERNAME") || "info@okitegami.online"}>`,
       to: email,
       subject: "【おきてがみ】ご登録ありがとうございます",
-      content: `
+      html: `
         <html>
           <body style="font-family: 'Hiragino Mincho ProN', 'MS PMincho', serif; color: #333; background-color: #f7f4ea; padding: 20px; line-height: 1.8;">
-            <div style="max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; shadow: 0 2px 10px rgba(0,0,0,0.05);">
+            <div style="max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.05);">
               <div style="text-align: center; margin-bottom: 30px;">
                 <h1 style="font-size: 24px; color: #1a4731; letter-spacing: 0.3em; margin: 0;">おきてがみ</h1>
               </div>
@@ -61,10 +62,8 @@ serve(async (req) => {
           </body>
         </html>
       `,
-      html: true,
-    })
+    });
 
-    await client.close()
     return new Response(JSON.stringify({ message: "Welcome email sent successfully" }), { status: 200 })
   } catch (error) {
     console.error("Email Error:", error.message)
