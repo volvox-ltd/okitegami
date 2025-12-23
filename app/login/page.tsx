@@ -174,7 +174,12 @@ function LoginContent() {
           </div>
 
           {message && (
-            <div className={`p-3 rounded-lg text-sm mb-4 ${message.includes('送信しました') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+            <div className={`p-3 rounded-lg text-sm mb-4 ${
+              // ★ここを修正：「送信しました」「ようこそ」「おかえりなさい」が含まれていれば緑にする
+              message.includes('送信しました') || message.includes('ようこそ') || message.includes('おかえりなさい')
+                ? 'bg-green-50 text-green-700 border border-green-200' 
+                : 'bg-red-50 text-red-600 border border-red-200'
+            }`}>
               {message}
             </div>
           )}
