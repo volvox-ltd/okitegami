@@ -91,6 +91,7 @@ function LoginContent() {
     }
 
     try {
+      // ニックネームの重複チェックだけは事前に行う
       const { data: existingUser } = await supabase
         .from('profiles')
         .select('id')
@@ -101,32 +102,27 @@ function LoginContent() {
         throw new Error('そのニックネームは既に使用されています');
       }
 
+      // サインアップを実行（これだけでトリガーによりプロフィールも自動生成される）
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          data: { nickname },
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=${nextUrl}`, // ★修正：OAuth戻り先にもnextを渡す
+          data: { nickname }, // ここに渡したデータがトリガーに渡されます
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${nextUrl}`,
         },
       });
 
       if (error) throw error;
 
-      // ★ここを修正：Confirm Email がオフなら、即座にログイン成功として扱う
-      if (data.user && data.session) {
-        setMessage('登録が完了しました！移動します...');
-        router.push(nextUrl);
-        router.refresh();
-      } else {
-        // 万が一セッションがない場合（基本はないはず）
-        setMessage('登録ありがとうございます。ログインしてください。');
-        setIsLoginMode(true);
+      if (data.user) {
+        setMessage('ようこそ、おきてがみの世界へ。まもなく地図が開きます...');
+        setTimeout(() => {
+          router.push(nextUrl);
+          router.refresh();
+        }, 3000);
       }
-
     } catch (error: any) {
       setMessage(error.message || '登録中にエラーが発生しました');
-    } finally {
-      setLoading(false);
     }
   };
 
