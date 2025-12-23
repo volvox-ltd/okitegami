@@ -1,5 +1,5 @@
 'use client';
-import { compressImage } from '@/utils/compressImage';
+import { compressImage, compressStamp } from '@/utils/imageControl';
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 // ★修正1: Map を MapGL という名前に変更してインポート（名前衝突回避）
@@ -189,18 +189,33 @@ export default function EditPage() {
       }
 
       let finalStampId = currentStamp ? currentStamp.id : null;
-      if (isStampDeleted) finalStampId = null;
-      else if (isCreatingNewStamp && newStampFile) {
-        let fileToUpload: File = newStampFile;
-        if (newStampFile.type !== 'image/png') fileToUpload = await compressImage(newStampFile);
-        const sName = `stamp_${Date.now()}`;
-        await supabase.storage.from('stamp-images').upload(sName, fileToUpload);
-        const sUrl = supabase.storage.from('stamp-images').getPublicUrl(sName).data.publicUrl;
-        
-        const { data: newStamp } = await supabase.from('stamps').insert({ name: newStampName, image_url: sUrl, description: `${spotName}の記念切手` }).select().single();
-        if (newStamp) finalStampId = newStamp.id;
-      } else if (currentStamp && (newStampName !== currentStamp.name || newStampFile)) {
-         await supabase.from('stamps').update({ name: newStampName }).eq('id', currentStamp.id);
+      if (isStampDeleted) {
+        finalStampId = null;
+      } else if (newStampFile) {
+        // 画像の軽量圧縮（WebP）
+        const compressedStampFile = await compressStamp(newStampFile);
+        const sPath = `stamp_${Date.now()}.webp`;
+        await supabase.storage.from('stamp-images').upload(sPath, compressedStampFile, { contentType: 'image/webp' });
+        const sUrl = supabase.storage.from('stamp-images').getPublicUrl(sPath).data.publicUrl;
+
+        if (isCreatingNewStamp) {
+          // 新規切手として登録
+          const { data: newStamp } = await supabase.from('stamps').insert({ 
+            name: newStampName, 
+            image_url: sUrl, 
+            description: `${spotName}の記念切手` 
+          }).select().single();
+          if (newStamp) finalStampId = newStamp.id;
+        } else if (currentStamp) {
+          // 既存切手の画像と名前を更新
+          await supabase.from('stamps').update({ 
+            name: newStampName, 
+            image_url: sUrl 
+          }).eq('id', currentStamp.id);
+        }
+      } else if (currentStamp && newStampName !== currentStamp.name) {
+        // 名前だけの更新
+        await supabase.from('stamps').update({ name: newStampName }).eq('id', currentStamp.id);
       }
 
       const contentToSave = pages.join(PAGE_DELIMITER);

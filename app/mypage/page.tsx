@@ -7,7 +7,7 @@ import LetterModal from '@/components/LetterModal';
 import PostModal from '@/components/PostModal'; 
 import IconUserLetter from '@/components/IconUserLetter';
 import IconAdminLetter from '@/components/IconAdminLetter';
-import IconPost from '@/components/IconPost'; // ★追加
+import IconPost from '@/components/IconPost'; 
 import FooterLinks from '@/components/FooterLinks';
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
 import SkeletonLetter from '@/components/SkeletonLetter';
@@ -32,7 +32,7 @@ type Letter = {
   attached_stamp_id?: number | null;
   read_count?: number;
   is_post?: boolean;
-  parent_id?: string | null; // ★追加：ポストへの投函判別用
+  parent_id?: string | null; 
 };
 
 type Stamp = {
@@ -48,7 +48,8 @@ export default function MyPage() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'posts' | 'favorites' | 'stamps'>('posts');
+  // ★修正：'settings' タブを追加
+  const [activeTab, setActiveTab] = useState<'posts' | 'favorites' | 'stamps' | 'settings'>('posts');
   const [postFilter, setPostFilter] = useState<'active' | 'archive'>('active');
   
   const [myPosts, setMyPosts] = useState<Letter[]>([]);
@@ -58,6 +59,12 @@ export default function MyPage() {
   const [selectedLetter, setSelectedLetter] = useState<Letter | null>(null);
   const [selectedPost, setSelectedPost] = useState<Letter | null>(null);
 
+  // ★追加：設定用ステート
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [settingsMessage, setSettingsMessage] = useState<{type: 'success'|'error', text: string} | null>(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -66,6 +73,7 @@ export default function MyPage() {
         return;
       }
       setUser(user);
+      setNewEmail(user.email || '');
 
       await Promise.all([
         fetchMyPosts(user.id),
@@ -122,6 +130,37 @@ export default function MyPage() {
     }
   };
 
+  // ★追加：メールアドレス変更処理
+  const handleUpdateEmail = async () => {
+    setIsUpdating(true);
+    setSettingsMessage(null);
+    const { error } = await supabase.auth.updateUser({ email: newEmail });
+    if (error) {
+      setSettingsMessage({ type: 'error', text: error.message });
+    } else {
+      setSettingsMessage({ type: 'success', text: '確認メールを送信しました。新しいアドレスで承認してください。' });
+    }
+    setIsUpdating(false);
+  };
+
+  // ★追加：パスワード変更処理
+  const handleUpdatePassword = async () => {
+    if (newPassword.length < 6) {
+      setSettingsMessage({ type: 'error', text: 'パスワードは6文字以上で入力してください' });
+      return;
+    }
+    setIsUpdating(true);
+    setSettingsMessage(null);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      setSettingsMessage({ type: 'error', text: error.message });
+    } else {
+      setSettingsMessage({ type: 'success', text: 'パスワードを更新しました。' });
+      setNewPassword('');
+    }
+    setIsUpdating(false);
+  };
+
   const filteredMyPosts = useMemo(() => {
     return myPosts.filter(letter => {
       const expired = !letter.is_official && !letter.is_post && (new Date().getTime() - new Date(letter.created_at).getTime()) / (1000 * 60 * 60) > LETTER_EXPIRATION_HOURS;
@@ -171,9 +210,11 @@ export default function MyPage() {
       </div>
 
       <div className="flex border-b border-gray-200 bg-white">
-        <button onClick={() => setActiveTab('posts')} className={`flex-1 py-3 text-xs md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'posts' ? 'text-green-700' : 'text-gray-400'}`}>手紙の記録 {activeTab === 'posts' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-green-700"></div>}</button>
-        <button onClick={() => setActiveTab('favorites')} className={`flex-1 py-3 text-xs md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'favorites' ? 'text-pink-500' : 'text-gray-400'}`}>お気に入り {activeTab === 'favorites' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-pink-500"></div>}</button>
-        <button onClick={() => setActiveTab('stamps')} className={`flex-1 py-3 text-xs md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'stamps' ? 'text-orange-600' : 'text-gray-400'}`}>切手帳 {activeTab === 'stamps' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-orange-600"></div>}</button>
+        <button onClick={() => setActiveTab('posts')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'posts' ? 'text-green-700' : 'text-gray-400'}`}>手紙の記録 {activeTab === 'posts' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-green-700"></div>}</button>
+        <button onClick={() => setActiveTab('favorites')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'favorites' ? 'text-pink-500' : 'text-gray-400'}`}>お気に入り {activeTab === 'favorites' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-pink-500"></div>}</button>
+        <button onClick={() => setActiveTab('stamps')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'stamps' ? 'text-orange-600' : 'text-gray-400'}`}>切手帳 {activeTab === 'stamps' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-orange-600"></div>}</button>
+        {/* ★修正：設定タブボタンを追加 */}
+        <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'settings' ? 'text-gray-800' : 'text-gray-400'}`}>設定 {activeTab === 'settings' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-gray-800"></div>}</button>
       </div>
 
       {activeTab === 'posts' && (
@@ -184,12 +225,72 @@ export default function MyPage() {
       )}
 
       <div className="p-4 space-y-3 min-h-[50vh]">
-        {isLoading && activeTab !== 'stamps' && (
+        {isLoading && activeTab !== 'stamps' && activeTab !== 'settings' && (
           <div className="space-y-3 max-w-3xl mx-auto"><SkeletonLetter /><SkeletonLetter /><SkeletonLetter /></div>
         )}
 
         {!isLoading && (
           <>
+            {/* === 設定タブ === */}
+            {activeTab === 'settings' && (
+              <div className="animate-fadeIn max-w-md mx-auto space-y-8 pt-4">
+                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-6">
+                  <h2 className="font-bold text-sm font-serif border-b pb-2">アカウント設定</h2>
+                  
+                  {settingsMessage && (
+                    <div className={`p-3 rounded-lg text-[10px] font-bold ${settingsMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                      {settingsMessage.text}
+                    </div>
+                  )}
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-400 mb-1">メールアドレスの変更</label>
+                      <div className="flex gap-2">
+                        <input 
+                          type="email" 
+                          value={newEmail}
+                          onChange={(e) => setNewEmail(e.target.value)}
+                          className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-green-700"
+                        />
+                        <button 
+                          onClick={handleUpdateEmail}
+                          disabled={isUpdating || newEmail === user?.email}
+                          className="bg-green-700 text-white px-4 py-2 rounded-lg text-[10px] font-bold disabled:bg-gray-200 transition-colors"
+                        >
+                          更新
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-400 mb-1">パスワードの変更</label>
+                      <div className="flex gap-2">
+                        <input 
+                          type="password" 
+                          placeholder="新しいパスワード"
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-green-700"
+                        />
+                        <button 
+                          onClick={handleUpdatePassword}
+                          disabled={isUpdating || !newPassword}
+                          className="bg-green-700 text-white px-4 py-2 rounded-lg text-[10px] font-bold disabled:bg-gray-200 transition-colors"
+                        >
+                          更新
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-center">
+                   <button onClick={handleLogout} className="text-xs text-red-400 underline hover:text-red-600 font-sans">ログアウト</button>
+                </div>
+              </div>
+            )}
+
             {/* === 切手帳タブ === */}
             {activeTab === 'stamps' && (
               <div className="animate-fadeIn">
@@ -197,23 +298,15 @@ export default function MyPage() {
                   {obtainedStamps.map(stamp => (
                   <div key={stamp.id} className="flex flex-col items-center group cursor-pointer" onClick={() => handleStampClick(stamp.id)}>
                     <div className="relative w-full aspect-[3/4]">
-                      
-                      {/* ★3枚以上の重なり演出（修正：stamp.count && を追加） */}
                       {stamp.count && stamp.count >= 3 && (
                         <div className="absolute inset-0 bg-white border border-gray-200 rounded shadow-sm transform rotate-6 translate-x-1.5 translate-y-1 scale-100 origin-bottom-right opacity-60 z-0" />
                       )}
-                      
-                      {/* ★2枚以上の重なり演出（修正：stamp.count && を追加） */}
                       {stamp.count && stamp.count >= 2 && (
                         <div className="absolute inset-0 bg-white border border-gray-200 rounded shadow-sm transform rotate-3 translate-x-0.5 translate-y-0.5 scale-100 origin-bottom-right z-0" />
                       )}
-
-                      {/* メインの切手（最前面） */}
                       <div className="absolute inset-0 w-full h-full rounded border border-gray-200 bg-white shadow-sm p-1 flex items-center justify-center transition-transform group-hover:scale-105 z-10">
                         <img src={stamp.image_url} alt={stamp.name} className="w-full h-full object-contain" />
                       </div>
-
-                      {/* ★枚数バッジ（修正：stamp.count && を追加） */}
                       {stamp.count && stamp.count > 1 && (
                         <div className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-lg border-2 border-white z-20 font-sans">
                           {stamp.count}
@@ -227,7 +320,7 @@ export default function MyPage() {
               </div>
             )}
 
-            {activeTab !== 'stamps' && (
+            {activeTab !== 'stamps' && activeTab !== 'settings' && (
               <div className="animate-fadeIn space-y-3 max-w-3xl mx-auto">
                 {(activeTab === 'posts' ? filteredMyPosts : favorites).length === 0 && (
                   <div className="text-center py-12 text-gray-400 text-xs font-sans">
@@ -237,9 +330,7 @@ export default function MyPage() {
 
                 {(activeTab === 'posts' ? filteredMyPosts : favorites).map((letter) => {
                   const expired = !letter.is_official && !letter.is_post && isExpired(letter.created_at);
-                  // ★修正：ポストへの投函かどうかの判定
                   const isSubmittedToPost = !!letter.parent_id;
-                  // ★修正：タイトル表示の切り替え
                   const displayTitle = isSubmittedToPost ? `${letter.spot_name}への手紙` : letter.title;
                   
                   return (
@@ -247,7 +338,6 @@ export default function MyPage() {
                       className={`bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4 cursor-pointer transition-transform hover:scale-[1.01] active:scale-[0.99] ${expired ? 'opacity-70 saturate-[0.3] bg-gray-50' : ''}`}
                     >
                       <div className="shrink-0 relative">
-                        {/* ★修正：ポスト投函なら IconPost を表示 */}
                         {isSubmittedToPost ? (
                           <div className="text-red-600"><IconPost className="w-10 h-10" /></div>
                         ) : letter.is_official ? (
@@ -282,9 +372,12 @@ export default function MyPage() {
         )}
       </div>
 
-      <div className="text-center py-6 border-t border-gray-100 mt-6">
-        <button onClick={handleLogout} className="text-xs text-gray-400 underline hover:text-red-500 font-sans">ログアウト</button>
-      </div>
+      {/* 設定タブ以外の場合のみ、下にログアウトを表示 */}
+      {activeTab !== 'settings' && (
+        <div className="text-center py-6 border-t border-gray-100 mt-6">
+          <button onClick={handleLogout} className="text-xs text-gray-400 underline hover:text-red-500 font-sans">ログアウト</button>
+        </div>
+      )}
       <FooterLinks />
 
       {selectedLetter && <LetterModal letter={selectedLetter} currentUser={user} onClose={() => setSelectedLetter(null)} onDeleted={() => { setSelectedLetter(null); if (user) { fetchMyPosts(user.id); fetchFavorites(user.id); } }} />}

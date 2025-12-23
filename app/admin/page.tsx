@@ -7,6 +7,7 @@ import imageCompression from 'browser-image-compression';
 import IconAdminLetter from '@/components/IconAdminLetter';
 import IconUserLetter from '@/components/IconUserLetter';
 import IconPost from '@/components/IconPost';
+import { compressStamp } from '@/utils/imageControl';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -16,11 +17,13 @@ const supabase = createClient(
 export default function AdminDashboard() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'official' | 'posts' | 'users' | 'members' | 'stats' | 'create'>('posts');
+  const [activeTab, setActiveTab] = useState<'official' | 'posts' | 'users' | 'members' | 'stats' | 'create' | 'stamps'>('posts');
 
   const [stats, setStats] = useState({ userCount: 0, letterCount: 0, reportCount: 0 });
   const [letters, setLetters] = useState<any[]>([]);
   const [profiles, setProfiles] = useState<any[]>([]);
+
+  const [allStamps, setAllStamps] = useState<any[]>([]);
   
   const [isCleaning, setIsCleaning] = useState(false);
   const [cleanLog, setCleanLog] = useState<string>('');
@@ -39,6 +42,7 @@ export default function AdminDashboard() {
         return;
       }
       fetchData();
+      fetchStamps(); // ★切手情報も取得
       setLoading(false);
     };
     checkAdmin();
@@ -91,6 +95,51 @@ export default function AdminDashboard() {
         }
       }
     } catch (e: any) { console.error(e); }
+  };
+
+  // ★追加：切手データの取得
+  const fetchStamps = async () => {
+    const { data } = await supabase.from('stamps').select('*').order('id', { ascending: true });
+    if (data) setAllStamps(data);
+  };
+
+  // ★追加：切手の新規アップロード処理（ここで軽量化）
+  const handleStampUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const stampName = prompt("切手の名前を入力してください");
+    if (!stampName) return;
+
+    try {
+      setCleanLog("切手を圧縮中...\n");
+      // 1. 切手専用の圧縮を実行
+      const compressedFile = await compressStamp(file);
+      
+      // 2. Storageにアップロード
+      const fileName = `stamps/${Date.now()}.webp`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('letter-images')
+        .upload(fileName, compressedFile);
+
+      if (uploadError) throw uploadError;
+
+      const publicUrl = supabase.storage.from('letter-images').getPublicUrl(fileName).data.publicUrl;
+
+      // 3. データベースに登録
+      const { error: dbError } = await supabase.from('stamps').insert({
+        name: stampName,
+        image_url: publicUrl,
+        description: `${stampName}の公式切手`
+      });
+
+      if (dbError) throw dbError;
+
+      alert("切手を追加しました");
+      fetchStamps();
+    } catch (e: any) {
+      alert("エラー: " + e.message);
+    }
   };
 
   const handleDeletePost = async (id: string, imageUrl?: string) => {
@@ -175,6 +224,29 @@ export default function AdminDashboard() {
           <TabButton label="統計" isActive={activeTab === 'stats'} onClick={() => setActiveTab('stats')} icon="📊" />
           <TabButton label="新規作成" isActive={activeTab === 'create'} onClick={() => setActiveTab('create')} icon="✏️" color="bg-green-700 text-white" />
         </div>
+
+        {/* --- ★追加：切手管理タブの内容 --- */}
+        {activeTab === 'stamps' && (
+          <div className="bg-white p-6 rounded-xl shadow border border-gray-200 animate-fadeIn">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="font-bold text-lg">切手（スタンプ）一覧</h2>
+              <label className="bg-orange-600 text-white px-4 py-2 rounded-lg font-bold text-xs cursor-pointer hover:bg-orange-700 transition-colors">
+                新しく切手を追加
+                <input type="file" className="hidden" accept="image/*" onChange={handleStampUpload} />
+              </label>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              {allStamps.map(stamp => (
+                <div key={stamp.id} className="border border-gray-100 p-3 rounded-xl flex flex-col items-center gap-2 bg-gray-50">
+                  <div className="w-16 h-20 bg-white border border-gray-200 rounded p-1 shadow-sm">
+                    <img src={stamp.image_url} alt={stamp.name} className="w-full h-full object-contain" />
+                  </div>
+                  <p className="text-[10px] font-bold text-gray-600 truncate w-full text-center">{stamp.name}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {activeTab === 'members' && (
           <div className="bg-white rounded-xl shadow overflow-hidden animate-fadeIn border border-gray-200">

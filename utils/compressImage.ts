@@ -49,3 +49,39 @@ export const compressImage = async (file: File): Promise<File> => {
     image.onerror = (error) => reject(error);
   });
 };
+
+// --- ★追加：切手（スタンプ）専用の超軽量圧縮 ---
+export const compressStamp = async (file: File): Promise<File> => {
+  const MAX_WIDTH = 400; // 切手は小さいので400pxで十分
+  const QUALITY = 0.6;   // 容量優先で画質を少し落とす
+
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.src = URL.createObjectURL(file);
+    image.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = image.width;
+      let height = image.height;
+      if (width > MAX_WIDTH) {
+        height *= MAX_WIDTH / width;
+        width = MAX_WIDTH;
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return reject(new Error('Canvas context error'));
+      ctx.drawImage(image, 0, 0, width, height);
+
+      // WebP形式が使えればWebPに、ダメならJPEGで保存
+      canvas.toBlob((blob) => {
+        if (!blob) return reject(new Error('Compression failed'));
+        const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".webp", {
+          type: 'image/webp',
+          lastModified: Date.now(),
+        });
+        resolve(compressedFile);
+      }, 'image/webp', QUALITY);
+    };
+    image.onerror = (error) => reject(error);
+  });
+};
