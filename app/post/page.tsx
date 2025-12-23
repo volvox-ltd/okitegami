@@ -1,5 +1,5 @@
 'use client';
-import { compressImage } from '@/utils/compressImage';
+import { compressImage } from '@/utils/imageControl';
 import { useState, useEffect, Suspense } from 'react'; // ★Suspenseを追加
 import Map, { Marker, NavigationControl, GeolocateControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';

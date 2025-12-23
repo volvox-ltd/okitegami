@@ -1,5 +1,5 @@
 'use client';
-import { compressImage } from '@/utils/compressImage';
+import { compressImage } from '@/utils/imageControl';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Map, { Marker, NavigationControl } from 'react-map-gl';

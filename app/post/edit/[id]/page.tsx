@@ -6,7 +6,7 @@ import Map, { Marker, NavigationControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { createClient } from '@supabase/supabase-js';
 import Link from 'next/link';
-import { compressImage } from '@/utils/compressImage';
+import { compressImage } from '@/utils/imageControl';
 import IconUserLetter from '@/components/IconUserLetter';
 
 const supabase = createClient(
