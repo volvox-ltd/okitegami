@@ -92,7 +92,7 @@ function LoginContent() {
         throw new Error('そのニックネームは既に使用されています');
       }
 
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
