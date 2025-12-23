@@ -103,10 +103,16 @@ function LoginContent() {
 
       if (error) throw error;
 
-      setMessage('確認メールを送信しました。メール内のリンクをクリックして登録を完了してください。');
-      setEmail('');
-      setPassword('');
-      setNickname('');
+      // ★ここを修正：Confirm Email がオフなら、即座にログイン成功として扱う
+      if (data.user && data.session) {
+        setMessage('登録が完了しました！移動します...');
+        router.push(nextUrl);
+        router.refresh();
+      } else {
+        // 万が一セッションがない場合（基本はないはず）
+        setMessage('登録ありがとうございます。ログインしてください。');
+        setIsLoginMode(true);
+      }
 
     } catch (error: any) {
       setMessage(error.message || '登録中にエラーが発生しました');
