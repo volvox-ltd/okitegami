@@ -69,7 +69,6 @@ function HomeContent() {
     zoom: 15
   });
 
-  // マップ設定（日本語化・標識消去）
   const handleMapLoad = (evt: any) => {
     const map = evt.target;
     map.getStyle().layers.forEach((layer: any) => {
@@ -87,7 +86,6 @@ function HomeContent() {
     });
   };
 
-  // 認証チェック
   useEffect(() => {
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -120,10 +118,8 @@ function HomeContent() {
     }
   };
 
-  // ★ 最適化：データ取得を軽量化
   const fetchLetters = useCallback(async () => {
     try {
-      // 本文(content)などの重いデータを除外して取得
       const { data: lettersData, error } = await supabase
         .from('letters')
         .select('id, title, spot_name, lat, lng, is_official, user_id, created_at, attached_stamp_id, is_post, parent_id, password');
@@ -152,14 +148,12 @@ function HomeContent() {
     fetchLetters();
   }, [fetchLetters]);
 
-  // ★ 最適化：特定の1通の完全なデータを取得する（開く直前に呼ぶ）
   const fetchLetterDetail = async (id: string) => {
     const { data, error } = await supabase.from('letters').select('*').eq('id', id).single();
     if (error) return null;
     return data as Letter;
   };
 
-  // 位置情報
   useEffect(() => {
     if (!navigator.geolocation) return;
     const watchId = navigator.geolocation.watchPosition(
@@ -182,7 +176,6 @@ function HomeContent() {
     return getDistance({ latitude: userLocation.lat, longitude: userLocation.lng }, { latitude: targetLat, longitude: targetLng });
   };
 
-  // 近くの通知
   const nearestNotificationLetter = useMemo<Letter | null>(() => {
     if (!userLocation) return null;
     let nearest: Letter | null = null;
@@ -197,7 +190,6 @@ function HomeContent() {
     return nearest;
   }, [userLocation, letters, showUserPosts]);
 
-  // ★ 最適化：URLパラメータからの開封を詳細取得版に
   useEffect(() => {
     const handleOpenPostParam = async () => {
       const params = new URLSearchParams(window.location.search);
@@ -217,7 +209,6 @@ function HomeContent() {
     handleOpenPostParam();
   }, [currentUser]); 
 
-  // ★ 最適化：マーカー描画をメモ化（パフォーマンス向上）
   const renderedMarkers = useMemo(() => {
     return letters.map((letter) => {
       if (!letter.is_official && !letter.is_post && letter.created_at) {
@@ -229,7 +220,6 @@ function HomeContent() {
       const isMyPost = currentUser && currentUser.id === letter.user_id;
       const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
       const isReachable = (distance !== null && distance <= UNLOCK_DISTANCE) || isMyPost || isAdmin;
-      const isNear = distance !== null && distance <= NOTIFICATION_DISTANCE && !isReachable;
       const isRead = readLetterIds.includes(letter.id);
       const postHasLetters = allLetters.some(l => l.parent_id === letter.id);
 
@@ -370,7 +360,10 @@ function HomeContent() {
         <LetterModal 
           letter={readingLetter} 
           currentUser={currentUser} 
-          onClose={() => setReadingLetter(null)} 
+          onClose={() => {
+            setReadingLetter(null);
+            setPopupInfo(null);
+          }} 
           onRead={(id) => markAsRead(id)} 
           onDeleted={() => {
             const deletedId = readingLetter.id;
@@ -381,7 +374,17 @@ function HomeContent() {
           }} 
         />
       )}   
-      {readingPost && <PostModal post={readingPost} currentUser={currentUser} onClose={() => setReadingPost(null)} isReachable={true} />}
+      {readingPost && (
+        <PostModal 
+          post={readingPost} 
+          currentUser={currentUser} 
+          onClose={() => {
+            setReadingPost(null);
+            setPopupInfo(null);
+          }} 
+          isReachable={true} 
+        />
+      )}
       {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}
       {showTutorial && <TutorialModal onClose={() => { localStorage.setItem('hasSeenTutorial', 'true'); setShowTutorial(false); }} />}
       <AddToHomeScreen isOpen={showPwaPrompt} onClose={() => setShowPwaPrompt(false)} message="ホーム画面に追加しておきませんか？" />

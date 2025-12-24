@@ -1,20 +1,16 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
-// ★ 共通クライアントを使用
+// 共通クライアントを使用
 import { supabase } from '@/utils/supabase'; 
 import { User } from '@supabase/supabase-js';
 import Link from 'next/link';
+// Next.jsの画像最適化コンポーネント
+import Image from 'next/image';
 import IconPost from '@/components/IconPost';
 
 type Letter = {
-  id: string;
-  title: string;
-  spot_name: string;
-  content: string;
-  image_url?: string;
-  created_at: string;
-  user_id: string;
-  nickname?: string; 
+  id: string; title: string; spot_name: string; content: string;
+  image_url?: string; created_at: string; user_id: string; nickname?: string; 
 };
 
 type Props = {
@@ -28,12 +24,10 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
   const [activeTab, setActiveTab] = useState<'read' | 'write'>('read');
   const [letters, setLetters] = useState<Letter[]>([]);
   const [totalCount, setTotalCount] = useState(0);
-  // ★ 点滅防止のステートを維持
   const [isLoading, setIsLoading] = useState(true);
   const [hasFetchedOnce, setHasFetchedOnce] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   
-  // ★ ループ防止のRefを維持
   const isFetchingRef = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -44,11 +38,9 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
 
   const PAGE_SIZE = 10;
 
-  // 手紙データを取得する関数
   const fetchLetters = useCallback(async (offset: number, isInitial = false) => {
     if (isFetchingRef.current) return;
     if (!isInitial && !hasMore) return;
-
     isFetchingRef.current = true;
     setIsLoading(true);
 
@@ -88,14 +80,12 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
     } finally {
       setIsLoading(false);
       isFetchingRef.current = false;
-      setHasFetchedOnce(true); // 初回完了フラグ
+      setHasFetchedOnce(true);
     }
   }, [post.id, hasMore]);
 
-  // 初期化
   useEffect(() => {
     let isMounted = true;
-
     const init = async () => {
       const fetchCount = supabase
         .from('letters')
@@ -123,7 +113,6 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
         }
       }
     };
-
     init();
     return () => { isMounted = false; };
   }, [post.id, currentUser, fetchLetters]);
@@ -157,7 +146,7 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
 
       if (letterError) throw letterError;
 
-      // ★ 切手カウント仕様：post_idで紐付け
+      // ★ 修正：Type B（赤ポスト投稿）は投稿ごとにカウントを増やす（＝数字が出る）
       if (post.attached_stamp_id) {
         const { data: existingEntry } = await supabase
           .from('user_stamps')
@@ -202,10 +191,8 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
         <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none">
           <div className="bg-[#fdfcf5] p-8 rounded-sm shadow-2xl flex flex-col items-center animate-bounce-in pointer-events-auto border-4 border-double border-[#5d4037]/20 max-w-xs relative font-sans text-center">
             <h3 className="font-bold text-[#5d4037] mb-4 font-serif text-lg tracking-widest leading-relaxed">切手を受け取りました</h3>
-            <div className="w-24 h-32 border-4 border-white shadow-lg rotate-3 mb-5 bg-white p-1">
-              <div className="w-full h-full border border-gray-100 flex items-center justify-center bg-gray-50">
-                <img src={obtainedStamp.image_url} className="w-full h-full object-contain" alt="stamp" />
-              </div>
+            <div className="w-24 h-32 border-4 border-white shadow-lg rotate-3 mb-5 bg-white p-1 relative">
+                <Image src={obtainedStamp.image_url} fill className="object-contain p-1" alt="stamp" sizes="96px" priority />
             </div>
             <p className="font-bold text-sm text-[#5d4037] mb-1 font-serif">{obtainedStamp.name}</p>
             <p className="text-[10px] text-gray-400 mb-6 font-serif">切手帳に記録されました</p>
@@ -218,9 +205,7 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
         
         <div className="bg-red-600 text-white p-4 shrink-0 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 flex items-center justify-center bg-white/20 rounded-full">
-               <IconPost className="w-6 h-6 text-white" />
-            </div>
+            <div className="w-10 h-10 flex items-center justify-center bg-white/20 rounded-full"><IconPost className="w-6 h-6 text-white" /></div>
             <div>
               <h2 className="font-bold font-serif text-lg tracking-widest">{post.title}</h2>
               <p className="text-[10px] opacity-80">これまでに {totalCount} 通の手紙が届いています</p>
@@ -231,32 +216,34 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
 
         <div className="flex border-b border-gray-200 shrink-0 bg-white">
           <button onClick={() => setActiveTab('read')} className={`flex-1 py-3 text-sm font-bold ${activeTab === 'read' ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-400'}`}>手紙を見る</button>
-          {isReachable && (
-            <button onClick={() => setActiveTab('write')} className={`flex-1 py-3 text-sm font-bold ${activeTab === 'write' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}>投函する</button>
-          )}
+          {isReachable && (<button onClick={() => setActiveTab('write')} className={`flex-1 py-3 text-sm font-bold ${activeTab === 'write' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}>投函する</button>)}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 bg-[#fdfcf5]" onScroll={handleScroll} ref={scrollContainerRef}>
           {activeTab === 'read' && (
             <div className="space-y-6">
               <div className="bg-white p-4 rounded border border-red-100 shadow-sm relative font-serif">
-                <div className="absolute -top-3 left-4 bg-red-50 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded font-sans">
-                  {post.spot_name || post.title}の手紙
-                </div>
+                <div className="absolute -top-3 left-4 bg-red-50 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded font-sans">{post.spot_name || post.title}の手紙</div>
+                {/* ★ 修正：画像表示の枠ズレ問題を解消 */}
                 {post.image_url && (
-                  <div className="mt-2 mb-4 rounded overflow-hidden border border-gray-100">
-                    <img src={post.image_url} alt="Main" className="w-full h-auto object-cover" />
+                  <div className="mt-2 mb-4 flex justify-center">
+                    <div className="relative">
+                      <Image 
+                        src={post.image_url} 
+                        alt="Main" 
+                        width={800} 
+                        height={600} 
+                        className="w-auto h-auto max-w-full rounded shadow-sm border-4 border-white object-cover" 
+                        sizes="(max-width: 768px) 100vw, 400px" 
+                      />
+                    </div>
                   </div>
                 )}
-                <p className="text-sm text-gray-700 whitespace-pre-wrap leading-loose mt-2">
-                  {post.content?.replace(/<<<PAGE>>>/g, "\n\n")}
-                </p>
+                <p className="text-sm text-gray-700 whitespace-pre-wrap leading-loose mt-2">{post.content?.replace(/<<<PAGE>>>/g, "\n\n")}</p>
               </div>
 
               <div className="border-t border-dashed border-gray-300 pt-4">
                 <h3 className="text-xs font-bold text-gray-500 mb-3 text-center font-sans">届いた手紙のアーカイブ</h3>
-                
-                {/* ★ 修正済み：初回フェッチが終わるまで「なし」を出さない */}
                 {!hasFetchedOnce ? (
                   <p className="text-center text-[10px] text-gray-400 py-8 italic animate-pulse">手紙を読み込んでいます...</p>
                 ) : letters.length === 0 ? (
@@ -272,9 +259,7 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
                         <p className="text-sm font-serif text-bunko-ink leading-relaxed whitespace-pre-wrap">{l.content}</p>
                       </div>
                     ))}
-                    {isLoading && (
-                      <p className="text-center text-[10px] text-gray-400 mt-2 italic">追加読み込み中...</p>
-                    )}
+                    {isLoading && (<p className="text-center text-[10px] text-gray-400 mt-2 italic">追加読み込み中...</p>)}
                   </div>
                 )}
               </div>
@@ -284,22 +269,12 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
           {activeTab === 'write' && isReachable && (
             <div className="h-full flex flex-col items-center justify-start pt-4 font-sans">
               {!currentUser ? (
-                <div className="text-center mt-10">
-                  <p className="text-sm text-gray-600 mb-4 font-bold">手紙を投函するにはログインが必要です。</p>
-                  <Link href={`/login?next=${encodeURIComponent('/?open_post=' + post.id)}`} className="bg-red-600 text-white px-6 py-2 rounded-full text-xs font-bold shadow-md">ログインする</Link>
-                </div>
+                <div className="text-center mt-10"><p className="text-sm text-gray-600 mb-4 font-bold">手紙を投函するにはログインが必要です。</p><Link href={`/login?next=${encodeURIComponent('/?open_post=' + post.id)}`} className="bg-red-600 text-white px-6 py-2 rounded-full text-xs font-bold shadow-md">ログインする</Link></div>
               ) : hasPostedToday ? (
-                <div className="text-center mt-10 p-6 bg-orange-50 rounded-lg border border-orange-100 font-sans">
-                  <span className="text-2xl block mb-2 font-bold">☕️</span>
-                  <p className="text-sm font-bold text-orange-800 mb-2">本日の投函は完了しています</p>
-                  <p className="text-xs text-orange-600">このポストへの投函は1日1回までです。<br/>また明日お越しください。</p>
-                </div>
+                <div className="text-center mt-10 p-6 bg-orange-50 rounded-lg border border-orange-100 font-sans"><span className="text-2xl block mb-2 font-bold">☕️</span><p className="text-sm font-bold text-orange-800 mb-2">本日の投函は完了しています</p><p className="text-xs text-orange-600">このポストへの投函は1日1回までです。<br/>また明日お越しください。</p></div>
               ) : (
                 <div className="w-full h-full flex flex-col font-sans">
-                  <div className="bg-yellow-50 p-3 rounded text-xs text-yellow-800 mb-4 border border-yellow-100">
-                    <p className="font-bold mb-1">🎁 投函特典</p>
-                    <p>このポストに手紙を入れると、限定の「記念切手」がもらえます。</p>
-                  </div>
+                  <div className="bg-yellow-50 p-3 rounded text-xs text-yellow-800 mb-4 border border-yellow-100"><p className="font-bold mb-1">🎁 投函特典</p><p>このポストに手紙を入れると、限定の「記念切手」がもらえます。</p></div>
                   <textarea className="w-full flex-1 p-4 border border-gray-300 rounded-lg resize-none font-serif text-sm leading-loose focus:border-red-600 focus:ring-1 focus:ring-red-600 outline-none mb-2" placeholder="ここに手紙を書いてください（140文字以内）" maxLength={140} value={content} onChange={(e) => setContent(e.target.value)} />
                   <div className="text-right text-[10px] text-gray-400 mb-4 font-bold">{content.length} / 140文字</div>
                   <button onClick={handlePost} disabled={isSubmitting || !content.trim()} className="w-full bg-orange-600 text-white font-bold py-3 rounded-full shadow-md hover:bg-orange-700 disabled:bg-gray-300 transition-colors font-sans">ポストに投函する</button>

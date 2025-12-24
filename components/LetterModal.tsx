@@ -1,9 +1,12 @@
 'use client';
 import { useState, useEffect, TouchEvent } from 'react';
+// 共通クライアントを使用してセッション不整合を解消
 import { supabase } from '@/utils/supabase'; 
 import { User } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+// Next.jsの画像最適化コンポーネント
+import Image from 'next/image';
 import IconUserLetter from './IconUserLetter';
 import IconAdminLetter from './IconAdminLetter';
 import IconPost from './IconPost';
@@ -45,6 +48,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
 
   const isMyPost = currentUser && currentUser.id === letter.user_id;
   const isPostedInBox = !!letter.parent_id;
+  const isOfficial = !!letter.is_official;
 
   useEffect(() => {
     setIsVisible(true);
@@ -52,11 +56,9 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
     const initModal = async () => {
       setIsCheckingAuth(true);
 
-      // 1. 自分の投稿なら常にロック解除
       if (isMyPost) {
         setIsLocked(false);
       } 
-      // 2. ログイン中の既読チェック（データベースを確認）
       else if (currentUser && letter.password) {
         const { data, error } = await supabase
           .from('letter_reads')
@@ -71,13 +73,12 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
           setIsLocked(true);
         }
       } 
-      // 3. ★ 非ログイン（ゲスト）時の既読チェック（ローカルストレージを確認）
       else if (!currentUser && letter.password) {
         const storedReads = localStorage.getItem('read_letter_ids');
         if (storedReads) {
           const readIds = JSON.parse(storedReads);
           if (readIds.includes(letter.id)) {
-            setIsLocked(false); // ブラウザが覚えていれば解除
+            setIsLocked(false);
           } else {
             setIsLocked(true);
           }
@@ -85,7 +86,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
           setIsLocked(true);
         }
       }
-      // 4. パスワード設定がない手紙
       else if (!letter.password) {
         setIsLocked(false);
         recordRead(); 
@@ -99,10 +99,8 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
   }, [letter.id, currentUser?.id]); 
 
   const recordRead = async () => {
-    // 自分の投稿なら記録しない
     if (currentUser && currentUser.id === letter.user_id) return;
     
-    // ログイン中の場合はDBへの重複登録を防ぐ
     if (currentUser) {
       const { data } = await supabase
         .from('letter_reads')
@@ -116,14 +114,11 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
       }
     }
 
-    // データベースに既読を保存
     const { error } = await supabase.from('letter_reads').insert({
       letter_id: letter.id,
       user_id: currentUser?.id || null,
     });
 
-    // ★ 成功したら親（app/page.tsx）に通知
-    // app/page.tsx の markAsRead が走り、localStorage に保存されます
     if (!error && onRead) onRead(letter.id);
   };
 
@@ -160,15 +155,37 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
     }
   };
 
+  // ★ 修正：Type A（封筒読み取り）はカウントアップしない（常に1固定）
   const checkStamp = async () => {
-    if (gotStamp || isMyPost || !letter.attached_stamp_id || !currentUser) return;
+    if (gotStamp || isMyPost || !letter.attached_stamp_id || !currentUser) return false;
     try {
-      const { data: existing } = await supabase.from('user_stamps').select('count').eq('user_id', currentUser.id).eq('stamp_id', letter.attached_stamp_id).maybeSingle();
-      if (existing) await supabase.from('user_stamps').update({ count: (existing.count || 1) + 1 }).eq('user_id', currentUser.id).eq('stamp_id', letter.attached_stamp_id);
-      else await supabase.from('user_stamps').insert({ user_id: currentUser.id, stamp_id: letter.attached_stamp_id, count: 1 });
-      const { data: stampData } = await supabase.from('stamps').select('*').eq('id', letter.attached_stamp_id).maybeSingle();
-      if (stampData) setGotStamp(stampData);
+      const { data: existing } = await supabase
+        .from('user_stamps')
+        .select('count')
+        .eq('user_id', currentUser.id)
+        .eq('post_id', letter.id) 
+        .maybeSingle();
+
+      if (existing) {
+        // すでに持っている場合は何もせず終了（これによりカウントは1のまま固定されます）
+        return false; 
+      } else {
+        // 初めて取得する場合のみ、count: 1 で作成
+        await supabase.from('user_stamps').insert({ 
+          user_id: currentUser.id, 
+          post_id: letter.id, 
+          stamp_id: letter.attached_stamp_id, 
+          count: 1 
+        });
+        
+        const { data: stampData } = await supabase.from('stamps').select('*').eq('id', letter.attached_stamp_id).maybeSingle();
+        if (stampData) {
+          setGotStamp(stampData);
+          return true; 
+        }
+      }
     } catch (e) { console.error("切手処理エラー:", e); }
+    return false;
   };
 
   const PAGE_DELIMITER = '<<<PAGE>>>';
@@ -187,7 +204,14 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
   }, [letter]);
 
   const handleClose = () => { setIsVisible(false); setTimeout(onClose, 300); };
-  const handleFinish = () => { checkStamp(); handleClose(); };
+
+  const handleFinish = async () => { 
+    const isNewObtained = await checkStamp(); 
+    if (!isNewObtained) {
+      handleClose(); 
+    }
+  };
+
   const handleNext = () => { if (currentPage < pages.length - 1) setCurrentPage(currentPage + 1); };
   const handlePrev = () => { if (currentPage > 0) setCurrentPage(currentPage - 1); };
 
@@ -226,7 +250,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
 
   if (isCheckingAuth) return null;
 
-  const isOfficial = !!letter.is_official;
   const borderColor = isOfficial ? 'border-yellow-600' : 'border-green-700';
   const bgColor = isOfficial ? 'bg-[#fdfcf5]' : 'bg-white';
   const textColor = isOfficial ? 'text-[#5d4037]' : 'text-gray-800';
@@ -235,13 +258,14 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
   return (
     <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose}></div>
+      
       {gotStamp && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none">
           <div className="absolute inset-0 pointer-events-auto" onClick={handleClose}></div>
           <div className="bg-[#fdfcf5] p-8 rounded-sm shadow-2xl flex flex-col items-center animate-bounce-in pointer-events-auto border-4 border-double border-[#5d4037]/20 max-w-xs text-center font-sans relative">
             <h3 className="font-bold text-[#5d4037] mb-4 font-serif text-lg tracking-widest leading-relaxed">切手を受け取りました</h3>
-            <div className="w-24 h-32 border-4 border-white shadow-lg rotate-3 mb-5 bg-white p-1">
-                <img src={gotStamp.image_url} className="w-full h-full object-contain" alt="stamp" />
+            <div className="w-24 h-32 border-4 border-white shadow-lg rotate-3 mb-5 bg-white p-1 relative">
+                <Image src={gotStamp.image_url} fill className="object-contain p-1" alt="stamp" sizes="96px" priority />
             </div>
             <p className="font-bold text-sm text-[#5d4037] mb-1 font-serif">{gotStamp.name}</p>
             <p className="text-[10px] text-gray-400 mb-6 font-serif">切手帳に記録されました</p>
@@ -249,6 +273,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
           </div>
         </div>
       )}
+
       <div className={`relative w-full max-w-md h-[85vh] md:h-[600px] shadow-2xl rounded-2xl transform transition-all duration-300 border-4 ${borderColor} ${bgColor} flex flex-col ${isVisible ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}`}>
         <div className="h-24 md:h-28 flex items-center justify-between px-6 border-b border-gray-100/50 relative shrink-0">
           <div className="flex items-center gap-3 w-full pr-8">
@@ -260,6 +285,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
           </div>
           <button onClick={handleClose} className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 p-2 font-sans">✕</button>
         </div>
+        
         {!isLocked && (
           <div className="absolute top-24 md:top-28 right-4 z-10 flex gap-2 font-sans">
             {isMyPost ? (
@@ -271,6 +297,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
             )}
           </div>
         )}
+
         <div className="flex-1 relative overflow-hidden overflow-x-auto pt-12 pb-8 px-6 md:pt-14 md:pb-10 md:px-8 flex items-center justify-center touch-pan-y" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
           {isLocked ? (
             <div className="flex flex-col items-center justify-center w-full h-full animate-fadeIn space-y-4 font-sans">
@@ -284,9 +311,20 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
             </div>
           ) : (
             <div className="w-full h-full">
+              {/* ★ 修正：画像表示の枠ズレ問題を解消 */}
               {pages[currentPage]?.type === 'image' && (
                  <div className="w-full h-full flex items-center justify-center animate-fadeIn p-2">
-                   <img src={pages[currentPage].content} alt="Photo" className="max-w-full max-h-full object-contain rounded shadow-md border-4 border-white transform rotate-1" />
+                   <div className="relative transform rotate-1">
+                     <Image 
+                       src={pages[currentPage].content} 
+                       alt="Photo" 
+                       width={800} 
+                       height={1200}
+                       className="w-auto h-auto max-w-full max-h-[60vh] rounded shadow-md border-4 border-white object-contain"
+                       sizes="(max-width: 768px) 100vw, 400px"
+                       priority
+                     />
+                   </div>
                  </div>
               )}
               {pages[currentPage]?.type === 'text' && (
@@ -297,6 +335,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
             </div>
           )}
         </div>
+
         {!isLocked && (
           <div className="h-16 border-t border-gray-100/50 flex items-center justify-between px-6 shrink-0 bg-white/30 backdrop-blur-sm rounded-b-xl relative font-sans">
             <div className="absolute left-6 top-1/2 -translate-y-1/2">
@@ -321,7 +360,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
           </div>
         )}
       </div>
-      <style jsx>{` @keyframes bounceIn { 0% { transform: scale(0.3); opacity: 0; } 50% { transform: scale(1.05); opacity: 1; } 70% { transform: scale(0.9); } 100% { transform: scale(1); } } .animate-bounce-in { animation: bounceIn 0.175s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; } `}</style>
+      <style jsx>{` @keyframes bounceIn { 0% { transform: scale(0.3); opacity: 0; } 50% { transform: scale(1.05); opacity: 1; } 70% { transform: scale(0.9); } 100% { transform: scale(1); } } .animate-bounce-in { animation: bounceIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; } `}</style>
     </div>
   );
 }

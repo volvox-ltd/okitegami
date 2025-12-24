@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
-// ★ 修正：共通クライアントを使用してMultiple GoTrueClient警告を解消
+// ★ 共通クライアントを使用
 import { supabase } from '@/utils/supabase'; 
 import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
@@ -32,7 +32,7 @@ type Letter = {
   parent_id?: string | null; 
 };
 
-// ★ 切手帳表示用の型定義
+// ★ 型定義の更新：postの中にLetterの全項目が含まれるようにします
 type UserStampRecord = {
   id: string;
   count: number;
@@ -43,11 +43,7 @@ type UserStampRecord = {
     image_url: string;
     description: string;
   };
-  post?: {
-    id: string;
-    spot_name: string;
-    title: string;
-  };
+  post?: Letter; // ここを詳細なLetter型に変更
 };
 
 export default function MyPage() {
@@ -59,7 +55,6 @@ export default function MyPage() {
   
   const [myPosts, setMyPosts] = useState<Letter[]>([]);
   const [favorites, setFavorites] = useState<Letter[]>([]);
-  // ★ 自分が取得した記録のみを管理するステート（バッジ用）
   const [userStampRecords, setUserStampRecords] = useState<UserStampRecord[]>([]);
   
   const [selectedLetter, setSelectedLetter] = useState<Letter | null>(null);
@@ -73,7 +68,10 @@ export default function MyPage() {
   useEffect(() => {
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        router.push('/login');
+        return;
+      }
       setUser(user);
       setNewEmail(user.email || '');
 
@@ -117,14 +115,14 @@ export default function MyPage() {
     }
   };
 
-  // ★ 修正：切手帳データを「取得済みレコード」ベースで取得
+  // ★ 高速化の要：最初から letters(*) で全ての情報を取得しておきます
   const fetchUserStamps = async (userId: string) => {
     const { data, error } = await supabase
       .from('user_stamps')
       .select(`
         id, count, last_obtained_at,
         stamp:stamps(id, name, image_url, description),
-        post:letters(id, spot_name, title)
+        post:letters(*)
       `)
       .eq('user_id', userId)
       .order('last_obtained_at', { ascending: false });
@@ -170,16 +168,18 @@ export default function MyPage() {
     });
   }, [myPosts, postFilter]);
 
-  const handleStampClick = async (postId?: string) => {
-    if (!postId) return;
-    setIsLoading(true);
-    try {
-      const { data: targetPost } = await supabase.from('letters').select('*').eq('id', postId).single();
-      if (targetPost) setSelectedPost(targetPost as Letter);
-    } catch (e) {
-      alert('ポストの読み込みに失敗しました');
-    } finally {
-      setIsLoading(false);
+  // ★ 修正：asyncを削除し、すでに持っているデータを即座にセットするだけにします
+  const handleStampClick = (targetPost?: Letter) => {
+    if (!targetPost) {
+      alert('この切手には場所の情報が紐付いていないため、開けません。古いテストデータの可能性があります。');
+      return;
+    }
+    
+    // DBへの通信を行わず、setIsLoading(true)も行わないため点滅しません。
+    if (targetPost.is_post) {
+      setSelectedPost(targetPost);
+    } else {
+      setSelectedLetter(targetPost);
     }
   };
 
@@ -283,7 +283,6 @@ export default function MyPage() {
               </div>
             )}
 
-            {/* === 修正：切手帳タブの表示ロジック（場所別カウントバッジ対応） === */}
             {activeTab === 'stamps' && (
               <div className="animate-fadeIn">
                 {userStampRecords.length === 0 ? (
@@ -291,7 +290,8 @@ export default function MyPage() {
                 ) : (
                   <div className="grid grid-cols-3 md:grid-cols-6 gap-6 px-2 max-w-5xl mx-auto pt-4">
                     {userStampRecords.map(record => (
-                    <div key={record.id} className="flex flex-col items-center group cursor-pointer" onClick={() => handleStampClick(record.post?.id)}>
+                    // ★ handleStampClick に record.post (手紙オブジェクト) をそのまま渡すように変更
+                    <div key={record.id} className="flex flex-col items-center group cursor-pointer" onClick={() => handleStampClick(record.post)}>
                       <div className="relative w-full aspect-[3/4]">
                         {record.count >= 3 && (<div className="absolute inset-0 bg-white border border-gray-200 rounded shadow-sm transform rotate-6 translate-x-1.5 translate-y-1 scale-100 origin-bottom-right opacity-60 z-0" />)}
                         {record.count >= 2 && (<div className="absolute inset-0 bg-white border border-gray-200 rounded shadow-sm transform rotate-3 translate-x-0.5 translate-y-0.5 scale-100 origin-bottom-right z-0" />)}
@@ -300,7 +300,6 @@ export default function MyPage() {
                           <img src={record.stamp.image_url} alt={record.stamp.name} className="w-full h-full object-contain" />
                         </div>
 
-                        {/* ★ バッジ表示：2枚以上持っていれば数字を出す */}
                         {record.count > 1 && (
                           <div className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-lg border-2 border-white z-20 font-sans">
                             {record.count}
@@ -370,15 +369,35 @@ export default function MyPage() {
 
       {activeTab !== 'settings' && (
         <div className="text-center py-6 border-t border-gray-100 mt-6">
-          <button onClick={handleLogout} className="text-xs text-red-400 underline hover:text-red-600 font-sans">ログアウト</button>
+          <button onClick={handleLogout} className="text-xs text-red-400 underline hover:text-red-500 font-sans">ログアウト</button>
         </div>
       )}
       <FooterLinks />
 
-      {selectedLetter && <LetterModal letter={selectedLetter} currentUser={user} onClose={() => setSelectedLetter(null)} onDeleted={() => { setSelectedLetter(null); if (user) { fetchMyPosts(user.id); fetchFavorites(user.id); } }} />}
+      {selectedLetter && (
+        <LetterModal 
+          letter={selectedLetter} 
+          currentUser={user} 
+          onClose={() => setSelectedLetter(null)} 
+          onRead={() => {}} 
+          onDeleted={() => { 
+            setSelectedLetter(null); 
+            if (user) { 
+              fetchMyPosts(user.id); 
+              fetchFavorites(user.id); 
+            } 
+          }} 
+        />
+      )}
       
-      {/* ★ 修正：isReachable={false} を渡すことでマイページからは投稿できないようにする */}
-      {selectedPost && <PostModal post={selectedPost} currentUser={user} onClose={() => setSelectedPost(null)} isReachable={false} />}
+      {selectedPost && (
+        <PostModal 
+          post={selectedPost} 
+          currentUser={user} 
+          onClose={() => setSelectedPost(null)} 
+          isReachable={false} 
+        />
+      )}
 
       <style jsx>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
