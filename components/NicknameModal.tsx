@@ -1,10 +1,8 @@
+'use client';
 import { useState } from 'react';
-import { createClient, User } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+// ★ 修正：共通クライアントを使用してMultiple GoTrueClient警告を解消
+import { supabase } from '@/utils/supabase'; 
+import { User } from '@supabase/supabase-js';
 
 type Props = {
   user: User;

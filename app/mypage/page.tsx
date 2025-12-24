@@ -1,7 +1,9 @@
 'use client';
 import { useState, useEffect, useMemo } from 'react';
-import { createBrowserClient } from '@supabase/ssr';
+// ★ 修正：共通クライアントを使用してMultiple GoTrueClient警告を解消
+import { supabase } from '@/utils/supabase'; 
 import { useRouter } from 'next/navigation';
+import Header from '@/components/Header';
 import Link from 'next/link';
 import LetterModal from '@/components/LetterModal';
 import PostModal from '@/components/PostModal'; 
@@ -30,35 +32,39 @@ type Letter = {
   parent_id?: string | null; 
 };
 
-type Stamp = {
-  id: number;
-  name: string;
-  image_url: string;
-  description: string;
-  has_obtained: boolean;
-  count?: number; 
+// ★ 切手帳表示用の型定義
+type UserStampRecord = {
+  id: string;
+  count: number;
+  last_obtained_at: string;
+  stamp: {
+    id: number;
+    name: string;
+    image_url: string;
+    description: string;
+  };
+  post?: {
+    id: string;
+    spot_name: string;
+    title: string;
+  };
 };
 
 export default function MyPage() {
   const router = useRouter();
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
   const [user, setUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
-  // ★修正：'settings' タブを追加
   const [activeTab, setActiveTab] = useState<'posts' | 'favorites' | 'stamps' | 'settings'>('posts');
   const [postFilter, setPostFilter] = useState<'active' | 'archive'>('active');
   
   const [myPosts, setMyPosts] = useState<Letter[]>([]);
   const [favorites, setFavorites] = useState<Letter[]>([]);
-  const [stamps, setStamps] = useState<Stamp[]>([]);
+  // ★ 自分が取得した記録のみを管理するステート（バッジ用）
+  const [userStampRecords, setUserStampRecords] = useState<UserStampRecord[]>([]);
   
   const [selectedLetter, setSelectedLetter] = useState<Letter | null>(null);
   const [selectedPost, setSelectedPost] = useState<Letter | null>(null);
 
-  // ★追加：設定用ステート
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [settingsMessage, setSettingsMessage] = useState<{type: 'success'|'error', text: string} | null>(null);
@@ -74,13 +80,13 @@ export default function MyPage() {
       await Promise.all([
         fetchMyPosts(user.id),
         fetchFavorites(user.id),
-        fetchStamps(user.id)
+        fetchUserStamps(user.id)
       ]);
       
       setIsLoading(false);
     };
     init();
-  }, [supabase]);
+  }, [router]);
 
   const fetchMyPosts = async (userId: string) => {
     const { data } = await supabase
@@ -111,22 +117,23 @@ export default function MyPage() {
     }
   };
 
-  const fetchStamps = async (userId: string) => {
-    const { data: allStamps } = await supabase.from('stamps').select('*').order('id');
-    const { data: myStamps } = await supabase.from('user_stamps').select('stamp_id, count').eq('user_id', userId);
+  // ★ 修正：切手帳データを「取得済みレコード」ベースで取得
+  const fetchUserStamps = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('user_stamps')
+      .select(`
+        id, count, last_obtained_at,
+        stamp:stamps(id, name, image_url, description),
+        post:letters(id, spot_name, title)
+      `)
+      .eq('user_id', userId)
+      .order('last_obtained_at', { ascending: false });
     
-    if (allStamps && myStamps) {
-      const myStampMap = new Map(myStamps.map((s: any) => [s.stamp_id, s.count]));
-      const formattedStamps = allStamps.map((s: any) => ({
-        ...s,
-        has_obtained: myStampMap.has(s.id),
-        count: myStampMap.get(s.id) || 0 
-      }));
-      setStamps(formattedStamps);
+    if (!error && data) {
+      setUserStampRecords(data as any);
     }
   };
 
-  // ★追加：メールアドレス変更処理
   const handleUpdateEmail = async () => {
     setIsUpdating(true);
     setSettingsMessage(null);
@@ -139,7 +146,6 @@ export default function MyPage() {
     setIsUpdating(false);
   };
 
-  // ★追加：パスワード変更処理
   const handleUpdatePassword = async () => {
     if (newPassword.length < 6) {
       setSettingsMessage({ type: 'error', text: 'パスワードは6文字以上で入力してください' });
@@ -164,37 +170,27 @@ export default function MyPage() {
     });
   }, [myPosts, postFilter]);
 
-  const handleStampClick = async (stampId: number) => {
+  const handleStampClick = async (postId?: string) => {
+    if (!postId) return;
     setIsLoading(true);
     try {
-      const { data: lettersWithStamp } = await supabase.from('letters').select('*').eq('attached_stamp_id', stampId);
-      if (!lettersWithStamp || lettersWithStamp.length === 0) {
-        alert('この切手が付いている手紙は現在ありません');
-        setIsLoading(false);
-        return;
-      }
-      const target = lettersWithStamp[0]; 
-      if (target.is_post) setSelectedPost(target as Letter);
-      else setSelectedLetter(target as Letter);
+      const { data: targetPost } = await supabase.from('letters').select('*').eq('id', postId).single();
+      if (targetPost) setSelectedPost(targetPost as Letter);
     } catch (e) {
-      alert('手紙の読み込みに失敗しました');
+      alert('ポストの読み込みに失敗しました');
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleLogout = async () => {
-    // 1. Supabaseからサインアウト（ブラウザのメモリを消去）
     await supabase.auth.signOut();
-    // 2. トップページへ強制遷移（Cookieを破棄し、Middlewareを再走らせる）
     window.location.href = '/';
   };
 
   const isExpired = (createdAt: string) => {
     return (new Date().getTime() - new Date(createdAt).getTime()) / (1000 * 60 * 60) > LETTER_EXPIRATION_HOURS;
   };
-
-  const obtainedStamps = stamps.filter(s => s.has_obtained);
 
   return (
     <div className="min-h-screen bg-[#fdfcf5] pb-10 font-sans text-gray-800 relative">
@@ -211,14 +207,13 @@ export default function MyPage() {
         <button onClick={() => setActiveTab('posts')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'posts' ? 'text-green-700' : 'text-gray-400'}`}>手紙の記録 {activeTab === 'posts' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-green-700"></div>}</button>
         <button onClick={() => setActiveTab('favorites')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'favorites' ? 'text-pink-500' : 'text-gray-400'}`}>お気に入り {activeTab === 'favorites' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-pink-500"></div>}</button>
         <button onClick={() => setActiveTab('stamps')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'stamps' ? 'text-orange-600' : 'text-gray-400'}`}>切手帳 {activeTab === 'stamps' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-orange-600"></div>}</button>
-        {/* ★修正：設定タブボタンを追加 */}
         <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'settings' ? 'text-gray-800' : 'text-gray-400'}`}>設定 {activeTab === 'settings' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-gray-800"></div>}</button>
       </div>
 
       {activeTab === 'posts' && (
         <div className="flex justify-center gap-4 py-3 bg-[#fdfcf5]">
-          <button onClick={() => setPostFilter('active')} className={`px-5 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'active' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border-gray-200'}`}>掲載中</button>
-          <button onClick={() => setPostFilter('archive')} className={`px-5 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'archive' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border-gray-200'}`}>思い出（アーカイブ）</button>
+          <button onClick={() => setPostFilter('active')} className={`px-5 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'active' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>掲載中</button>
+          <button onClick={() => setPostFilter('archive')} className={`px-5 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'archive' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>思い出</button>
         </div>
       )}
 
@@ -229,7 +224,6 @@ export default function MyPage() {
 
         {!isLoading && (
           <>
-            {/* === 設定タブ === */}
             {activeTab === 'settings' && (
               <div className="animate-fadeIn max-w-md mx-auto space-y-8 pt-4">
                 <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-6">
@@ -289,32 +283,36 @@ export default function MyPage() {
               </div>
             )}
 
-            {/* === 切手帳タブ === */}
+            {/* === 修正：切手帳タブの表示ロジック（場所別カウントバッジ対応） === */}
             {activeTab === 'stamps' && (
               <div className="animate-fadeIn">
-                <div className="grid grid-cols-3 md:grid-cols-6 gap-6 px-2 max-w-5xl mx-auto pt-4">
-                  {obtainedStamps.map(stamp => (
-                  <div key={stamp.id} className="flex flex-col items-center group cursor-pointer" onClick={() => handleStampClick(stamp.id)}>
-                    <div className="relative w-full aspect-[3/4]">
-                      {stamp.count && stamp.count >= 3 && (
-                        <div className="absolute inset-0 bg-white border border-gray-200 rounded shadow-sm transform rotate-6 translate-x-1.5 translate-y-1 scale-100 origin-bottom-right opacity-60 z-0" />
-                      )}
-                      {stamp.count && stamp.count >= 2 && (
-                        <div className="absolute inset-0 bg-white border border-gray-200 rounded shadow-sm transform rotate-3 translate-x-0.5 translate-y-0.5 scale-100 origin-bottom-right z-0" />
-                      )}
-                      <div className="absolute inset-0 w-full h-full rounded border border-gray-200 bg-white shadow-sm p-1 flex items-center justify-center transition-transform group-hover:scale-105 z-10">
-                        <img src={stamp.image_url} alt={stamp.name} className="w-full h-full object-contain" />
-                      </div>
-                      {stamp.count && stamp.count > 1 && (
-                        <div className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-lg border-2 border-white z-20 font-sans">
-                          {stamp.count}
+                {userStampRecords.length === 0 ? (
+                  <div className="text-center py-20 text-gray-400 text-xs font-sans">まだ切手はありません。<br/>運営ポストに手紙を投函してみましょう。</div>
+                ) : (
+                  <div className="grid grid-cols-3 md:grid-cols-6 gap-6 px-2 max-w-5xl mx-auto pt-4">
+                    {userStampRecords.map(record => (
+                    <div key={record.id} className="flex flex-col items-center group cursor-pointer" onClick={() => handleStampClick(record.post?.id)}>
+                      <div className="relative w-full aspect-[3/4]">
+                        {record.count >= 3 && (<div className="absolute inset-0 bg-white border border-gray-200 rounded shadow-sm transform rotate-6 translate-x-1.5 translate-y-1 scale-100 origin-bottom-right opacity-60 z-0" />)}
+                        {record.count >= 2 && (<div className="absolute inset-0 bg-white border border-gray-200 rounded shadow-sm transform rotate-3 translate-x-0.5 translate-y-0.5 scale-100 origin-bottom-right z-0" />)}
+                        
+                        <div className="absolute inset-0 w-full h-full rounded border border-gray-200 bg-white shadow-sm p-1 flex items-center justify-center transition-transform group-hover:scale-105 z-10">
+                          <img src={record.stamp.image_url} alt={record.stamp.name} className="w-full h-full object-contain" />
                         </div>
-                      )}
+
+                        {/* ★ バッジ表示：2枚以上持っていれば数字を出す */}
+                        {record.count > 1 && (
+                          <div className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-lg border-2 border-white z-20 font-sans">
+                            {record.count}
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-[10px] font-bold text-center text-bunko-ink truncate w-full mt-2 font-sans">{record.stamp.name}</p>
+                      {record.post?.spot_name && <p className="text-[8px] text-gray-400 text-center truncate w-full mt-0.5 font-sans">📍 {record.post.spot_name}</p>}
                     </div>
-                    <p className="text-[10px] font-bold text-center text-bunko-ink truncate w-full mt-2 font-sans">{stamp.name}</p>
+                    ))}
                   </div>
-                  ))}
-                </div>
+                )}
               </div>
             )}
 
@@ -370,16 +368,17 @@ export default function MyPage() {
         )}
       </div>
 
-      {/* 設定タブ以外の場合のみ、下にログアウトを表示 */}
       {activeTab !== 'settings' && (
         <div className="text-center py-6 border-t border-gray-100 mt-6">
-          <button onClick={handleLogout} className="text-xs text-gray-400 underline hover:text-red-500 font-sans">ログアウト</button>
+          <button onClick={handleLogout} className="text-xs text-red-400 underline hover:text-red-600 font-sans">ログアウト</button>
         </div>
       )}
       <FooterLinks />
 
       {selectedLetter && <LetterModal letter={selectedLetter} currentUser={user} onClose={() => setSelectedLetter(null)} onDeleted={() => { setSelectedLetter(null); if (user) { fetchMyPosts(user.id); fetchFavorites(user.id); } }} />}
-      {selectedPost && <PostModal post={selectedPost} currentUser={user} onClose={() => setSelectedPost(null)} isReachable={true} />}
+      
+      {/* ★ 修正：isReachable={false} を渡すことでマイページからは投稿できないようにする */}
+      {selectedPost && <PostModal post={selectedPost} currentUser={user} onClose={() => setSelectedPost(null)} isReachable={false} />}
 
       <style jsx>{`
         @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }

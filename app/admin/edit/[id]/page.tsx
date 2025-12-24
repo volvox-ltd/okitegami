@@ -5,15 +5,10 @@ import { useRouter, useParams } from 'next/navigation';
 // ★修正1: Map を MapGL という名前に変更してインポート（名前衝突回避）
 import MapGL, { Marker, NavigationControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/utils/supabase';
 
 import IconAdminLetter from '@/components/IconAdminLetter';
 import IconPost from '@/components/IconPost';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 const PAGE_DELIMITER = '<<<PAGE>>>';
 const MAX_CHARS_PER_PAGE = 140;

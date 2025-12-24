@@ -28,29 +28,22 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
+  const isPostRoute = request.nextUrl.pathname.startsWith('/post')
   const isAdminRoute = request.nextUrl.pathname.startsWith('/admin')
   const isMyPageRoute = request.nextUrl.pathname.startsWith('/mypage')
 
-  // 1. ログインチェック（共通）
-  if ((isAdminRoute || isMyPageRoute) && !user) {
+  // 指定のルートで未ログインならログインへ飛ばす
+  if ((isPostRoute || isAdminRoute || isMyPageRoute) && !user) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     url.searchParams.set('next', request.nextUrl.pathname)
     return NextResponse.redirect(url)
   }
 
-  // 2. 管理者権限チェック（/admin のみ）
+  // 管理者チェック（既存ロジックを維持）
   if (isAdminRoute && user) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('is_admin')
-      .eq('id', user.id)
-      .single()
-
-    // 管理者フラグが false の場合はトップページへ
-    if (!profile || !profile.is_admin) {
-      return NextResponse.redirect(new URL('/', request.url))
-    }
+    const { data: profile } = await supabase.from('profiles').select('is_admin').eq('id', user.id).single()
+    if (!profile || !profile.is_admin) return NextResponse.redirect(new URL('/', request.url))
   }
 
   return response

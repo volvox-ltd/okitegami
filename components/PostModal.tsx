@@ -1,13 +1,10 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { createClient, User } from '@supabase/supabase-js';
+// ★ 共通クライアントを使用
+import { supabase } from '@/utils/supabase'; 
+import { User } from '@supabase/supabase-js';
 import Link from 'next/link';
 import IconPost from '@/components/IconPost';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 
 type Letter = {
   id: string;
@@ -31,8 +28,13 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
   const [activeTab, setActiveTab] = useState<'read' | 'write'>('read');
   const [letters, setLetters] = useState<Letter[]>([]);
   const [totalCount, setTotalCount] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
+  // ★ 点滅防止のステートを維持
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasFetchedOnce, setHasFetchedOnce] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  
+  // ★ ループ防止のRefを維持
+  const isFetchingRef = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const [content, setContent] = useState('');
@@ -42,90 +44,93 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
 
   const PAGE_SIZE = 10;
 
-  // 手紙データを取得する関数（重複防止ロジック付き）
+  // 手紙データを取得する関数
   const fetchLetters = useCallback(async (offset: number, isInitial = false) => {
-    if (isLoading || (!hasMore && !isInitial)) return;
-    
+    if (isFetchingRef.current) return;
+    if (!isInitial && !hasMore) return;
+
+    isFetchingRef.current = true;
     setIsLoading(true);
 
-    const { data: newLetters, error } = await supabase
-      .from('letters')
-      .select('*')
-      .eq('parent_id', post.id)
-      .order('created_at', { ascending: false })
-      .range(offset, offset + PAGE_SIZE - 1);
+    try {
+      const { data: newLetters, error } = await supabase
+        .from('letters')
+        .select('*')
+        .eq('parent_id', post.id)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1);
 
-    if (error || !newLetters || newLetters.length === 0) {
-      setHasMore(false);
-      setIsLoading(false);
-      return;
-    }
+      if (error || !newLetters || newLetters.length === 0) {
+        setHasMore(false);
+        return;
+      }
 
-    // 投稿者のニックネームを一括取得
-    const userIds = Array.from(new Set(newLetters.map(l => l.user_id)));
-    const { data: profiles } = await supabase.from('profiles').select('id, nickname').in('id', userIds);
-    const nameMap: Record<string, string> = {};
-    profiles?.forEach((p: any) => nameMap[p.id] = p.nickname);
-    
-    const formatted = newLetters.map((l: any) => ({
-      ...l,
-      nickname: nameMap[l.user_id] || '誰か'
-    }));
-
-    setLetters(prev => {
-      if (isInitial) return formatted;
+      const userIds = Array.from(new Set(newLetters.map(l => l.user_id)));
+      const { data: profiles } = await supabase.from('profiles').select('id, nickname').in('id', userIds);
+      const nameMap: Record<string, string> = {};
+      profiles?.forEach((p: any) => nameMap[p.id] = p.nickname);
       
-      // 重複チェック：すでに表示されているIDは追加しない
-      const existingIds = new Set(prev.map(item => item.id));
-      const filteredNew = formatted.filter(item => !existingIds.has(item.id));
-      return [...prev, ...filteredNew];
-    });
+      const formatted = newLetters.map((l: any) => ({
+        ...l,
+        nickname: nameMap[l.user_id] || '誰か'
+      }));
 
-    if (newLetters.length < PAGE_SIZE) setHasMore(false);
-    setIsLoading(false);
-  }, [post.id, isLoading, hasMore]);
+      setLetters(prev => {
+        if (isInitial) return formatted;
+        const existingIds = new Set(prev.map(item => item.id));
+        const filteredNew = formatted.filter(item => !existingIds.has(item.id));
+        return [...prev, ...filteredNew];
+      });
 
-  // 初期化およびタブ切り替え時の処理
+      if (newLetters.length < PAGE_SIZE) setHasMore(false);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+      isFetchingRef.current = false;
+      setHasFetchedOnce(true); // 初回完了フラグ
+    }
+  }, [post.id, hasMore]);
+
+  // 初期化
   useEffect(() => {
     let isMounted = true;
 
     const init = async () => {
-      // 総件数の取得
-      const { count } = await supabase
+      const fetchCount = supabase
         .from('letters')
         .select('*', { count: 'exact', head: true })
         .eq('parent_id', post.id);
       
-      if (isMounted) setTotalCount(count || 0);
+      const [countRes] = await Promise.all([
+        fetchCount,
+        fetchLetters(0, true)
+      ]);
 
-      // 初回データの読み込み
-      await fetchLetters(0, true);
-
-      // 今日の投函状況チェック
-      if (currentUser && isMounted) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const { data: myTodayPost } = await supabase
-          .from('letters')
-          .select('id')
-          .eq('parent_id', post.id)
-          .eq('user_id', currentUser.id)
-          .gte('created_at', today.toISOString())
-          .maybeSingle();
-        
-        setHasPostedToday(!!myTodayPost);
+      if (isMounted) {
+        setTotalCount(countRes.count || 0);
+        if (currentUser) {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const { data: myTodayPost } = await supabase
+            .from('letters')
+            .select('id')
+            .eq('parent_id', post.id)
+            .eq('user_id', currentUser.id)
+            .gte('created_at', today.toISOString())
+            .maybeSingle();
+          setHasPostedToday(!!myTodayPost);
+        }
       }
     };
 
     init();
     return () => { isMounted = false; };
-  }, [post.id, currentUser]);
+  }, [post.id, currentUser, fetchLetters]);
 
-  // スクロール検知
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     if (isLoading || !hasMore || activeTab !== 'read') return;
     const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
-    // 底から100pxの位置に来たら次を読み込む
     if (scrollHeight - scrollTop <= clientHeight + 100) {
       fetchLetters(letters.length);
     }
@@ -135,6 +140,7 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
     if (!content.trim()) return alert('メッセージを入力してください');
     if (content.length > 140) return alert('140文字以内で入力してください');
     if (!currentUser) return alert('ログインが必要です');
+    if (!isReachable) return alert('現地にいないため投函できません');
     
     setIsSubmitting(true);
     try {
@@ -151,10 +157,25 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
 
       if (letterError) throw letterError;
 
+      // ★ 切手カウント仕様：post_idで紐付け
       if (post.attached_stamp_id) {
-        const { data: existingEntry } = await supabase.from('user_stamps').select('count').eq('user_id', currentUser.id).eq('stamp_id', post.attached_stamp_id).maybeSingle();
+        const { data: existingEntry } = await supabase
+          .from('user_stamps')
+          .select('count')
+          .eq('user_id', currentUser.id)
+          .eq('post_id', post.id)
+          .maybeSingle();
+
         const newCount = (existingEntry?.count || 0) + 1;
-        await supabase.from('user_stamps').upsert({ user_id: currentUser.id, stamp_id: post.attached_stamp_id, count: newCount, last_obtained_at: new Date().toISOString() }, { onConflict: 'user_id, stamp_id' });
+
+        await supabase.from('user_stamps').upsert({ 
+          user_id: currentUser.id, 
+          post_id: post.id,
+          stamp_id: post.attached_stamp_id, 
+          count: newCount, 
+          last_obtained_at: new Date().toISOString() 
+        }, { onConflict: 'user_id, post_id' });
+        
         const { data: stampData } = await supabase.from('stamps').select('name, image_url').eq('id', post.attached_stamp_id).single();
         if (stampData) setObtainedStamp(stampData);
       } else {
@@ -164,8 +185,9 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
       setContent('');
       setActiveTab('read');
       setHasPostedToday(true);
-      fetchLetters(0, true); // 投稿後にリストを最新に更新
+      fetchLetters(0, true); 
     } catch (e: any) {
+      console.error(e);
       alert('投稿に失敗しました');
     } finally {
       setIsSubmitting(false);
@@ -209,7 +231,9 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
 
         <div className="flex border-b border-gray-200 shrink-0 bg-white">
           <button onClick={() => setActiveTab('read')} className={`flex-1 py-3 text-sm font-bold ${activeTab === 'read' ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-400'}`}>手紙を見る</button>
-          <button onClick={() => setActiveTab('write')} className={`flex-1 py-3 text-sm font-bold ${activeTab === 'write' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}>投函する</button>
+          {isReachable && (
+            <button onClick={() => setActiveTab('write')} className={`flex-1 py-3 text-sm font-bold ${activeTab === 'write' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}>投函する</button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 bg-[#fdfcf5]" onScroll={handleScroll} ref={scrollContainerRef}>
@@ -231,12 +255,16 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
 
               <div className="border-t border-dashed border-gray-300 pt-4">
                 <h3 className="text-xs font-bold text-gray-500 mb-3 text-center font-sans">届いた手紙のアーカイブ</h3>
-                {letters.length === 0 && !isLoading ? (
-                  <p className="text-center text-xs text-gray-400 py-4">まだ手紙はありません。一番乗りで書きませんか？</p>
+                
+                {/* ★ 修正済み：初回フェッチが終わるまで「なし」を出さない */}
+                {!hasFetchedOnce ? (
+                  <p className="text-center text-[10px] text-gray-400 py-8 italic animate-pulse">手紙を読み込んでいます...</p>
+                ) : letters.length === 0 ? (
+                  <p className="text-center text-xs text-gray-400 py-8">まだ手紙はありません。一番乗りで書きませんか？</p>
                 ) : (
                   <div className="space-y-3 pb-4">
                     {letters.map(l => (
-                      <div key={l.id} className="bg-white p-3 rounded shadow-sm border border-gray-100">
+                      <div key={l.id} className="bg-white p-3 rounded shadow-sm border border-gray-100 animate-fadeIn">
                         <div className="flex justify-between items-end mb-2 border-b border-gray-50 pb-1 font-sans">
                           <span className="text-xs font-bold text-gray-600">{l.nickname || '名無し'}さんより</span>
                           <span className="text-[10px] text-gray-400">{new Date(l.created_at).toLocaleDateString()}</span>
@@ -244,26 +272,21 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
                         <p className="text-sm font-serif text-bunko-ink leading-relaxed whitespace-pre-wrap">{l.content}</p>
                       </div>
                     ))}
-                    {isLoading && <p className="text-center text-[10px] text-gray-400">読み込み中...</p>}
-                    {!hasMore && letters.length > 0 && <p className="text-center text-[10px] text-gray-400 mt-4 italic font-sans">— これが最後の手紙です —</p>}
+                    {isLoading && (
+                      <p className="text-center text-[10px] text-gray-400 mt-2 italic">追加読み込み中...</p>
+                    )}
                   </div>
                 )}
               </div>
             </div>
           )}
 
-          {activeTab === 'write' && (
+          {activeTab === 'write' && isReachable && (
             <div className="h-full flex flex-col items-center justify-start pt-4 font-sans">
               {!currentUser ? (
                 <div className="text-center mt-10">
                   <p className="text-sm text-gray-600 mb-4 font-bold">手紙を投函するにはログインが必要です。</p>
                   <Link href={`/login?next=${encodeURIComponent('/?open_post=' + post.id)}`} className="bg-red-600 text-white px-6 py-2 rounded-full text-xs font-bold shadow-md">ログインする</Link>
-                </div>
-              ) : !isReachable ? (
-                <div className="text-center mt-10 p-6 bg-gray-100 rounded-lg">
-                  <span className="text-2xl block mb-2">🏃‍♂️</span>
-                  <p className="text-sm font-bold text-gray-700 mb-2">距離が遠すぎます</p>
-                  <p className="text-xs text-gray-500">ポストに手紙を投函するには、<br/>現地に近づく必要があります。</p>
                 </div>
               ) : hasPostedToday ? (
                 <div className="text-center mt-10 p-6 bg-orange-50 rounded-lg border border-orange-100 font-sans">
@@ -287,13 +310,10 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
         </div>
       </div>
       <style jsx>{`
-        @keyframes bounceIn {
-          0% { transform: scale(0.3); opacity: 0; }
-          50% { transform: scale(1.05); opacity: 1; }
-          70% { transform: scale(0.9); }
-          100% { transform: scale(1); }
-        }
+        @keyframes bounceIn { 0% { transform: scale(0.3); opacity: 0; } 50% { transform: scale(1.05); opacity: 1; } 70% { transform: scale(0.9); } 100% { transform: scale(1); } }
         .animate-bounce-in { animation: bounceIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .animate-fadeIn { animation: fadeIn 0.4s ease-out forwards; }
       `}</style>
     </div>
   );
