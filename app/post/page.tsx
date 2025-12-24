@@ -11,6 +11,8 @@ import { getDistance } from 'geolib';
 import AddToHomeScreen from '@/components/AddToHomeScreen';
 // ★共通クライアントを使用
 import { supabase } from '@/utils/supabase';
+// ★有効期限の設定をインポート
+import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
 
 const PAGE_DELIMITER = '<<<PAGE>>>';
 const MAX_CHARS_PER_PAGE = 140;
@@ -95,8 +97,18 @@ function PostForm() {
     }
 
     try {
-      // 重複チェック
-      const { data: existingLetters } = await supabase.from('letters').select('lat, lng');
+      // ★ 修正：重複チェックのロジックを「有効なユーザー手紙のみ」に限定
+      const now = new Date();
+      const expirationLimit = new Date(now.getTime() - LETTER_EXPIRATION_HOURS * 60 * 60 * 1000).toISOString();
+
+      const { data: existingLetters } = await supabase
+        .from('letters')
+        .select('lat, lng')
+        .eq('is_official', false)
+        .eq('is_post', false)
+        .is('parent_id', null) // Type ① のみ
+        .gt('created_at', expirationLimit); // 有効期限内のものだけ取得
+
       if (existingLetters) {
         const isTooClose = existingLetters.some(letter => 
           getDistance({ latitude: letter.lat, longitude: letter.lng }, { latitude: pinLocation.lat, longitude: pinLocation.lng }) < MIN_DISTANCE

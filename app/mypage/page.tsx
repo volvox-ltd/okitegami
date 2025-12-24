@@ -32,7 +32,7 @@ type Letter = {
   parent_id?: string | null; 
 };
 
-// ★ 型定義の更新：postの中にLetterの全項目が含まれるようにします
+// ★ 型定義：postの中にLetterの全項目が含まれる
 type UserStampRecord = {
   id: string;
   count: number;
@@ -43,7 +43,7 @@ type UserStampRecord = {
     image_url: string;
     description: string;
   };
-  post?: Letter; // ここを詳細なLetter型に変更
+  post?: Letter; 
 };
 
 export default function MyPage() {
@@ -51,7 +51,8 @@ export default function MyPage() {
   const [user, setUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'posts' | 'favorites' | 'stamps' | 'settings'>('posts');
-  const [postFilter, setPostFilter] = useState<'active' | 'archive'>('active');
+  // ★ postFilter に 'submitted' を追加
+  const [postFilter, setPostFilter] = useState<'active' | 'archive' | 'submitted'>('active');
   
   const [myPosts, setMyPosts] = useState<Letter[]>([]);
   const [favorites, setFavorites] = useState<Letter[]>([]);
@@ -64,6 +65,11 @@ export default function MyPage() {
   const [newPassword, setNewPassword] = useState('');
   const [settingsMessage, setSettingsMessage] = useState<{type: 'success'|'error', text: string} | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+
+  // ★ 修正：エラー回避のため、計算に使用する前に定義を上に移動
+  const isExpired = (createdAt: string) => {
+    return (new Date().getTime() - new Date(createdAt).getTime()) / (1000 * 60 * 60) > LETTER_EXPIRATION_HOURS;
+  };
 
   useEffect(() => {
     const init = async () => {
@@ -115,7 +121,6 @@ export default function MyPage() {
     }
   };
 
-  // ★ 高速化の要：最初から letters(*) で全ての情報を取得しておきます
   const fetchUserStamps = async (userId: string) => {
     const { data, error } = await supabase
       .from('user_stamps')
@@ -161,21 +166,37 @@ export default function MyPage() {
     setIsUpdating(false);
   };
 
+  // ★ ロジック修正： Type ④（ポストへの投稿）を期限切れ判定から除外し、「投函済み」タブに隔離
   const filteredMyPosts = useMemo(() => {
     return myPosts.filter(letter => {
-      const expired = !letter.is_official && !letter.is_post && (new Date().getTime() - new Date(letter.created_at).getTime()) / (1000 * 60 * 60) > LETTER_EXPIRATION_HOURS;
-      return postFilter === 'active' ? !expired : expired;
+      const isSubmittedToPost = !!letter.parent_id; // Type ④ (赤いポストへの投稿)
+      const expired = isExpired(letter.created_at);
+
+      if (postFilter === 'submitted') {
+        // 「投函済み」タブ：ポストに紐付いている手紙をすべて表示
+        return isSubmittedToPost;
+      }
+      
+      if (postFilter === 'active') {
+        // 「掲載中」タブ：ポスト紐付けがなく、期限内の手紙
+        return !isSubmittedToPost && !expired;
+      }
+
+      if (postFilter === 'archive') {
+        // 「思い出」タブ：ポスト紐付けがなく、期限を過ぎた手紙
+        return !isSubmittedToPost && expired;
+      }
+
+      return false;
     });
   }, [myPosts, postFilter]);
 
-  // ★ 修正：asyncを削除し、すでに持っているデータを即座にセットするだけにします
   const handleStampClick = (targetPost?: Letter) => {
     if (!targetPost) {
       alert('この切手には場所の情報が紐付いていないため、開けません。古いテストデータの可能性があります。');
       return;
     }
     
-    // DBへの通信を行わず、setIsLoading(true)も行わないため点滅しません。
     if (targetPost.is_post) {
       setSelectedPost(targetPost);
     } else {
@@ -186,10 +207,6 @@ export default function MyPage() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     window.location.href = '/';
-  };
-
-  const isExpired = (createdAt: string) => {
-    return (new Date().getTime() - new Date(createdAt).getTime()) / (1000 * 60 * 60) > LETTER_EXPIRATION_HOURS;
   };
 
   return (
@@ -211,9 +228,10 @@ export default function MyPage() {
       </div>
 
       {activeTab === 'posts' && (
-        <div className="flex justify-center gap-4 py-3 bg-[#fdfcf5]">
-          <button onClick={() => setPostFilter('active')} className={`px-5 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'active' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>掲載中</button>
-          <button onClick={() => setPostFilter('archive')} className={`px-5 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'archive' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>思い出</button>
+        <div className="flex justify-center gap-2 py-3 bg-[#fdfcf5] px-4">
+          <button onClick={() => setPostFilter('active')} className={`flex-1 max-w-[100px] py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'active' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>掲載中</button>
+          <button onClick={() => setPostFilter('archive')} className={`flex-1 max-w-[100px] py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'archive' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>思い出</button>
+          <button onClick={() => setPostFilter('submitted')} className={`flex-1 max-w-[100px] py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'submitted' ? 'bg-red-600 text-white border-red-600 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>投函済み</button>
         </div>
       )}
 
@@ -290,7 +308,6 @@ export default function MyPage() {
                 ) : (
                   <div className="grid grid-cols-3 md:grid-cols-6 gap-6 px-2 max-w-5xl mx-auto pt-4">
                     {userStampRecords.map(record => (
-                    // ★ handleStampClick に record.post (手紙オブジェクト) をそのまま渡すように変更
                     <div key={record.id} className="flex flex-col items-center group cursor-pointer" onClick={() => handleStampClick(record.post)}>
                       <div className="relative w-full aspect-[3/4]">
                         {record.count >= 3 && (<div className="absolute inset-0 bg-white border border-gray-200 rounded shadow-sm transform rotate-6 translate-x-1.5 translate-y-1 scale-100 origin-bottom-right opacity-60 z-0" />)}
@@ -319,7 +336,9 @@ export default function MyPage() {
               <div className="animate-fadeIn space-y-3 max-w-3xl mx-auto">
                 {(activeTab === 'posts' ? filteredMyPosts : favorites).length === 0 && (
                   <div className="text-center py-12 text-gray-400 text-xs font-sans">
-                    {activeTab === 'posts' ? (postFilter === 'active' ? '掲載中の手紙はありません' : 'アーカイブはありません') : 'お気に入りはありません'}
+                    {activeTab === 'posts' 
+                      ? (postFilter === 'active' ? '掲載中の手紙はありません' : postFilter === 'archive' ? '思い出はありません' : '投函した手紙はありません') 
+                      : 'お気に入りはありません'}
                   </div>
                 )}
 
@@ -330,7 +349,7 @@ export default function MyPage() {
                   
                   return (
                     <div key={letter.id} onClick={() => letter.is_post ? setSelectedPost(letter) : setSelectedLetter(letter)}
-                      className={`bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4 cursor-pointer transition-transform hover:scale-[1.01] active:scale-[0.99] ${expired ? 'opacity-70 saturate-[0.3] bg-gray-50' : ''}`}
+                      className={`bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4 cursor-pointer transition-transform hover:scale-[1.01] active:scale-[0.99] ${expired && !isSubmittedToPost ? 'opacity-70 saturate-[0.3] bg-gray-50' : ''}`}
                     >
                       <div className="shrink-0 relative">
                         {isSubmittedToPost ? (
@@ -346,12 +365,12 @@ export default function MyPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between">
                           <h3 className="font-bold text-gray-800 text-sm truncate font-serif">{displayTitle}</h3>
-                          {expired && <span className="text-[9px] bg-gray-100 text-gray-400 px-2 py-0.5 rounded-full border border-gray-200 font-sans">消印済</span>}
+                          {expired && !isSubmittedToPost && <span className="text-[9px] bg-gray-100 text-gray-400 px-2 py-0.5 rounded-full border border-gray-200 font-sans">消印済</span>}
                         </div>
                         <p className="text-xs text-gray-400 truncate mt-1 italic font-sans">📍 {letter.spot_name}</p>
                         <div className="flex justify-between items-end mt-1">
                           <p className="text-[10px] text-gray-300 font-sans">{new Date(letter.created_at).toLocaleDateString()}</p>
-                          {activeTab === 'posts' && !expired && letter.read_count !== undefined && letter.read_count > 0 && (
+                          {activeTab === 'posts' && !expired && !isSubmittedToPost && letter.read_count !== undefined && letter.read_count > 0 && (
                             <div className="flex items-center gap-1 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-100">
                               <span className="text-[9px] font-bold text-orange-600 font-sans">開封されました</span>
                             </div>
@@ -369,7 +388,7 @@ export default function MyPage() {
 
       {activeTab !== 'settings' && (
         <div className="text-center py-6 border-t border-gray-100 mt-6">
-          <button onClick={handleLogout} className="text-xs text-red-400 underline hover:text-red-500 font-sans">ログアウト</button>
+          <button onClick={handleLogout} className="text-xs text-red-400 underline hover:text-red-600 font-sans">ログアウト</button>
         </div>
       )}
       <FooterLinks />

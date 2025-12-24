@@ -211,8 +211,12 @@ function HomeContent() {
 
   const renderedMarkers = useMemo(() => {
     return letters.map((letter) => {
-      if (!letter.is_official && !letter.is_post && letter.created_at) {
-        if ((new Date().getTime() - new Date(letter.created_at).getTime()) / 3600000 > LETTER_EXPIRATION_HOURS) return null;
+      // ★ 修正： parent_id があるもの(Type ④)は、期限切れ判定をスルーさせる
+      if (!letter.is_official && !letter.is_post && !letter.parent_id && letter.created_at) {
+        const expirationHours = LETTER_EXPIRATION_HOURS || 48;
+        const diffMs = new Date().getTime() - new Date(letter.created_at).getTime();
+        const diffHours = diffMs / 3600000;
+        if (diffHours > expirationHours) return null; // ここで null を返すと地図から消える
       }
       if (!letter.is_official && !showUserPosts) return null;
       
@@ -227,7 +231,7 @@ function HomeContent() {
         <Marker key={letter.id} latitude={letter.lat} longitude={letter.lng} anchor="bottom" onClick={(e) => { e.originalEvent.stopPropagation(); setPopupInfo(letter); }} style={{ zIndex: isReachable ? 10 : 1 }}>
           <div className={`flex flex-col items-center group cursor-pointer ${isRead ? 'opacity-70' : ''}`}>
             <div className={`bg-white/95 backdrop-blur px-3 py-2 rounded-lg shadow-md text-[10px] mb-2 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border flex flex-col items-center ${isReachable ? 'border-orange-500 text-orange-600' : 'border-gray-200 text-gray-500'}`}>
-               <span className="font-bold">{letter.is_post ? '常設ポスト' : (letter.is_official ? '木林文庫の手紙' : (letter.nickname ? `${letter.nickname}さんの手紙` : ''))}</span>
+               <span className="font-bold">{letter.is_post ? '常設ポスト' : (letter.is_official ? '木林文庫の手紙' : (letter.nickname ? `${letter.nickname}さんの手紙` : '誰かの手紙'))}</span>
                {isReachable && <span className="block text-[8px] font-bold text-orange-500 text-center mt-1 font-sans">{letter.is_post ? '投函できます！' : '読めます！'}</span>}
             </div>
             <div className={`transition-transform duration-300 drop-shadow-md relative ${isReachable ? 'animate-bounce' : 'hover:scale-110'}`}>
