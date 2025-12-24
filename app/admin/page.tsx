@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -8,6 +8,7 @@ import IconAdminLetter from '@/components/IconAdminLetter';
 import IconUserLetter from '@/components/IconUserLetter';
 import IconPost from '@/components/IconPost';
 import { compressStamp } from '@/utils/imageControl';
+import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -19,22 +20,21 @@ export default function AdminDashboard() {
 
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'official' | 'posts' | 'users' | 'members' | 'stats' | 'create' | 'stamps'>('posts');
+  // ★追加：ユーザー投稿内のサブタブ
+  const [userSubTab, setUserSubTab] = useState<'active' | 'archive'>('active');
 
   const [stats, setStats] = useState({ userCount: 0, letterCount: 0, reportCount: 0 });
   const [letters, setLetters] = useState<any[]>([]);
   const [profiles, setProfiles] = useState<any[]>([]);
-
   const [allStamps, setAllStamps] = useState<any[]>([]);
   
   const [isCleaning, setIsCleaning] = useState(false);
   const [cleanLog, setCleanLog] = useState<string>('');
 
-  // admin/page.tsx
   useEffect(() => {
     const init = async () => {
-      // Middlewareで弾かれている前提なので、ここではデータの取得だけでOK
-      fetchData();
-      fetchStamps();
+      await fetchData();
+      await fetchStamps();
       setLoading(false);
     };
     init();
@@ -55,8 +55,8 @@ export default function AdminDashboard() {
       if (lettersData) {
         const profileMap = new Map(profilesData?.map((p: any) => [p.id, p]) || []);
         const reportCountMap = new Map();
-        
         const userCurrentPostCountMap = new Map();
+
         lettersData.forEach((l: any) => {
           if (l.user_id) {
             const current = userCurrentPostCountMap.get(l.user_id) || 0;
@@ -89,49 +89,28 @@ export default function AdminDashboard() {
     } catch (e: any) { console.error(e); }
   };
 
-  // ★追加：切手データの取得
   const fetchStamps = async () => {
     const { data } = await supabase.from('stamps').select('*').order('id', { ascending: true });
     if (data) setAllStamps(data);
   };
 
-  // ★追加：切手の新規アップロード処理（ここで軽量化）
   const handleStampUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const stampName = prompt("切手の名前を入力してください");
     if (!stampName) return;
-
     try {
       setCleanLog("切手を圧縮中...\n");
-      // 1. 切手専用の圧縮を実行
       const compressedFile = await compressStamp(file);
-      
-      // 2. Storageにアップロード
       const fileName = `stamps/${Date.now()}.webp`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('letter-images')
-        .upload(fileName, compressedFile);
-
+      const { error: uploadError } = await supabase.storage.from('letter-images').upload(fileName, compressedFile);
       if (uploadError) throw uploadError;
-
       const publicUrl = supabase.storage.from('letter-images').getPublicUrl(fileName).data.publicUrl;
-
-      // 3. データベースに登録
-      const { error: dbError } = await supabase.from('stamps').insert({
-        name: stampName,
-        image_url: publicUrl,
-        description: `${stampName}の公式切手`
-      });
-
+      const { error: dbError } = await supabase.from('stamps').insert({ name: stampName, image_url: publicUrl, description: `${stampName}の公式切手` });
       if (dbError) throw dbError;
-
       alert("切手を追加しました");
       fetchStamps();
-    } catch (e: any) {
-      alert("エラー: " + e.message);
-    }
+    } catch (e: any) { alert("エラー: " + e.message); }
   };
 
   const handleDeletePost = async (id: string, imageUrl?: string) => {
@@ -146,22 +125,14 @@ export default function AdminDashboard() {
     } catch (e: any) { alert('エラー: ' + e.message); }
   };
 
-  // ★追加：切手のリセット（削除）機能
   const handleResetStamps = async (userId: string, nickname: string) => {
-    if (!confirm(`${nickname}さんの獲得済み切手をすべてリセット（削除）しますか？\n※テスト目的以外では使用しないでください。`)) return;
-    
+    if (!confirm(`${nickname}さんの獲得済み切手をすべてリセットしますか？`)) return;
     try {
-      const { error } = await supabase
-        .from('user_stamps')
-        .delete()
-        .eq('user_id', userId);
-      
+      const { error } = await supabase.from('user_stamps').delete().eq('user_id', userId);
       if (error) throw error;
       alert(`${nickname}さんの切手帳を空にしました。`);
       fetchData();
-    } catch (e: any) {
-      alert('リセットに失敗しました: ' + e.message);
-    }
+    } catch (e: any) { alert('リセットに失敗しました: ' + e.message); }
   };
 
   const handleImageCleanup = async () => {
@@ -174,7 +145,6 @@ export default function AdminDashboard() {
       const targets = letters.filter(l => !l.is_official && l.image_url && new Date(l.created_at) < twoDaysAgo && !l.image_url.includes('archive'));
       setCleanLog(prev => prev + `対象件数: ${targets.length}件\n`);
       for (const letter of targets) {
-        setCleanLog(prev => prev + `処理中: ${letter.title}...\n`);
         try {
           const response = await fetch(letter.image_url);
           const blob = await response.blob();
@@ -186,8 +156,7 @@ export default function AdminDashboard() {
           const oldName = letter.image_url.split('/').pop();
           if (oldName) await supabase.storage.from('letter-images').remove([oldName]);
           await supabase.from('letters').update({ image_url: publicUrl }).eq('id', letter.id);
-          setCleanLog(prev => prev + `完了\n`);
-        } catch (err) { setCleanLog(prev => prev + `エラー\n`); }
+        } catch (err) {}
       }
       setCleanLog(prev => prev + '完了しました\n');
       fetchData();
@@ -196,9 +165,20 @@ export default function AdminDashboard() {
 
   if (loading) return <div className="p-10 text-center font-bold text-green-800 font-sans">管理情報を照合中...</div>;
 
+  // 手紙の仕分け
   const officialLetters = letters.filter(l => l.is_official && !l.is_post);
   const postLetters = letters.filter(l => l.is_post);
-  const userLetters = letters.filter(l => !l.is_official && !l.parent_id);
+  const allUserLetters = letters.filter(l => !l.is_official && !l.parent_id);
+
+  // ★ サブタブ用の仕分け
+  const activeUserLetters = allUserLetters.filter(l => {
+    const hours = (new Date().getTime() - new Date(l.created_at).getTime()) / 3600000;
+    return hours <= LETTER_EXPIRATION_HOURS;
+  });
+  const archivedUserLetters = allUserLetters.filter(l => {
+    const hours = (new Date().getTime() - new Date(l.created_at).getTime()) / 3600000;
+    return hours > LETTER_EXPIRATION_HOURS;
+  });
 
   return (
     <div className="min-h-screen bg-gray-100 p-4 md:p-8 font-sans text-gray-800">
@@ -211,13 +191,14 @@ export default function AdminDashboard() {
         <div className="flex flex-wrap gap-2 mb-6 border-b border-gray-300 pb-2">
           <TabButton label="常設ポスト" isActive={activeTab === 'posts'} onClick={() => setActiveTab('posts')} icon="📮" count={postLetters.length} color="bg-red-700 text-white" />
           <TabButton label="運営の投稿" isActive={activeTab === 'official'} onClick={() => setActiveTab('official')} icon="👑" count={officialLetters.length} />
-          <TabButton label="みんなの投稿" isActive={activeTab === 'users'} onClick={() => setActiveTab('users')} icon="👤" count={userLetters.length} badgeColor={stats.reportCount > 0 ? "bg-red-500 text-white" : undefined} />
+          <TabButton label="みんなの投稿" isActive={activeTab === 'users'} onClick={() => setActiveTab('users')} icon="👤" count={allUserLetters.length} badgeColor={stats.reportCount > 0 ? "bg-red-500 text-white" : undefined} />
           <TabButton label="ユーザー管理" isActive={activeTab === 'members'} onClick={() => setActiveTab('members')} icon="👥" count={stats.userCount} />
+          <TabButton label="切手管理" isActive={activeTab === 'stamps'} onClick={() => setActiveTab('stamps')} icon="🏷️" count={allStamps.length} />
           <TabButton label="統計" isActive={activeTab === 'stats'} onClick={() => setActiveTab('stats')} icon="📊" />
           <TabButton label="新規作成" isActive={activeTab === 'create'} onClick={() => setActiveTab('create')} icon="✏️" color="bg-green-700 text-white" />
         </div>
 
-        {/* --- ★追加：切手管理タブの内容 --- */}
+        {/* --- 切手管理タブ --- */}
         {activeTab === 'stamps' && (
           <div className="bg-white p-6 rounded-xl shadow border border-gray-200 animate-fadeIn">
             <div className="flex justify-between items-center mb-6">
@@ -240,6 +221,7 @@ export default function AdminDashboard() {
           </div>
         )}
 
+        {/* --- ユーザー管理タブ --- */}
         {activeTab === 'members' && (
           <div className="bg-white rounded-xl shadow overflow-hidden animate-fadeIn border border-gray-200">
             <div className="overflow-x-auto">
@@ -266,13 +248,7 @@ export default function AdminDashboard() {
                       <td className="p-4 text-[10px] text-gray-400 font-mono">{profile.id}</td>
                       <td className="p-4 text-center">
                         <div className="flex gap-2 justify-center">
-                          {/* ★追加：切手リセットボタン */}
-                          <button 
-                            onClick={() => handleResetStamps(profile.id, profile.nickname)} 
-                            className="text-orange-600 hover:bg-orange-50 px-3 py-1.5 rounded-lg font-bold text-xs transition-colors border border-orange-100"
-                          >
-                            切手リセット
-                          </button>
+                          <button onClick={() => handleResetStamps(profile.id, profile.nickname)} className="text-orange-600 hover:bg-orange-50 px-3 py-1.5 rounded-lg font-bold text-xs transition-colors border border-orange-100">切手リセット</button>
                           <button onClick={() => alert('機能制限の実装待ち')} className="text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg font-bold text-xs transition-colors border border-red-100">BAN</button>
                         </div>
                       </td>
@@ -284,42 +260,93 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* --- その他のタブは変更なし（全機能維持） --- */}
+        {/* --- みんなの投稿（メイン修正箇所） --- */}
+        {activeTab === 'users' && (
+          <div className="space-y-6 animate-fadeIn">
+            {/* サブタブ切り替え */}
+            <div className="flex gap-4 border-b border-gray-200">
+              <button onClick={() => setUserSubTab('active')} className={`pb-2 px-2 text-sm font-bold transition-all ${userSubTab === 'active' ? 'text-green-700 border-b-2 border-green-700' : 'text-gray-400'}`}>掲載中 ({activeUserLetters.length})</button>
+              <button onClick={() => setUserSubTab('archive')} className={`pb-2 px-2 text-sm font-bold transition-all ${userSubTab === 'archive' ? 'text-gray-600 border-b-2 border-gray-600' : 'text-gray-400'}`}>アーカイブ ({archivedUserLetters.length})</button>
+            </div>
+
+            {userSubTab === 'active' ? (
+              <>
+                <div className="bg-orange-50 border border-orange-200 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4">
+                  <div>
+                    <h3 className="font-bold text-orange-800 text-sm">🧹 画像アーカイブ軽量化</h3>
+                    <p className="text-xs text-orange-600 mt-1">48時間経過した画像の画質を落とし、容量を節約します。</p>
+                  </div>
+                  <button onClick={handleImageCleanup} disabled={isCleaning} className="bg-orange-600 text-white px-6 py-2 rounded-lg font-bold text-xs hover:bg-orange-700 disabled:bg-gray-400">
+                    {isCleaning ? 'お掃除中...' : 'お掃除実行'}
+                  </button>
+                </div>
+                {cleanLog && <pre className="bg-black text-green-400 p-3 rounded text-[10px] h-24 overflow-y-scroll border border-gray-700">{cleanLog}</pre>}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {activeUserLetters.map(letter => <LetterCard key={letter.id} letter={letter} onDelete={handleDeletePost} />)}
+                </div>
+              </>
+            ) : (
+              <div className="bg-white rounded-xl shadow border border-gray-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-gray-50 text-gray-600 border-b text-[10px] font-bold uppercase">
+                      <tr>
+                        <th className="p-4">投稿日</th>
+                        <th className="p-4">タイトル</th>
+                        <th className="p-4">冒頭内容</th>
+                        <th className="p-4">投稿者</th>
+                        <th className="p-4">通報</th>
+                        <th className="p-4 text-center">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {archivedUserLetters.map(letter => (
+                        <tr key={letter.id} className="border-b hover:bg-gray-50 transition-colors">
+                          <td className="p-4 text-xs text-gray-500 whitespace-nowrap">{new Date(letter.created_at).toLocaleDateString()}</td>
+                          <td className="p-4 font-bold text-gray-800 max-w-[150px] truncate">{letter.title}</td>
+                          <td className="p-4 text-xs text-gray-500 max-w-[300px] truncate font-serif">{letter.content?.substring(0, 40)}...</td>
+                          <td className="p-4 text-xs">{letter.profiles?.nickname}</td>
+                          <td className="p-4">
+                            {letter.report_count > 0 && <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded-full text-[10px] font-bold">{letter.report_count}件</span>}
+                          </td>
+                          <td className="p-4">
+                            <div className="flex gap-2 justify-center">
+                              <Link href={`/admin/edit/${letter.id}`} className="text-blue-600 hover:underline text-xs font-bold">編集</Link>
+                              <button onClick={() => handleDeletePost(letter.id, letter.image_url)} className="text-red-500 hover:underline text-xs font-bold">削除</button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {archivedUserLetters.length === 0 && <div className="p-10 text-center text-gray-400 text-sm italic">アーカイブはありません。</div>}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {activeTab === 'posts' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fadeIn">
             {postLetters.map(letter => <LetterCard key={letter.id} letter={letter} onDelete={handleDeletePost} />)}
           </div>
         )}
+
         {activeTab === 'official' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-fadeIn">
             {officialLetters.map(letter => <LetterCard key={letter.id} letter={letter} onDelete={handleDeletePost} />)}
           </div>
         )}
-        {activeTab === 'users' && (
-          <div className="space-y-6 animate-fadeIn">
-            <div className="bg-orange-50 border border-orange-200 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-4">
-              <div>
-                <h3 className="font-bold text-orange-800 text-sm">🧹 画像アーカイブ軽量化</h3>
-                <p className="text-xs text-orange-600 mt-1">48時間経過した画像の画質を落とし、容量を節約します。</p>
-              </div>
-              <button onClick={handleImageCleanup} disabled={isCleaning} className="bg-orange-600 text-white px-6 py-2 rounded-lg font-bold text-xs hover:bg-orange-700 disabled:bg-gray-400">
-                {isCleaning ? 'お掃除中...' : 'お掃除実行'}
-              </button>
-            </div>
-            {cleanLog && <pre className="bg-black text-green-400 p-3 rounded text-[10px] h-24 overflow-y-scroll border border-gray-700">{cleanLog}</pre>}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {userLetters.map(letter => <LetterCard key={letter.id} letter={letter} onDelete={handleDeletePost} />)}
-            </div>
-          </div>
-        )}
+
         {activeTab === 'stats' && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 animate-fadeIn">
             <StatCard label="総ユーザー数" value={stats.userCount} color="text-blue-600" />
             <StatCard label="総投稿数" value={stats.letterCount} color="text-orange-500" />
             <StatCard label="未対応の通報" value={stats.reportCount} color="text-red-600" />
-            <StatCard label="一般ユーザー投稿" value={userLetters.length} color="text-green-600" />
+            <StatCard label="一般ユーザー投稿" value={allUserLetters.length} color="text-green-600" />
           </div>
         )}
+
         {activeTab === 'create' && (
           <div className="bg-white p-8 rounded-xl shadow-sm text-center animate-fadeIn">
             <h2 className="text-lg font-bold mb-4 font-serif">新規作成</h2>
@@ -327,10 +354,6 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
-      <style jsx>{`
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
-      `}</style>
     </div>
   );
 }
@@ -349,7 +372,7 @@ const StatCard = ({ label, value, color }: any) => (
 );
 
 const LetterCard = ({ letter, onDelete }: any) => {
-  const isExpired = !letter.is_official && !letter.is_post && (new Date().getTime() - new Date(letter.created_at).getTime()) / 3600000 > 48;
+  const isExpired = !letter.is_official && !letter.is_post && (new Date().getTime() - new Date(letter.created_at).getTime()) / 3600000 > LETTER_EXPIRATION_HOURS;
   const isReported = letter.report_count > 0;
   return (
     <div className={`p-4 rounded-xl border flex flex-col gap-3 shadow-sm transition-shadow hover:shadow-md relative overflow-hidden ${isReported ? 'bg-red-50 border-red-400' : letter.is_post ? 'bg-red-50 border-red-200' : letter.is_official ? 'bg-yellow-50 border-yellow-200' : 'bg-white border-gray-200'}`}>
