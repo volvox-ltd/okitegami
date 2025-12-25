@@ -249,7 +249,7 @@ function HomeContent() {
             {/* ★アニメーションのクラスを shouldBounce で切り替え */}
             <div className={`transition-transform duration-300 drop-shadow-md relative ${shouldBounce ? 'animate-bounce' : 'hover:scale-110'}`}>
                {letter.is_post ? (
-                 <div className={isReachable ? "text-red-600" : "text-red-700"}><IconPost className="w-12 h-12" hasLetters={postHasLetters} /></div>
+                 <div className={isReachable ? "text-red-600" : "text-red-700"}><IconPost className="w-14 h-14" hasLetters={postHasLetters} /></div>
                ) : (
                  <div className={isReachable ? (letter.is_official ? "text-yellow-500" : "text-orange-500") : "text-bunko-ink"}>
                     {letter.is_official ? <IconAdminLetter className="w-8 h-8" /> : <IconUserLetter className="w-8 h-8" />}
