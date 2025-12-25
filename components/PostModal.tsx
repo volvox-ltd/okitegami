@@ -99,17 +99,21 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
 
       if (isMounted) {
         setTotalCount(countRes.count || 0);
+        
+        // ★ 修正：post_logs（履歴テーブル）をチェックして、手紙が削除されても制限がかかるようにする
         if (currentUser) {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const { data: myTodayPost } = await supabase
-            .from('letters')
+          const now = new Date();
+          const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+
+          const { data: recentLog } = await supabase
+            .from('post_logs')
             .select('id')
-            .eq('parent_id', post.id)
             .eq('user_id', currentUser.id)
-            .gte('created_at', today.toISOString())
+            .eq('post_id', post.id)
+            .gt('created_at', twentyFourHoursAgo) // 24時間以内のログがあるか
             .maybeSingle();
-          setHasPostedToday(!!myTodayPost);
+            
+          setHasPostedToday(!!recentLog);
         }
       }
     };
@@ -133,7 +137,8 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
     
     setIsSubmitting(true);
     try {
-      const { error: letterError } = await supabase.from('letters').insert({
+      // 1. 手紙の保存
+      const { data: newLetter, error: letterError } = await supabase.from('letters').insert({
         title: 'ポストへの手紙', 
         content: content,
         spot_name: post.spot_name,
@@ -142,11 +147,17 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
         user_id: currentUser.id,
         parent_id: post.id,
         is_official: false,
-      });
+      }).select().single();
 
       if (letterError) throw letterError;
 
-      // ★ 修正：Type B（赤ポスト投稿）は投稿ごとにカウントを増やす（＝数字が出る）
+      // ★ 2. 修正：投稿ログ（履歴）を保存。これで削除されても証拠が残る
+      await supabase.from('post_logs').insert({
+        user_id: currentUser.id,
+        post_id: post.id
+      });
+
+      // 3. 切手の付与
       if (post.attached_stamp_id) {
         const { data: existingEntry } = await supabase
           .from('user_stamps')
@@ -224,7 +235,6 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
             <div className="space-y-6">
               <div className="bg-white p-4 rounded border border-red-100 shadow-sm relative font-serif">
                 <div className="absolute -top-3 left-4 bg-red-50 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded font-sans">{post.spot_name || post.title}の手紙</div>
-                {/* ★ 修正：画像表示の枠ズレ問題を解消 */}
                 {post.image_url && (
                   <div className="mt-2 mb-4 flex justify-center">
                     <div className="relative">
@@ -271,7 +281,7 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
               {!currentUser ? (
                 <div className="text-center mt-10"><p className="text-sm text-gray-600 mb-4 font-bold">手紙を投函するにはログインが必要です。</p><Link href={`/login?next=${encodeURIComponent('/?open_post=' + post.id)}`} className="bg-red-600 text-white px-6 py-2 rounded-full text-xs font-bold shadow-md">ログインする</Link></div>
               ) : hasPostedToday ? (
-                <div className="text-center mt-10 p-6 bg-orange-50 rounded-lg border border-orange-100 font-sans"><span className="text-2xl block mb-2 font-bold">☕️</span><p className="text-sm font-bold text-orange-800 mb-2">本日の投函は完了しています</p><p className="text-xs text-orange-600">このポストへの投函は1日1回までです。<br/>また明日お越しください。</p></div>
+                <div className="text-center mt-10 p-6 bg-orange-50 rounded-lg border border-orange-100 font-sans"><span className="text-2xl block mb-2 font-bold">☕️</span><p className="text-sm font-bold text-orange-800 mb-2">本日の投函は完了しています</p><p className="text-xs text-orange-600">このポストへの投函は24時間に1回までです。<br/>手紙を削除しても、時間はリセットされません。</p></div>
               ) : (
                 <div className="w-full h-full flex flex-col font-sans">
                   <div className="bg-yellow-50 p-3 rounded text-xs text-yellow-800 mb-4 border border-yellow-100"><p className="font-bold mb-1">🎁 投函特典</p><p>このポストに手紙を入れると、限定の「記念切手」がもらえます。</p></div>
@@ -284,12 +294,6 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
           )}
         </div>
       </div>
-      <style jsx>{`
-        @keyframes bounceIn { 0% { transform: scale(0.3); opacity: 0; } 50% { transform: scale(1.05); opacity: 1; } 70% { transform: scale(0.9); } 100% { transform: scale(1); } }
-        .animate-bounce-in { animation: bounceIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .animate-fadeIn { animation: fadeIn 0.4s ease-out forwards; }
-      `}</style>
     </div>
   );
 }
