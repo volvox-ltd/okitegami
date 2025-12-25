@@ -91,7 +91,7 @@ export default function TutorialModal({ onClose }: Props) {
     },
     {
       title: "秘密の手紙を書く",
-      desc: "置いた手紙は、大切な人だけに\n読んでもらうこともできます\n合言葉を決めて、手紙に鍵をかけられます",
+      desc: "置いた手紙は、大切な人だけに\n読んでもらうこともできます\n合言葉を決めて、手紙に鍵をかけることもできます。",
       icon: <IconSecret />
     }
   ];

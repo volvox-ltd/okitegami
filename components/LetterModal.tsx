@@ -320,7 +320,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
                        alt="Photo" 
                        width={800} 
                        height={1200}
-                       className="w-auto h-auto max-w-full max-h-[60vh] rounded shadow-md border-4 border-white object-contain"
+                       className="w-auto h-auto max-w-full max-h-[45vh] md:max-h-[50vh] rounded shadow-md border-4 border-white object-contain"
                        sizes="(max-width: 768px) 100vw, 400px"
                        priority
                      />

@@ -4,19 +4,20 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Map, { Marker, NavigationControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { createClient } from '@supabase/supabase-js';
+// ★ 修正：createClient ではなく createBrowserClient を使用
+import { createBrowserClient } from '@supabase/ssr';
 import Link from 'next/link';
 
 import IconAdminLetter from '@/components/IconAdminLetter';
 import IconUserLetter from '@/components/IconUserLetter';
 
-const supabase = createClient(
+// ★ 修正：App Routerに最適化されたクライアント
+const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
 const PAGE_DELIMITER = '<<<PAGE>>>';
-// ★変更：140文字に制限
 const MAX_CHARS_PER_PAGE = 140;
 const MAX_PAGES_ADMIN = 20;
 
@@ -29,7 +30,7 @@ type Letter = {
   is_official?: boolean;
   password?: string | null;
   attached_stamp_id?: number | null;
-  is_post?: boolean; // ★追加：ポストかどうか
+  is_post?: boolean;
 };
 
 export default function AdminCreatePage() {
@@ -47,7 +48,6 @@ export default function AdminCreatePage() {
   const [stampName, setStampName] = useState('');
   const [stampFile, setStampFile] = useState<File | null>(null);
 
-  // ★追加：ポスト機能（投稿受け入れ）の設定
   const [isPost, setIsPost] = useState(false);
 
   const [lat, setLat] = useState(35.6288);
@@ -73,15 +73,12 @@ export default function AdminCreatePage() {
     if (data) setLetters(data);
   };
 
-  // HTMLタグを除去して文字数をカウントする関数
   const getVisibleLength = (text: string) => {
     return text.replace(/<[^>]+>/g, '').length;
   };
 
   const handlePageChange = (index: number, value: string) => {
-    // 見た目の文字数で制限チェック
     if (getVisibleLength(value) > MAX_CHARS_PER_PAGE) return;
-    
     const newPages = [...pages];
     newPages[index] = value;
     setPages(newPages);
@@ -128,6 +125,14 @@ export default function AdminCreatePage() {
     setIsSubmitting(true);
 
     try {
+      // ★ 追加：ブラウザに保存されている最新のログイン情報を取得
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        alert('セッションが切れました。ログインし直してください。');
+        setIsSubmitting(false);
+        return;
+      }
+
       let letterImageUrl = null;
       if (imageFile) {
         const compressedFile = await compressImage(imageFile);
@@ -179,6 +184,7 @@ export default function AdminCreatePage() {
 
       const contentToSave = pages.join(PAGE_DELIMITER);
 
+      // ★ 修正：データに user_id: user.id を追加することで、RLSを正常に通過させる
       const { error: dbError } = await supabase
         .from('letters')
         .insert([{ 
@@ -191,7 +197,8 @@ export default function AdminCreatePage() {
           is_official: true,
           password: isPrivate ? password : null,
           attached_stamp_id: newStampId,
-          is_post: isPost // ★追加：これをtrueにすると、ユーザーが投稿できるポストになる
+          is_post: isPost,
+          user_id: user.id // 管理者のIDを紐付け
         }]);
 
       if (dbError) throw dbError;
@@ -201,7 +208,7 @@ export default function AdminCreatePage() {
       setTitle(''); setSpotName(''); setPages(['']); setImageFile(null);
       setIsPrivate(false); setPassword('');
       setHasStamp(false); setStampName(''); setStampFile(null);
-      setIsPost(false); // リセット
+      setIsPost(false); 
       fetchLetters();
 
     } catch (error: any) {
@@ -277,10 +284,8 @@ export default function AdminCreatePage() {
                       placeholder="手紙の内容" 
                       value={pageContent} 
                       onChange={e => handlePageChange(index, e.target.value)} 
-                      // maxLengthは削除済み（HTMLタグ入力のため）
                     />
                     <div className={`text-[10px] text-right mt-1 font-bold ${getVisibleLength(pageContent) >= MAX_CHARS_PER_PAGE ? 'text-red-500' : 'text-gray-400'}`}>
-                      {/* 見た目の文字数でカウント */}
                       {getVisibleLength(pageContent)} / {MAX_CHARS_PER_PAGE} 文字
                     </div>
                     {pages.length > 1 && (
@@ -345,7 +350,6 @@ export default function AdminCreatePage() {
                )}
             </div>
 
-            {/* ★追加：ポスト（投稿受け入れ）設定 */}
             <div className="bg-green-50 p-4 rounded border border-green-200">
                <label className="flex items-center gap-2 cursor-pointer">
                  <input 
@@ -356,10 +360,6 @@ export default function AdminCreatePage() {
                  />
                  <span className="text-sm font-bold text-green-900">📮 『常設ポスト』として開放する</span>
                </label>
-               <p className="text-[10px] text-green-700 mt-1 pl-6">
-                 ONにすると、この手紙の詳細画面に「ここに手紙を書く」ボタンが表示され、ユーザーが投稿できるようになります。
-                 （投函された手紙には、自動的に上記の切手が付与されます）
-               </p>
             </div>
 
             <div className="bg-orange-50 p-3 rounded border border-orange-200">
@@ -384,11 +384,8 @@ export default function AdminCreatePage() {
             </div>
 
             <div className="bg-gray-100 p-2 rounded text-xs text-gray-500">
-               地図ピンをドラッグして位置調整
-               <div className="flex gap-2 mt-1">
-                 <input type="number" step="any" className="w-1/2 p-1 border rounded" value={lat} onChange={handleLatChange} />
-                 <input type="number" step="any" className="w-1/2 p-1 border rounded" value={lng} onChange={handleLngChange} />
-               </div>
+               緯度：<input type="number" step="any" className="w-full p-1 border rounded" value={lat} onChange={handleLatChange} />
+               経度：<input type="number" step="any" className="w-full p-1 border rounded" value={lng} onChange={handleLngChange} />
             </div>
 
             <button 
@@ -400,32 +397,16 @@ export default function AdminCreatePage() {
           </form>
         </div>
 
-        {/* リスト（簡易表示） */}
         <div className="flex-1 overflow-y-auto">
           <h2 className="text-lg font-bold mb-4 text-gray-800 border-b pb-2">📂 最近の投稿</h2>
           <div className="space-y-2">
             {letters.map((letter) => (
               <div key={letter.id} className={`p-3 rounded border flex justify-between items-center ${letter.is_official ? 'bg-orange-50 border-orange-200' : 'bg-white'}`}>
-                <div 
-                  className="cursor-pointer flex items-center gap-2"
-                  onClick={() => setViewState(prev => ({...prev, latitude: letter.lat, longitude: letter.lng, zoom: 16}))}
-                >
-                  <span title={letter.is_official ? "運営" : "ユーザー"}>
-                    {/* ★修正：ポストなら特別なアイコンを表示 */}
-                    {letter.is_post ? '📮' : (letter.is_official ? '👑' : '👤')}
-                  </span>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="font-bold text-sm text-gray-700">{letter.title}</p>
-                      {letter.password && <span className="text-xs bg-gray-600 text-white px-1 rounded">🔒</span>}
-                    </div>
-                    {letter.is_post && <span className="text-[10px] text-green-600 font-bold">常設ポスト</span>}
-                  </div>
+                <div className="cursor-pointer" onClick={() => setViewState(prev => ({...prev, latitude: letter.lat, longitude: letter.lng, zoom: 16}))}>
+                    <p className="font-bold text-sm text-gray-700">{letter.is_post ? '📮' : (letter.is_official ? '👑' : '👤')} {letter.title}</p>
                 </div>
                 <div className="flex gap-2">
-                  <Link href={`/admin/edit/${letter.id}`} className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 font-bold">
-                    編集
-                  </Link>
+                  <Link href={`/admin/edit/${letter.id}`} className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 font-bold">編集</Link>
                 </div>
               </div>
             ))}
@@ -433,7 +414,6 @@ export default function AdminCreatePage() {
         </div>
       </div>
 
-      {/* 右側：地図 */}
       <div className="w-full md:w-2/3 h-[50vh] md:h-screen relative">
         <Map
           {...viewState}
@@ -446,27 +426,17 @@ export default function AdminCreatePage() {
         >
           <NavigationControl position="top-right" />
           <Marker 
-            latitude={!isNaN(lat) ? lat : viewState.latitude} 
-            longitude={!isNaN(lng) ? lng : viewState.longitude} 
-            anchor="bottom" 
-            draggable
+            latitude={lat} longitude={lng} anchor="bottom" draggable
             onDragEnd={(e) => { setLat(e.lngLat.lat); setLng(e.lngLat.lng); }}
           >
-            <div className={`animate-bounce ${isNaN(lat) ? 'opacity-50' : ''}`}>
-              <IconAdminLetter className="w-10 h-10 drop-shadow-lg" />
-            </div>
+            <IconAdminLetter className="w-10 h-10 drop-shadow-lg" />
           </Marker>
           
           {letters.map(l => (
             <Marker key={l.id} latitude={l.lat} longitude={l.lng} anchor="bottom" onClick={(e) => {e.originalEvent.stopPropagation(); router.push(`/admin/edit/${l.id}`)}}>
-              <div className="hover:scale-125 transition-transform cursor-pointer drop-shadow-md relative">
+              <div className="relative cursor-pointer">
                 {l.is_official ? <IconAdminLetter className="w-10 h-10" /> : <IconUserLetter className="w-10 h-10 opacity-70" />}
-                {/* ★追加：ポストの場合はマークを付ける */}
-                {l.is_post && (
-                  <div className="absolute -top-2 -right-2 bg-green-500 text-white rounded-full p-1 w-5 h-5 flex items-center justify-center text-[10px] shadow border border-white">
-                    📮
-                  </div>
-                )}
+                {l.is_post && <div className="absolute -top-2 -right-2 bg-green-500 text-white rounded-full p-1 w-5 h-5 flex items-center justify-center text-[10px] shadow border border-white">📮</div>}
               </div>
             </Marker>
           ))}

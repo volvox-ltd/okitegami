@@ -193,7 +193,7 @@ export default function MyPage() {
 
   const handleStampClick = (targetPost?: Letter) => {
     if (!targetPost) {
-      alert('この切手には場所の情報が紐付いていないため、開けません。古いテストデータの可能性があります。');
+      alert('この切手には場所の情報が紐付いていないため、開けません。古いデータの可能性があります。');
       return;
     }
     
@@ -229,8 +229,8 @@ export default function MyPage() {
 
       {activeTab === 'posts' && (
         <div className="flex justify-center gap-2 py-3 bg-[#fdfcf5] px-4">
-          <button onClick={() => setPostFilter('active')} className={`flex-1 max-w-[100px] py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'active' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>掲載中</button>
-          <button onClick={() => setPostFilter('archive')} className={`flex-1 max-w-[100px] py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'archive' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>思い出</button>
+          <button onClick={() => setPostFilter('active')} className={`flex-1 max-w-[100px] py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'active' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>掲載中の手紙</button>
+          <button onClick={() => setPostFilter('archive')} className={`flex-1 max-w-[100px] py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'archive' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>過去の手紙</button>
           <button onClick={() => setPostFilter('submitted')} className={`flex-1 max-w-[100px] py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'submitted' ? 'bg-red-600 text-white border-red-600 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>投函済み</button>
         </div>
       )}
