@@ -14,6 +14,7 @@ import Header from '@/components/Header';
 import IconUserLetter from '@/components/IconUserLetter';
 import IconAdminLetter from '@/components/IconAdminLetter';
 import IconPost from '@/components/IconPost';
+import IconPostcard from '@/components/IconPostcard'; // ★ 追加
 import LetterModal from '@/components/LetterModal';
 import PostModal from '@/components/PostModal';
 import AboutModal from '@/components/AboutModal';
@@ -38,6 +39,7 @@ type Letter = {
   user_id?: string; created_at: string; nickname?: string;
   password?: string | null; attached_stamp_id?: number | null;
   is_post?: boolean; parent_id?: string | null;
+  is_postcard?: boolean; // ★ 追加
 };
 
 const UNLOCK_DISTANCE = 30;      
@@ -122,7 +124,7 @@ function HomeContent() {
     try {
       const { data: lettersData, error } = await supabase
         .from('letters')
-        .select('id, title, spot_name, lat, lng, is_official, user_id, created_at, attached_stamp_id, is_post, parent_id, password');
+        .select('id, title, spot_name, lat, lng, is_official, user_id, created_at, attached_stamp_id, is_post, parent_id, password, is_postcard'); // ★ is_postcardを追加
       
       if (error || !lettersData) return;
       setAllLetters(lettersData as Letter[]);
@@ -226,35 +228,45 @@ function HomeContent() {
       const isRead = readLetterIds.includes(letter.id);
       const postHasLetters = allLetters.some(l => l.parent_id === letter.id);
 
-      // ★ 修正：跳ねるアニメーションの条件
-      // 1. 到達可能であること(isReachable)
-      // 2. ポストではないこと(!letter.is_post)
-      // 3. まだ読んでいないこと(!isRead)
+      // 跳ねるアニメーションの条件
       const shouldBounce = isReachable && !letter.is_post && !isRead;
 
       return (
         <Marker key={letter.id} latitude={letter.lat} longitude={letter.lng} anchor="bottom" onClick={(e) => { e.originalEvent.stopPropagation(); setPopupInfo(letter); }} style={{ zIndex: isReachable ? 10 : 1 }}>
           <div className={`flex flex-col items-center group cursor-pointer ${isRead ? 'opacity-70' : ''}`}>
+            
+            {/* --- ホバー時のツールチップ（文言修正） --- */}
             <div className={`bg-white/95 backdrop-blur px-3 py-2 rounded-lg shadow-md text-[10px] mb-2 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border flex flex-col items-center ${isReachable ? 'border-orange-500 text-orange-600' : 'border-gray-200 text-gray-500'}`}>
                <span className="font-bold">
                  {letter.is_post 
                    ? (letter.spot_name ? `${letter.spot_name}のポスト` : 'ポスト') 
-                   : (letter.is_official 
-                       ? (letter.spot_name ? `${letter.spot_name}の手紙` : '名も無き手紙') 
-                       : (letter.nickname ? `${letter.nickname}さんの手紙` : '誰かの手紙'))
+                   : letter.is_postcard 
+                     ? (letter.spot_name ? `${letter.spot_name}の絵葉書` : '名も無き絵葉書') // ★ 追加
+                     : (letter.is_official 
+                         ? (letter.spot_name ? `${letter.spot_name}の手紙` : '名も無き手紙') 
+                         : (letter.nickname ? `${letter.nickname}さんの手紙` : '誰かの手紙'))
                  }
                </span>
                {isReachable && <span className="block text-[8px] font-bold text-orange-500 text-center mt-1 font-sans">{letter.is_post ? '投函できます！' : '読めます！'}</span>}
             </div>
-            {/* ★アニメーションのクラスを shouldBounce で切り替え */}
+
+            {/* --- アイコン本体 --- */}
             <div className={`transition-transform duration-300 drop-shadow-md relative ${shouldBounce ? 'animate-bounce' : 'hover:scale-110'}`}>
                {letter.is_post ? (
-                 <div className={isReachable ? "text-red-600" : "text-red-700"}><IconPost className="w-14 h-14" hasLetters={postHasLetters} /></div>
+                 <div className={isReachable ? "text-red-600" : "text-red-700"}>
+                   <IconPost className="w-14 h-14" hasLetters={postHasLetters} />
+                 </div>
+               ) : letter.is_postcard ? (
+                 /* ★ 追加：絵葉書アイコンの表示 */
+                 <div className={isReachable ? "text-orange-500" : "text-bunko-ink"}>
+                   <IconPostcard className="w-14 h-14" />
+                 </div>
                ) : (
                  <div className={isReachable ? (letter.is_official ? "text-yellow-500" : "text-orange-500") : "text-bunko-ink"}>
-                    {letter.is_official ? <IconAdminLetter className="w-8 h-8" /> : <IconUserLetter className="w-8 h-8" />}
+                    {letter.is_official ? <IconAdminLetter className="w-10 h-10" /> : <IconUserLetter className="w-10 h-10" />}
                  </div>
                )}
+
                {isRead && !letter.is_post && !isMyPost && (
                   <div className="absolute -bottom-1 -right-1 bg-white rounded-full w-4 h-4 flex items-center justify-center shadow-md border border-gray-100 z-30">
                     <span className="text-[10px] text-green-600 font-bold">✔︎</span>

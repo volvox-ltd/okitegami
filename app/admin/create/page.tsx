@@ -10,6 +10,7 @@ import Link from 'next/link';
 
 import IconAdminLetter from '@/components/IconAdminLetter';
 import IconUserLetter from '@/components/IconUserLetter';
+import { ENABLE_PHOTO_UPLOAD } from '@/utils/constants';
 
 // ★ 修正：App Routerに最適化されたクライアント
 const supabase = createBrowserClient(
@@ -134,13 +135,13 @@ export default function AdminCreatePage() {
       }
 
       let letterImageUrl = null;
-      if (imageFile) {
+      // ★ 修正：スイッチがONの時だけ画像アップロード
+      if (ENABLE_PHOTO_UPLOAD && imageFile) {
         const compressedFile = await compressImage(imageFile);
         const fileName = `letter_${Date.now()}.jpg`;
         const { error: upErr } = await supabase.storage.from('letter-images').upload(fileName, compressedFile, { contentType: 'image/jpeg' });
         if (upErr) throw upErr;
-        const { data } = supabase.storage.from('letter-images').getPublicUrl(fileName);
-        letterImageUrl = data.publicUrl;
+        letterImageUrl = supabase.storage.from('letter-images').getPublicUrl(fileName).data.publicUrl;
       }
 
       let newStampId = null;
@@ -261,7 +262,8 @@ export default function AdminCreatePage() {
                 placeholder="場所の名前 (任意)" value={spotName} onChange={e => setSpotName(e.target.value)} 
               />
             </div>
-            
+            {/* ★ 修正：スイッチで写真アップロードUIを隠す */}
+            {ENABLE_PHOTO_UPLOAD && (
             <div>
               <label className="block text-xs font-bold text-gray-500 mb-1">手紙の写真 (任意)</label>
               <input 
@@ -270,6 +272,7 @@ export default function AdminCreatePage() {
                 onChange={(e) => e.target.files?.[0] && setImageFile(e.target.files[0])}
               />
             </div>
+            )}
 
             <div>
               <label className="block text-xs font-bold text-gray-500 mb-2">手紙の内容</label>

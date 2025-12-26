@@ -7,6 +7,7 @@ import Link from 'next/link';
 // Next.jsの画像最適化コンポーネント
 import Image from 'next/image';
 import IconPost from '@/components/IconPost';
+import { ENABLE_PHOTO_UPLOAD } from '@/utils/constants';
 
 type Letter = {
   id: string; title: string; spot_name: string; content: string;
@@ -235,7 +236,8 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
             <div className="space-y-6">
               <div className="bg-white p-4 rounded border border-red-100 shadow-sm relative font-serif">
                 <div className="absolute -top-3 left-4 bg-red-50 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded font-sans">{post.spot_name || post.title}の手紙</div>
-                {post.image_url && (
+                {/* ★ 修正：スイッチで写真表示を隠す */}
+                {ENABLE_PHOTO_UPLOAD && post.image_url && (
                   <div className="mt-2 mb-4 flex justify-center">
                     <div className="relative">
                       <Image 

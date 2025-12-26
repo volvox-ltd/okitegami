@@ -10,12 +10,15 @@ import Image from 'next/image';
 import IconUserLetter from './IconUserLetter';
 import IconAdminLetter from './IconAdminLetter';
 import IconPost from './IconPost';
+// ★追加：スイッチをインポート
+import { ENABLE_PHOTO_UPLOAD } from '@/utils/constants';
 
 type Letter = {
   id: string; title: string; spot_name: string; content: string;
   lat: number; lng: number; image_url?: string; is_official?: boolean;
   user_id?: string; password?: string | null; attached_stamp_id?: number | null;
   parent_id?: string | null;
+  is_postcard?: boolean; // ★追加
 };
 
 type Props = {
@@ -37,10 +40,13 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
   const [inputPassword, setInputPassword] = useState('');
   const [unlockError, setUnlockError] = useState(false);
   const [currentPage, setCurrentPage] = useState(0); 
-  const [pages, setPages] = useState<any[]>([]);
+  const [pages, setPages] = useState<any[]>([]); 
   const [isFavorited, setIsFavorited] = useState(false);
   const [gotStamp, setGotStamp] = useState<any>(null);
   const [isReported, setIsReported] = useState(false);
+  
+  // ★絵葉書用のフリップ状態
+  const [isFlipped, setIsFlipped] = useState(false);
 
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
@@ -49,6 +55,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
   const isMyPost = currentUser && currentUser.id === letter.user_id;
   const isPostedInBox = !!letter.parent_id;
   const isOfficial = !!letter.is_official;
+  const isPostcard = !!letter.is_postcard;
 
   useEffect(() => {
     setIsVisible(true);
@@ -60,7 +67,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
         setIsLocked(false);
       } 
       else if (currentUser && letter.password) {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('letter_reads')
           .select('id')
           .eq('letter_id', letter.id)
@@ -155,7 +162,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
     }
   };
 
-  // ★ 修正：Type A（封筒読み取り）はカウントアップしない（常に1固定）
   const checkStamp = async () => {
     if (gotStamp || isMyPost || !letter.attached_stamp_id || !currentUser) return false;
     try {
@@ -167,10 +173,8 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
         .maybeSingle();
 
       if (existing) {
-        // すでに持っている場合は何もせず終了（これによりカウントは1のまま固定されます）
         return false; 
       } else {
-        // 初めて取得する場合のみ、count: 1 で作成
         await supabase.from('user_stamps').insert({ 
           user_id: currentUser.id, 
           post_id: letter.id, 
@@ -191,17 +195,28 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
   const PAGE_DELIMITER = '<<<PAGE>>>';
   useEffect(() => {
     const newPages = [];
-    if (letter.image_url) newPages.push({ type: 'image', content: letter.image_url });
-    const text = letter.content || '';
-    if (text.includes(PAGE_DELIMITER)) {
-      text.split(PAGE_DELIMITER).forEach(p => newPages.push({ type: 'text', content: p }));
-    } else {
-      for (let i = 0; i < text.length; i += CHARS_PER_PAGE) {
-        newPages.push({ type: 'text', content: text.slice(i, i + CHARS_PER_PAGE) });
+    
+    // 絵葉書モードではない場合、従来のページ構成ロジック
+    if (!isPostcard) {
+      if (ENABLE_PHOTO_UPLOAD && letter.image_url) {
+        newPages.push({ type: 'image', content: letter.image_url });
       }
+
+      const text = letter.content || '';
+      if (text.includes(PAGE_DELIMITER)) {
+        text.split(PAGE_DELIMITER).forEach(p => newPages.push({ type: 'text', content: p }));
+      } else {
+        for (let i = 0; i < text.length; i += CHARS_PER_PAGE) {
+          newPages.push({ type: 'text', content: text.slice(i, i + CHARS_PER_PAGE) });
+        }
+      }
+    } else {
+      // 絵葉書モードの場合（ページ遷移は不要、フリップで対応）
+      newPages.push({ type: 'postcard', content: letter.content });
     }
+    
     setPages(newPages);
-  }, [letter]);
+  }, [letter, ENABLE_PHOTO_UPLOAD, isPostcard]);
 
   const handleClose = () => { setIsVisible(false); setTimeout(onClose, 300); };
 
@@ -218,7 +233,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
   const onTouchStart = (e: TouchEvent) => { setTouchEnd(null); setTouchStart(e.targetTouches[0].clientX); };
   const onTouchMove = (e: TouchEvent) => setTouchEnd(e.targetTouches[0].clientX);
   const onTouchEnd = () => {
-    if (!touchStart || !touchEnd) return;
+    if (isPostcard || !touchStart || !touchEnd) return;
     const distance = touchStart - touchEnd;
     if (distance > minSwipeDistance) handleNext();
     if (distance < -minSwipeDistance) handlePrev();
@@ -261,7 +276,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
       
       {gotStamp && (
         <div className="absolute inset-0 z-[60] flex items-center justify-center pointer-events-none">
-          <div className="absolute inset-0 pointer-events-auto" onClick={handleClose}></div>
           <div className="bg-[#fdfcf5] p-8 rounded-sm shadow-2xl flex flex-col items-center animate-bounce-in pointer-events-auto border-4 border-double border-[#5d4037]/20 max-w-xs text-center font-sans relative">
             <h3 className="font-bold text-[#5d4037] mb-4 font-serif text-lg tracking-widest leading-relaxed">切手を受け取りました</h3>
             <div className="w-24 h-32 border-4 border-white shadow-lg rotate-3 mb-5 bg-white p-1 relative">
@@ -274,93 +288,143 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
         </div>
       )}
 
-      <div className={`relative w-full max-w-md h-[85vh] md:h-[600px] shadow-2xl rounded-2xl transform transition-all duration-300 border-4 ${borderColor} ${bgColor} flex flex-col ${isVisible ? 'scale-100 translate-y-0' : 'scale-95 translate-y-4'}`}>
-        <div className="h-24 md:h-28 flex items-center justify-between px-6 border-b border-gray-100/50 relative shrink-0">
-          <div className="flex items-center gap-3 w-full pr-8">
-             <div className={`shrink-0 drop-shadow-sm ${isPostedInBox ? 'text-red-600' : ''}`}><Icon className="w-10 h-10" /></div>
-             <div className="overflow-hidden w-full">
-               <h2 className={`font-bold font-serif text-base md:text-lg leading-tight line-clamp-2 ${textColor}`}>{isLocked ? '秘密の手紙' : letter.title}</h2>
-               <p className="text-xs text-gray-400 font-serif mt-0.5 truncate font-sans">📍 {letter.spot_name}</p>
-             </div>
-          </div>
-          <button onClick={handleClose} className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 p-2 font-sans">✕</button>
-        </div>
+      {/* ★ 絵葉書UIか通常便箋UIかの出し分け */}
+      <div 
+        className={`relative w-full max-w-md h-[85vh] md:h-[600px] transition-all duration-700 font-sans ${isPostcard ? 'preserve-3d cursor-pointer' : ''} ${isFlipped ? '[transform:rotateY(180deg)]' : ''}`}
+        style={{ perspective: '1000px' }}
+        onClick={() => isPostcard && !isLocked && setIsFlipped(!isFlipped)}
+      >
         
-        {!isLocked && (
-          <div className="absolute top-24 md:top-28 right-4 z-10 flex gap-2 font-sans">
-            {isMyPost ? (
-              <button onClick={handleDelete} className="bg-red-50 text-red-500 text-xs px-3 py-1 rounded-full shadow hover:bg-red-100 font-bold transition-colors">削除</button>
+        {/* --- 表面（ポストカードなら写真、便箋なら共通レイアウト） --- */}
+        <div className={`absolute inset-0 w-full h-full backface-hidden shadow-2xl rounded-2xl border-4 ${borderColor} ${bgColor} flex flex-col ${isPostcard ? '' : 'z-20'}`}>
+          <div className="h-24 md:h-28 flex items-center justify-between px-6 border-b border-gray-100/50 relative shrink-0">
+            <div className="flex items-center gap-3 w-full pr-8">
+               <div className={`shrink-0 drop-shadow-sm ${isPostedInBox ? 'text-red-600' : ''}`}><Icon className="w-10 h-10" /></div>
+               <div className="overflow-hidden w-full">
+                 <h2 className={`font-bold font-serif text-base md:text-lg leading-tight line-clamp-2 ${textColor}`}>{isLocked ? '秘密の手紙' : letter.title}</h2>
+                 <p className="text-xs text-gray-400 font-serif mt-0.5 truncate font-sans">📍 {letter.spot_name}</p>
+               </div>
+            </div>
+            <button onClick={(e) => { e.stopPropagation(); handleClose(); }} className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 p-2 font-sans">✕</button>
+          </div>
+          
+          {!isLocked && (
+            <div className="absolute top-24 md:top-28 right-4 z-10 flex gap-2 font-sans">
+              {isMyPost ? (
+                <button onClick={(e) => { e.stopPropagation(); handleDelete(); }} className="bg-red-50 text-red-500 text-xs px-3 py-1 rounded-full shadow hover:bg-red-100 font-bold transition-colors">削除</button>
+              ) : (
+                <button onClick={(e) => { e.stopPropagation(); toggleFavorite(); }} className={`flex items-center gap-1 text-xs px-3 py-1 rounded-full shadow transition-colors font-bold ${isFavorited ? 'bg-pink-50 text-pink-500 border border-pink-200' : 'bg-white text-gray-400 border border-gray-200 hover:text-pink-400'}`}>
+                  {isFavorited ? '♥ お気に入り' : '♡ お気に入り'}
+                </button>
+              )}
+            </div>
+          )}
+
+          <div className="flex-1 relative overflow-hidden overflow-x-auto pt-12 pb-8 px-6 md:pt-14 md:pb-10 md:px-8 flex items-center justify-center touch-pan-y" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+            {isLocked ? (
+              <div className="flex flex-col items-center justify-center w-full h-full animate-fadeIn space-y-4 font-sans">
+                <div className="text-4xl">🔒</div>
+                <p className="font-serif text-gray-600 text-sm tracking-widest">合言葉が必要です</p>
+                <div className="w-full max-w-[200px]" onClick={(e) => e.stopPropagation()}>
+                  <input type="text" value={inputPassword} onChange={(e) => setInputPassword(e.target.value)} className="w-full border border-gray-300 rounded p-2 text-center mb-2 font-serif focus:outline-none" placeholder="合言葉" />
+                  <button onClick={handleUnlock} className="w-full bg-green-700 text-white font-bold py-2 rounded shadow hover:bg-green-800 text-sm font-sans">開ける</button>
+                  {unlockError && <p className="text-red-500 text-xs text-center mt-2">合言葉が違います</p>}
+                </div>
+              </div>
+            ) : isPostcard ? (
+              // 絵葉書の表面
+              <div className="w-full h-full flex flex-col items-center justify-center animate-fadeIn">
+                <div className="relative w-full h-full p-2">
+                  <Image 
+                    src={letter.image_url!} 
+                    fill 
+                    alt="Postcard" 
+                    // ★ CSSフィルター(sepiaなど)を削除し、シンプルに表示
+                    className="object-cover rounded shadow-inner" 
+                  />
+                  {/* ★ ここにあった消印ラベルの <div> ブロックを全て削除しました */}
+                </div>
+                <p className="text-[10px] text-gray-400 mt-4 animate-pulse">タップで裏返す</p>
+              </div>
             ) : (
-              <button onClick={toggleFavorite} className={`flex items-center gap-1 text-xs px-3 py-1 rounded-full shadow transition-colors font-bold ${isFavorited ? 'bg-pink-50 text-pink-500 border border-pink-200' : 'bg-white text-gray-400 border border-gray-200 hover:text-pink-400'}`}>
-                {isFavorited ? '♥ お気に入り' : '♡ お気に入り'}
-              </button>
+              // 通常の便箋の表示：縦書き
+              <div className="w-full h-full">
+                {pages[currentPage]?.type === 'image' && (
+                   <div className="w-full h-full flex items-center justify-center animate-fadeIn p-2">
+                     <div className="relative transform rotate-1">
+                       <Image src={pages[currentPage].content} alt="Photo" width={800} height={1200} className="w-auto h-auto max-w-full max-h-[45vh] md:max-h-[50vh] rounded shadow-md border-4 border-white object-contain" sizes="(max-width: 768px) 100vw, 400px" priority />
+                     </div>
+                   </div>
+                )}
+                {pages[currentPage]?.type === 'text' && (
+                  <div className={`w-full h-full text-base md:text-lg leading-loose font-serif tracking-widest [writing-mode:vertical-rl] whitespace-pre-wrap ${textColor} animate-fadeIn`}>
+                    {renderContent(pages[currentPage].content)}
+                  </div>
+                )}
+              </div>
             )}
           </div>
-        )}
 
-        <div className="flex-1 relative overflow-hidden overflow-x-auto pt-12 pb-8 px-6 md:pt-14 md:pb-10 md:px-8 flex items-center justify-center touch-pan-y" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
-          {isLocked ? (
-            <div className="flex flex-col items-center justify-center w-full h-full animate-fadeIn space-y-4 font-sans">
-              <div className="text-4xl">🔒</div>
-              <p className="font-serif text-gray-600 text-sm tracking-widest">合言葉が必要です</p>
-              <div className="w-full max-w-[200px]">
-                <input type="text" value={inputPassword} onChange={(e) => setInputPassword(e.target.value)} className="w-full border border-gray-300 rounded p-2 text-center mb-2 font-serif focus:outline-none" placeholder="合言葉" />
-                <button onClick={handleUnlock} className="w-full bg-green-700 text-white font-bold py-2 rounded shadow hover:bg-green-800 text-sm font-sans">開ける</button>
-                {unlockError && <p className="text-red-500 text-xs text-center mt-2">合言葉が違います</p>}
+          {!isLocked && !isPostcard && (
+            <div className="h-16 border-t border-gray-100/50 flex items-center justify-between px-6 shrink-0 bg-white/30 backdrop-blur-sm rounded-b-xl relative font-sans">
+              <div className="absolute left-6 top-1/2 -translate-y-1/2">
+                 {!isMyPost && !isOfficial && (
+                   <button onClick={(e) => { e.stopPropagation(); handleReport(); }} disabled={isReported} className="text-gray-300 hover:text-red-400 p-2 transition-colors disabled:text-gray-200">
+                     {isReported ? '✓' : '⚐'}
+                   </button>
+                 )}
               </div>
-            </div>
-          ) : (
-            <div className="w-full h-full">
-              {/* ★ 修正：画像表示の枠ズレ問題を解消 */}
-              {pages[currentPage]?.type === 'image' && (
-                 <div className="w-full h-full flex items-center justify-center animate-fadeIn p-2">
-                   <div className="relative transform rotate-1">
-                     <Image 
-                       src={pages[currentPage].content} 
-                       alt="Photo" 
-                       width={800} 
-                       height={1200}
-                       className="w-auto h-auto max-w-full max-h-[45vh] md:max-h-[50vh] rounded shadow-md border-4 border-white object-contain"
-                       sizes="(max-width: 768px) 100vw, 400px"
-                       priority
-                     />
-                   </div>
-                 </div>
-              )}
-              {pages[currentPage]?.type === 'text' && (
-                <div className={`w-full h-full text-base md:text-lg leading-loose font-serif tracking-widest [writing-mode:vertical-rl] whitespace-pre-wrap ${textColor} animate-fadeIn`}>
-                  {renderContent(pages[currentPage].content)}
-                </div>
-              )}
+              <div className="flex-1 flex justify-center items-center gap-4">
+                <button onClick={(e) => { e.stopPropagation(); handleNext(); }} className={`text-sm font-bold flex items-center gap-1 ${currentPage < pages.length - 1 ? 'text-gray-600 hover:text-orange-600' : 'invisible'}`}><span className="text-lg">←</span> 次へ</button>
+                <span className="text-xs text-gray-400 font-serif tracking-widest w-8 text-center">- {currentPage + 1} -</span>
+                <button onClick={(e) => { e.stopPropagation(); handlePrev(); }} disabled={currentPage === 0} className={`text-sm font-bold flex items-center gap-1 ${currentPage === 0 ? 'text-gray-300' : 'text-gray-500 hover:text-orange-500'}`}>前へ <span className="text-lg">→</span></button>
+              </div>
+              <div className="absolute right-6 top-1/2 -translate-y-1/2">
+                  {currentPage === pages.length - 1 && (
+                    <button onClick={(e) => { e.stopPropagation(); handleFinish(); }} className={`px-5 py-2 rounded-full text-white text-xs font-bold shadow-sm transition-transform active:scale-95 ${isOfficial ? 'bg-[#826d36]' : 'bg-green-700'}`}>
+                      読み終わる
+                    </button>
+                  )}
+              </div>
             </div>
           )}
         </div>
 
-        {!isLocked && (
-          <div className="h-16 border-t border-gray-100/50 flex items-center justify-between px-6 shrink-0 bg-white/30 backdrop-blur-sm rounded-b-xl relative font-sans">
-            <div className="absolute left-6 top-1/2 -translate-y-1/2">
-               {!isMyPost && !isOfficial && (
-                 <button onClick={handleReport} disabled={isReported} className="text-gray-300 hover:text-red-400 p-2 transition-colors disabled:text-gray-200">
-                   {isReported ? '✓' : '⚐'}
-                 </button>
-               )}
-            </div>
-            <div className="flex-1 flex justify-center items-center gap-4">
-              <button onClick={handleNext} className={`text-sm font-bold flex items-center gap-1 ${currentPage < pages.length - 1 ? 'text-gray-600 hover:text-orange-600' : 'invisible'}`}><span className="text-lg">←</span> 次へ</button>
-              <span className="text-xs text-gray-400 font-serif tracking-widest w-8 text-center">- {currentPage + 1} -</span>
-              <button onClick={handlePrev} disabled={currentPage === 0} className={`text-sm font-bold flex items-center gap-1 ${currentPage === 0 ? 'text-gray-300' : 'text-gray-500 hover:text-orange-500'}`}>前へ <span className="text-lg">→</span></button>
-            </div>
-            <div className="absolute right-6 top-1/2 -translate-y-1/2">
-                {currentPage === pages.length - 1 && (
-                  <button onClick={handleFinish} className={`px-5 py-2 rounded-full text-white text-xs font-bold shadow-sm transition-transform active:scale-95 ${isOfficial ? 'bg-[#826d36]' : 'bg-green-700'}`}>
-                    読み終わる
-                  </button>
-                )}
-            </div>
+        {/* --- 裏面（絵葉書専用メッセージ面） --- */}
+        {isPostcard && (
+          <div className="absolute inset-0 w-full h-full backface-hidden [transform:rotateY(180deg)] shadow-2xl rounded-2xl border-4 border-white bg-[#fdfcf5] flex flex-col p-8">
+             <div className="flex justify-between border-b border-gray-200 pb-4 mb-6">
+                <span className="text-xs font-bold text-gray-300 tracking-widest font-sans uppercase">Postcard</span>
+                <div className="w-10 h-12 border border-gray-200 rounded-sm bg-red-50/50 flex items-center justify-center text-[8px] text-red-200 font-bold uppercase leading-none text-center">Stamp<br/>Here</div>
+             </div>
+             
+             <div className="flex-1 font-serif text-base leading-relaxed text-[#5d4037] whitespace-pre-wrap overflow-y-auto">
+                {letter.content}
+             </div>
+
+             <div className="mt-8 border-t border-gray-100 pt-4 flex justify-between items-end font-sans">
+                <div>
+                   <p className="text-[10px] text-gray-400">📍 Location</p>
+                   <p className="text-xs font-bold text-[#5d4037]">{letter.spot_name}</p>
+                </div>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); handleFinish(); }} 
+                  className="bg-[#5d4037] text-white px-6 py-2 rounded-full text-xs font-bold shadow-md active:scale-95 transition-transform"
+                >
+                  読み終わる
+                </button>
+             </div>
           </div>
         )}
+
       </div>
-      <style jsx>{` @keyframes bounceIn { 0% { transform: scale(0.3); opacity: 0; } 50% { transform: scale(1.05); opacity: 1; } 70% { transform: scale(0.9); } 100% { transform: scale(1); } } .animate-bounce-in { animation: bounceIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; } `}</style>
+      
+      <style jsx global>{` 
+        .preserve-3d { transform-style: preserve-3d; }
+        .backface-hidden { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+        @keyframes bounceIn { 0% { transform: scale(0.3); opacity: 0; } 50% { transform: scale(1.05); opacity: 1; } 70% { transform: scale(0.9); } 100% { transform: scale(1); } } 
+        .animate-bounce-in { animation: bounceIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; } 
+      `}</style>
     </div>
   );
 }
