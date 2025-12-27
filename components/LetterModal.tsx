@@ -4,10 +4,6 @@ import { supabase } from '@/utils/supabase';
 import { User } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import IconUserLetter from './IconUserLetter';
-import IconAdminLetter from './IconAdminLetter';
-import IconPost from './IconPost';
-import { ENABLE_PHOTO_UPLOAD } from '@/utils/constants';
 
 type Letter = {
   id: string; title: string; spot_name: string; content: string;
@@ -37,21 +33,28 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
   const [pages, setPages] = useState<any[]>([]); 
   const [isFavorited, setIsFavorited] = useState(false);
   const [gotStamp, setGotStamp] = useState<any>(null);
-  const [isReported, setIsReported] = useState(false);
+  const [nickname, setNickname] = useState<string | null>(null);
   
   const [touchStart, setTouchStart] = useState<number | null>(null);
   const [touchEnd, setTouchEnd] = useState<number | null>(null);
   const minSwipeDistance = 50;
 
   const isMyPost = currentUser && currentUser.id === letter.user_id;
-  const isPostedInBox = !!letter.parent_id;
-  const isOfficial = !!letter.is_official;
 
   useEffect(() => {
     setIsVisible(true);
     const initModal = async () => {
       setIsCheckingAuth(true);
-      if (isMyPost) { setIsLocked(false); } 
+
+      // 投稿者のニックネームを取得
+      if (letter.user_id) {
+        const { data: profile } = await supabase.from('profiles').select('nickname').eq('id', letter.user_id).maybeSingle();
+        if (profile) setNickname(profile.nickname);
+      }
+
+      if (isMyPost) {
+        setIsLocked(false);
+      } 
       else if (currentUser && letter.password) {
         const { data } = await supabase.from('letter_reads').select('id').eq('letter_id', letter.id).eq('user_id', currentUser.id).limit(1);
         setIsLocked(!(data && data.length > 0));
@@ -69,12 +72,8 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
 
   const recordRead = async () => {
     if (currentUser && currentUser.id === letter.user_id) return;
-    if (currentUser) {
-      const { data } = await supabase.from('letter_reads').select('id').eq('letter_id', letter.id).eq('user_id', currentUser.id).limit(1);
-      if (data && data.length > 0) { if (onRead) onRead(letter.id); return; }
-    }
-    const { error } = await supabase.from('letter_reads').insert({ letter_id: letter.id, user_id: currentUser?.id || null });
-    if (!error && onRead) onRead(letter.id);
+    await supabase.from('letter_reads').insert({ letter_id: letter.id, user_id: currentUser?.id || null });
+    if (onRead) onRead(letter.id);
   };
 
   const handleUnlock = () => {
@@ -124,6 +123,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
     if (text.includes(PAGE_DELIMITER)) {
       text.split(PAGE_DELIMITER).forEach(p => newPages.push({ type: 'text', content: p }));
     } else {
+      // 140文字でページ分割
       for (let i = 0; i < text.length; i += CHARS_PER_PAGE) {
         newPages.push({ type: 'text', content: text.slice(i, i + CHARS_PER_PAGE) });
       }
@@ -149,12 +149,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
     if (!error) { handleClose(); onDeleted?.(); }
   };
 
-  const handleReport = async () => {
-    if (!confirm('通報しますか？')) return;
-    await supabase.from('reports').insert({ letter_id: letter.id, reporter_id: currentUser?.id || null, reason: '不適切なコンテンツ' });
-    setIsReported(true);
-  };
-
   if (isCheckingAuth) return null;
 
   return (
@@ -175,22 +169,17 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
 
       <div className="relative w-full max-w-[380px] aspect-[1/1.48] bg-white shadow-2xl flex flex-col px-6 py-4 rounded-sm z-20">
         <div className="flex justify-center items-center shrink-0 relative h-10 mb-2">
-          {/* ★ 修正：左端にボタンを配置（自分の投稿なら削除、他人の投稿ならお気に入り） */}
-          {!isLocked && (
+          {/* 1. 左端：他人の投稿のみお気に入りボタンを表示 */}
+          {!isLocked && !isMyPost && (
             <div className="absolute left-0 z-30">
-              {isMyPost ? (
-                <button onClick={(e) => { e.stopPropagation(); handleDelete(); }} className="bg-pink-50 text-pink-500 text-[10px] px-3 py-1 rounded-full font-bold border border-pink-100 transition-all hover:scale-105 active:scale-95">削除</button>
-              ) : (
-                <button 
-                  onClick={(e) => { e.stopPropagation(); toggleFavorite(); }} 
-                  className={`flex items-center gap-1 text-[10px] font-bold py-1.5 px-3 rounded-full border shadow-sm transition-all active:scale-95 ${isFavorited ? 'bg-pink-50 text-pink-500 border-pink-100' : 'bg-gray-100 text-gray-400 border-gray-200 hover:text-pink-300'}`}
-                >
-                  {isFavorited ? '♥' : '♡'} お気に入り
-                </button>
-              )}
+              <button 
+                onClick={(e) => { e.stopPropagation(); toggleFavorite(); }} 
+                className={`flex items-center gap-1 text-[10px] font-bold py-1.5 px-3 rounded-full border shadow-sm transition-all active:scale-95 ${isFavorited ? 'bg-pink-50 text-pink-500 border-pink-100' : 'bg-gray-100 text-gray-400 border-gray-200 hover:text-pink-300'}`}
+              >
+                {isFavorited ? '♥' : '♡'} お気に入り
+              </button>
             </div>
           )}
-          
           <button onClick={handleClose} className="absolute right-0 p-1 text-gray-400 hover:text-gray-600">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
@@ -199,13 +188,7 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
         {/* --- 本文エリア（タップでページめくり、最後なら最初に戻る） --- */}
         <div 
           className="flex-1 relative flex flex-col overflow-hidden mt-2" 
-          onClick={() => {
-            if (currentPage < pages.length - 1) {
-              handleNext();
-            } else {
-              setCurrentPage(0); // 最後のページなら最初に戻る
-            }
-          }} 
+          onClick={() => currentPage < pages.length - 1 ? handleNext() : setCurrentPage(0)} 
           onTouchStart={e => { setTouchEnd(null); setTouchStart(e.targetTouches[0].clientX); }} 
           onTouchMove={e => setTouchEnd(e.targetTouches[0].clientX)} 
           onTouchEnd={onTouchEnd}
@@ -214,20 +197,25 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
             <div className="flex flex-col items-center justify-center h-full space-y-4 font-sans" onClick={e => e.stopPropagation()}>
               <div className="text-4xl">🔒</div>
               <input type="text" value={inputPassword} onChange={e => setInputPassword(e.target.value)} className="w-full border border-gray-200 rounded p-2 text-center font-serif text-sm outline-none" placeholder="合言葉" />
-              <button onClick={handleUnlock} className="w-full bg-[#8a776a] text-white font-bold py-2 rounded shadow text-sm">開ける</button>
+              <button onClick={handleUnlock} className="w-full bg-[#8a776a] text-white font-bold py-2 rounded shadow text-sm transition-all active:scale-95">開ける</button>
               {unlockError && <p className="text-red-400 text-[10px]">合言葉が違います</p>}
             </div>
           ) : (
             <>
-              {/* ★ 修正：タイトルと場所を固定位置に配置（アニメーションの外） */}
-              <div className="flex justify-between items-baseline mb-6 shrink-0 pointer-events-none">
-                <h2 className="text-lg font-bold font-serif text-[#8a776a] leading-tight">{letter.title}</h2>
-                <p className="text-[10px] text-gray-400 font-sans tracking-widest truncate ml-4">📍 {letter.spot_name}</p>
+              {/* タイトルと投稿者名：固定表示 */}
+              <div className="flex justify-between items-start mb-6 shrink-0 pointer-events-none min-h-[3rem]">
+                <h2 className="text-lg font-bold font-serif text-[#8a776a] flex-1 leading-relaxed pr-4">
+                  {letter.title}
+                </h2>
+                <p className="text-[10px] text-gray-400 font-sans tracking-widest shrink-0 mt-1 italic whitespace-nowrap">
+                  {nickname ? `${nickname} より` : ''}
+                </p>
               </div>
               
+              {/* 本文アニメーションエリア */}
               <div key={currentPage} className="flex-1 overflow-hidden animate-pageTurn">
                 <div 
-                  className="w-full h-full text-base font-serif tracking-[0.2em] [writing-mode:vertical-rl] whitespace-pre-wrap text-[#5d4037]" 
+                  className="w-full h-full text-[14px] font-serif tracking-[0.2em] [writing-mode:vertical-rl] whitespace-pre-wrap text-[#5d4037]" 
                   style={{ 
                     lineHeight: '2.5rem', 
                     backgroundImage: 'linear-gradient(to left, transparent calc(100% - 1px), #f0f4f5 1px)', 
@@ -242,12 +230,12 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
           )}
         </div>
 
-        <div className="h-16 flex items-center justify-between shrink-0 font-sans mt-auto border-gray-100">
+        <div className="h-16 flex items-center justify-between shrink-0 font-sans mt-auto">
           {!isLocked && (
             <>
               <div className="w-24">
                 {currentPage === pages.length - 1 ? (
-                  <button onClick={(e) => { e.stopPropagation(); handleFinish(); }} className="bg-[#1a4d2e] text-white px-4 py-2 rounded-full text-[10px] font-bold shadow-md">読み終わる</button>
+                  <button onClick={(e) => { e.stopPropagation(); handleFinish(); }} className="bg-[#1a4d2e] text-white px-4 py-2 rounded-full text-[10px] font-bold shadow-md transition-all active:scale-95">読み終わる</button>
                 ) : (
                   <span className="text-xs text-gray-300 font-serif font-bold">{currentPage + 1} / {pages.length}</span>
                 )}
@@ -257,7 +245,10 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
                 <button onClick={(e) => { e.stopPropagation(); handlePrev(); }} className={`text-xs font-bold ${currentPage > 0 ? 'text-[#8a776a]' : 'text-gray-200 pointer-events-none'}`}>前へ →</button>
               </div>
               <div className="w-24 flex justify-end">
-                {/* ★ 修正：フッター右端のお気に入りボタンを削除（ヘッダー左側に移動したため） */}
+                {/* 右下：自分の投稿のみ削除ボタンを表示 */}
+                {isMyPost && (
+                  <button onClick={(e) => { e.stopPropagation(); handleDelete(); }} className="bg-pink-50 text-pink-500 text-[10px] px-4 py-2 rounded-full font-bold border border-pink-100 shadow-sm transition-all hover:bg-pink-100 active:scale-95">削除</button>
+                )}
               </div>
             </>
           )}
