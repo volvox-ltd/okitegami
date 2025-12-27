@@ -16,6 +16,7 @@ import IconAdminLetter from '@/components/IconAdminLetter';
 import IconPost from '@/components/IconPost';
 import IconPostcard from '@/components/IconPostcard'; // ★ 追加
 import LetterModal from '@/components/LetterModal';
+import PostcardModal from '@/components/PostcardModal'; // ★ 追加
 import PostModal from '@/components/PostModal';
 import AboutModal from '@/components/AboutModal';
 import NicknameModal from '@/components/NicknameModal';
@@ -124,7 +125,7 @@ function HomeContent() {
     try {
       const { data: lettersData, error } = await supabase
         .from('letters')
-        .select('id, title, spot_name, lat, lng, is_official, user_id, created_at, attached_stamp_id, is_post, parent_id, password, is_postcard'); // ★ is_postcardを追加
+        .select('id, title, spot_name, lat, lng, is_official, user_id, created_at, attached_stamp_id, is_post, parent_id, password, is_postcard'); // ★ is_postcardを取得対象に追加
       
       if (error || !lettersData) return;
       setAllLetters(lettersData as Letter[]);
@@ -235,13 +236,12 @@ function HomeContent() {
         <Marker key={letter.id} latitude={letter.lat} longitude={letter.lng} anchor="bottom" onClick={(e) => { e.originalEvent.stopPropagation(); setPopupInfo(letter); }} style={{ zIndex: isReachable ? 10 : 1 }}>
           <div className={`flex flex-col items-center group cursor-pointer ${isRead ? 'opacity-70' : ''}`}>
             
-            {/* --- ホバー時のツールチップ（文言修正） --- */}
             <div className={`bg-white/95 backdrop-blur px-3 py-2 rounded-lg shadow-md text-[10px] mb-2 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border flex flex-col items-center ${isReachable ? 'border-orange-500 text-orange-600' : 'border-gray-200 text-gray-500'}`}>
                <span className="font-bold">
                  {letter.is_post 
                    ? (letter.spot_name ? `${letter.spot_name}のポスト` : 'ポスト') 
                    : letter.is_postcard 
-                     ? (letter.spot_name ? `${letter.spot_name}の絵葉書` : '名も無き絵葉書') // ★ 追加
+                     ? (letter.spot_name ? `${letter.spot_name}の絵葉書` : '名も無き絵葉書') // ★ 追加：ツールチップ
                      : (letter.is_official 
                          ? (letter.spot_name ? `${letter.spot_name}の手紙` : '名も無き手紙') 
                          : (letter.nickname ? `${letter.nickname}さんの手紙` : '誰かの手紙'))
@@ -250,7 +250,6 @@ function HomeContent() {
                {isReachable && <span className="block text-[8px] font-bold text-orange-500 text-center mt-1 font-sans">{letter.is_post ? '投函できます！' : '読めます！'}</span>}
             </div>
 
-            {/* --- アイコン本体 --- */}
             <div className={`transition-transform duration-300 drop-shadow-md relative ${shouldBounce ? 'animate-bounce' : 'hover:scale-110'}`}>
                {letter.is_post ? (
                  <div className={isReachable ? "text-red-600" : "text-red-700"}>
@@ -311,7 +310,6 @@ function HomeContent() {
           setViewState(prev => ({ ...prev, latitude: nearestNotificationLetter.lat, longitude: nearestNotificationLetter.lng, zoom: 16 }));
         }}>
            <div className="bg-white/80 backdrop-blur-sm px-3 py-2 rounded-full shadow-sm border border-gray-200 flex items-center gap-2 cursor-pointer hover:bg-white">
-              <span className="text-sm animate-bounce"></span>
               <span className="text-[10px] font-bold text-gray-600 font-sans">近くに手紙があります</span>
            </div>
         </div>
@@ -368,7 +366,7 @@ function HomeContent() {
                           : (popupInfo.is_official ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-700 hover:bg-green-800')
                       }`}
                     >
-                      {popupInfo.is_post ? 'ポストを開く' : '手紙を開く'}
+                      {popupInfo.is_post ? 'ポストを開く' : (popupInfo.is_postcard ? 'ハガキを読む' : '手紙を読む')}
                     </button>
                   );
                 }
@@ -391,24 +389,47 @@ function HomeContent() {
         </Link>
       </div>
 
+      {/* モーダル表示ロジック：★ 投稿タイプによってコンポーネントを切り分け */}
       {readingLetter && (
-        <LetterModal 
-          letter={readingLetter} 
-          currentUser={currentUser} 
-          onClose={() => {
-            setReadingLetter(null);
-            setPopupInfo(null);
-          }} 
-          onRead={(id) => markAsRead(id)} 
-          onDeleted={() => {
-            const deletedId = readingLetter.id;
-            setLetters(prev => prev.filter(l => l.id !== deletedId));
-            setAllLetters(prev => prev.filter(l => l.id !== deletedId));
-            setPopupInfo(null);
-            setReadingLetter(null);
-          }} 
-        />
+        readingLetter.is_postcard ? (
+          /* --- 絵葉書タイプの場合 --- */
+          <PostcardModal 
+            letter={readingLetter} 
+            currentUser={currentUser} 
+            onClose={() => {
+              setReadingLetter(null);
+              setPopupInfo(null);
+            }} 
+            onRead={(id) => markAsRead(id)} 
+            onDeleted={() => {
+              const deletedId = readingLetter.id;
+              setLetters(prev => prev.filter(l => l.id !== deletedId));
+              setAllLetters(prev => prev.filter(l => l.id !== deletedId));
+              setPopupInfo(null);
+              setReadingLetter(null);
+            }} 
+          />
+        ) : (
+          /* --- 通常の便箋タイプの場合 --- */
+          <LetterModal 
+            letter={readingLetter} 
+            currentUser={currentUser} 
+            onClose={() => {
+              setReadingLetter(null);
+              setPopupInfo(null);
+            }} 
+            onRead={(id) => markAsRead(id)} 
+            onDeleted={() => {
+              const deletedId = readingLetter.id;
+              setLetters(prev => prev.filter(l => l.id !== deletedId));
+              setAllLetters(prev => prev.filter(l => l.id !== deletedId));
+              setPopupInfo(null);
+              setReadingLetter(null);
+            }} 
+          />
+        )
       )}   
+
       {readingPost && (
         <PostModal 
           post={readingPost} 

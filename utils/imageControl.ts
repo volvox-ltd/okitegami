@@ -66,7 +66,7 @@ export const compressStamp = async (file: File): Promise<File> => {
   });
 };
 
-// --- ★新規追加：絵葉書専用のレトロ加工＆刻印＆WebP変換 ---
+// --- ★新規追加：絵葉書専用のレトロ加工＆WebP変換（刻印なし版） ---
 export const processPostcardImage = async (file: File, spotName: string): Promise<File> => {
   const MAX_WIDTH = 1200;
   const QUALITY = 0.8;
@@ -92,7 +92,7 @@ export const processPostcardImage = async (file: File, spotName: string): Promis
 
       // 2. レトロ加工（セピアオーバーレイ）
       ctx.globalCompositeOperation = 'multiply';
-      ctx.fillStyle = 'rgba(112, 66, 20, 0.2)'; // ほんのり茶色
+      ctx.fillStyle = 'rgba(112, 66, 20, 0.15)'; // 少し薄めに調整
       ctx.fillRect(0, 0, width, height);
 
       // 3. ざらっとしたノイズ加工
@@ -106,21 +106,7 @@ export const processPostcardImage = async (file: File, spotName: string): Promis
       }
       ctx.globalCompositeOperation = 'source-over';
 
-      // 4. 刻印（日付・場所名）
-      const now = new Date();
-      const timestamp = `${now.getFullYear()}.${now.getMonth() + 1}.${now.getDate()} ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
-      const stampText = `${timestamp}  |  ${spotName || 'Somewhere'}`;
-      
-      const fontSize = Math.max(14, width / 45);
-      ctx.font = `bold ${fontSize}px serif`;
-      ctx.textAlign = 'right';
-      
-      // 文字の影（エンボス効果風）
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-      ctx.fillText(stampText, width - 20 + 1, height - 20 + 1);
-      // 文字本体
-      ctx.fillStyle = 'rgba(255, 255, 250, 0.8)';
-      ctx.fillText(stampText, width - 20, height - 20);
+      // ★ 以前ここにあった「4. 刻印」のロジックを削除しました
 
       // 5. WebPとして書き出し
       canvas.toBlob((blob) => {

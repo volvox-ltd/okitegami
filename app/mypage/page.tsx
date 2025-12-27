@@ -6,10 +6,12 @@ import { useRouter } from 'next/navigation';
 import Header from '@/components/Header';
 import Link from 'next/link';
 import LetterModal from '@/components/LetterModal';
+import PostcardModal from '@/components/PostcardModal'; // ★ 追加
 import PostModal from '@/components/PostModal'; 
 import IconUserLetter from '@/components/IconUserLetter';
 import IconAdminLetter from '@/components/IconAdminLetter';
 import IconPost from '@/components/IconPost'; 
+import IconPostcard from '@/components/IconPostcard'; // ★ 追加
 import FooterLinks from '@/components/FooterLinks';
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
 import SkeletonLetter from '@/components/SkeletonLetter';
@@ -29,7 +31,8 @@ type Letter = {
   attached_stamp_id?: number | null;
   read_count?: number;
   is_post?: boolean;
-  parent_id?: string | null; 
+  parent_id?: string | null;
+  is_postcard?: boolean; // ★ 追加
 };
 
 // ★ 型定義：postの中にLetterの全項目が含まれる
@@ -352,10 +355,13 @@ export default function MyPage() {
                       className={`bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4 cursor-pointer transition-transform hover:scale-[1.01] active:scale-[0.99] ${expired && !isSubmittedToPost ? 'opacity-70 saturate-[0.3] bg-gray-50' : ''}`}
                     >
                       <div className="shrink-0 relative">
+                        {/* ★ アイコン分岐：ハガキ対応 */}
                         {isSubmittedToPost ? (
                           <div className="text-red-600"><IconPost className="w-10 h-10" /></div>
                         ) : letter.is_official ? (
                           <IconAdminLetter className="w-10 h-10" />
+                        ) : letter.is_postcard ? (
+                          <IconPostcard className="w-10 h-10" />
                         ) : (
                           <IconUserLetter className="w-10 h-10" />
                         )}
@@ -393,20 +399,37 @@ export default function MyPage() {
       )}
       <FooterLinks />
 
+      {/* ★ モーダル表示の分岐：ハガキ対応 */}
       {selectedLetter && (
-        <LetterModal 
-          letter={selectedLetter} 
-          currentUser={user} 
-          onClose={() => setSelectedLetter(null)} 
-          onRead={() => {}} 
-          onDeleted={() => { 
-            setSelectedLetter(null); 
-            if (user) { 
-              fetchMyPosts(user.id); 
-              fetchFavorites(user.id); 
-            } 
-          }} 
-        />
+        selectedLetter.is_postcard ? (
+          <PostcardModal
+            letter={selectedLetter}
+            currentUser={user}
+            onClose={() => setSelectedLetter(null)}
+            onRead={() => {}}
+            onDeleted={() => {
+              setSelectedLetter(null);
+              if (user) {
+                fetchMyPosts(user.id);
+                fetchFavorites(user.id);
+              }
+            }}
+          />
+        ) : (
+          <LetterModal 
+            letter={selectedLetter} 
+            currentUser={user} 
+            onClose={() => setSelectedLetter(null)} 
+            onRead={() => {}} 
+            onDeleted={() => { 
+              setSelectedLetter(null); 
+              if (user) { 
+                fetchMyPosts(user.id); 
+                fetchFavorites(user.id); 
+              } 
+            }} 
+          />
+        )
       )}
       
       {selectedPost && (

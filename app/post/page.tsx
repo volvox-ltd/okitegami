@@ -7,7 +7,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import IconUserLetter from '@/components/IconUserLetter';
-import IconPostcard from '@/components/IconPostcard'; // ★ 絵葉書用アイコン
+import IconPostcard from '@/components/IconPostcard';
 import { NG_WORDS } from '@/utils/ngWords';
 import { getDistance } from 'geolib';
 import AddToHomeScreen from '@/components/AddToHomeScreen';
@@ -18,7 +18,7 @@ import { LETTER_EXPIRATION_HOURS, ENABLE_PHOTO_UPLOAD } from '@/utils/constants'
 
 const PAGE_DELIMITER = '<<<PAGE>>>';
 const MAX_CHARS_LETTER = 140; // 通常の便箋の制限
-const MAX_CHARS_POSTCARD = 100; // 絵葉書の制限
+const MAX_CHARS_POSTCARD = 70; // 絵葉書の制限
 const MAX_PAGES = 10;
 const MIN_DISTANCE = 30; 
 
@@ -239,13 +239,13 @@ function PostForm() {
               onClick={() => { setPostType('letter'); setPages(['']); }} 
               className={`flex-1 py-2 text-sm font-bold border-b-2 transition-colors ${postType === 'letter' ? 'border-green-600 text-green-700' : 'border-transparent text-gray-400'}`}
             >
-              ✉️ 普通の便箋
+              便箋
             </button>
             <button 
               onClick={() => { if(IS_POSTCARD_RELEASED) { setPostType('postcard'); setPages(['']); } }} 
               className={`flex-1 py-2 text-sm font-bold border-b-2 transition-colors flex items-center justify-center gap-2 ${postType === 'postcard' ? 'border-orange-600 text-orange-700' : 'border-transparent text-gray-300'} ${!IS_POSTCARD_RELEASED ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              🖼️ 絵葉書 
+              葉書 
               {!IS_POSTCARD_RELEASED && <span className="text-[8px] bg-gray-100 text-gray-400 px-1 rounded font-normal">近日公開</span>}
             </button>
           </div>
@@ -253,7 +253,7 @@ function PostForm() {
           <div className="flex-1 overflow-y-auto px-6 pb-8">
             <div className="space-y-5 pt-4">
               <div><label className="block text-xs font-bold text-gray-500 mb-1">手紙の名前</label><input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-green-300 outline-none" placeholder="手紙の名前" /></div>
-              <div><label className="block text-xs font-bold text-gray-500 mb-1">場所の名前</label><input type="text" value={spotName} onChange={(e) => setSpotName(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-green-300 outline-none" placeholder="例：大きな桜の木の下" /></div>
+              <div><label className="block text-xs font-bold text-gray-500 mb-1">場所</label><input type="text" value={spotName} onChange={(e) => setSpotName(e.target.value)} className="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-green-300 outline-none" placeholder="例：大きな桜の木の下" /></div>
               
               <div>
                 <label className="block text-xs font-bold text-gray-500 mb-2">手紙の内容</label>
@@ -267,7 +267,7 @@ function PostForm() {
                         value={pageContent} 
                         onChange={(e) => handlePageChange(index, e.target.value)} 
                         className="w-full h-36 bg-gray-50 border border-gray-200 rounded-lg p-3 pt-4 text-sm focus:ring-2 focus:ring-green-300 resize-none font-serif" 
-                        placeholder={postType === 'postcard' ? "思い出を綴ってください（100文字以内）" : "ここに手紙を書いてください..."}
+                        placeholder={postType === 'postcard' ? "思い出を綴ってください（70文字以内）" : "ここに手紙を書いてください..."}
                       ></textarea>
                       <div className={`text-[10px] text-right mt-1 font-bold ${pageContent.length >= (postType === 'postcard' ? MAX_CHARS_POSTCARD : MAX_CHARS_LETTER) ? 'text-red-500' : 'text-gray-400'}`}>
                         {pageContent.length} / {postType === 'postcard' ? MAX_CHARS_POSTCARD : MAX_CHARS_LETTER} 文字
@@ -292,11 +292,11 @@ function PostForm() {
                 {isPrivate && <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white border border-gray-300 rounded p-2 text-sm outline-none" placeholder="合言葉を入力" />}
               </div>
 
-              {/* ★ 写真アップロード：絵葉書は必須、通常はスイッチ連動で表示 */}
+              {/* ★ 写真アップロード：葉書のみ、通常はスイッチ連動で表示 */}
               {(ENABLE_PHOTO_UPLOAD || postType === 'postcard') && (
                 <div>
                   <label className="block text-xs font-bold text-gray-500 mb-1">
-                    写真 {postType === 'postcard' ? <span className="text-red-500">（必須・その場で撮影）</span> : '（任意）'}
+                    写真 {postType === 'postcard' ? <span className="text-red-500">（その場で撮影）</span> : '（任意）'}
                   </label>
                   <label className="block w-full border-2 border-dashed border-gray-300 rounded-lg p-6 text-center cursor-pointer hover:bg-gray-50 transition-colors">
                     <input 
@@ -311,7 +311,7 @@ function PostForm() {
                     ) : (
                       <div className="text-gray-400 text-sm flex flex-col items-center gap-1">
                         <span>＋ {postType === 'postcard' ? 'カメラを起動して撮影する' : '写真を追加する'}</span>
-                        <span className="text-[10px] opacity-70">※絵葉書は「今、ここ」の風景のみを封じ込めます</span>
+                        <span className="text-[10px] opacity-70">※葉書は「今、ここ」の風景のみが使えます</span>
                       </div>
                     )}
                   </label>
@@ -319,7 +319,7 @@ function PostForm() {
               )}
 
               <button onClick={handleSubmit} disabled={isLoading} className={`w-full py-4 rounded-full text-white font-bold text-sm shadow-md active:scale-95 transition-all mt-4 ${isLoading ? 'bg-gray-400' : (postType === 'postcard' ? 'bg-orange-600 hover:bg-orange-700' : 'bg-green-600 hover:bg-green-700')}`}>
-                {isLoading ? '手紙を置いています...' : (postType === 'postcard' ? 'この場所に絵葉書を置く' : 'この場所に手紙を置く')}
+                {isLoading ? '手紙を置いています...' : (postType === 'postcard' ? 'この場所に葉書を置く' : 'この場所に手紙を置く')}
               </button>
             </div>
           </div>
@@ -331,7 +331,7 @@ function PostForm() {
           <div className="w-full max-w-sm">
             <div className="bg-[#fdfcf5] rounded-xl p-6 shadow-2xl relative border-4 border-white mb-6 text-center">
               <h3 className="font-serif text-lg font-bold text-bunko-ink mb-2">
-                {postType === 'postcard' ? '絵葉書を置きました' : 'お手紙を置きました'}
+                {postType === 'postcard' ? '葉書を置きました' : 'お手紙を置きました'}
               </h3>
               <p className="text-sm text-gray-700">場所：{spotName || '名もなき場所'}</p>
               {isPrivate && <p className="mt-2 text-orange-600 font-bold bg-orange-50 inline-block px-3 py-1 rounded-full text-xs">合言葉：{password}</p>}
