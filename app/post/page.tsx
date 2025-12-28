@@ -1,5 +1,5 @@
 'use client';
-// ★ 修正：processPostcardImage をインポートに追加
+// ★ 修正：processPostcardImage と compressImage を使用
 import { compressImage, processPostcardImage } from '@/utils/imageControl';
 import { useState, useEffect, Suspense } from 'react';
 import Map, { Marker, NavigationControl, GeolocateControl } from 'react-map-gl';
@@ -22,7 +22,7 @@ const MAX_CHARS_POSTCARD = 70; // 絵葉書の制限
 const MAX_PAGES = 10;
 const MIN_DISTANCE = 30; 
 
-// ★ 絵葉書機能の公開フラグ（テスト時はここを true にしてください）
+// ★ 絵葉書機能の公開フラグ
 const IS_POSTCARD_RELEASED = true; 
 
 function PostForm() {
@@ -73,7 +73,6 @@ function PostForm() {
   }, [searchParams]);
 
   const handlePageChange = (index: number, value: string) => {
-    // 投稿タイプによって文字数制限を切り替え
     const charLimit = postType === 'postcard' ? MAX_CHARS_POSTCARD : MAX_CHARS_LETTER;
     if (value.length > charLimit) return;
     
@@ -83,7 +82,6 @@ function PostForm() {
   };
 
   const addPage = () => { 
-    // 便箋モードの時のみページ追加可能
     if (postType === 'letter' && pages.length < MAX_PAGES) {
       setPages([...pages, '']); 
     }
@@ -121,7 +119,7 @@ function PostForm() {
     }
 
     try {
-      // 重複チェック（有効なユーザー手紙のみに限定）
+      // 重複チェック
       const now = new Date();
       const expirationLimit = new Date(now.getTime() - LETTER_EXPIRATION_HOURS * 60 * 60 * 1000).toISOString();
 
@@ -147,23 +145,35 @@ function PostForm() {
       // --- 画像アップロード処理 ---
       let publicUrl = null;
       if ((postType === 'postcard' || ENABLE_PHOTO_UPLOAD) && imageFile) {
-        let fileToUpload: File;
-        let mimeType: string;
-
-        if (postType === 'postcard') {
-          // ★ 絵葉書の場合：専用のレトロ加工・刻印・WebP変換を行う
-          fileToUpload = await processPostcardImage(imageFile, spotName);
-          mimeType = 'image/webp';
-        } else {
-          // 通常の手紙の場合：これまでの圧縮処理（JPEG）
-          fileToUpload = await compressImage(imageFile);
-          mimeType = 'image/jpeg';
+        
+        // ★ 修正：ファイルサイズの制限チェック (20MB)
+        if (imageFile.size > 20 * 1024 * 1024) {
+          alert('画像サイズが大きすぎます。20MB以下の画像を選択してください。');
+          setIsLoading(false);
+          return;
         }
 
-        const extension = postType === 'postcard' ? 'webp' : 'jpg';
-        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${extension}`;
+        let fileToUpload: File;
+        const mimeType = 'image/webp'; // 最新のimageControlに合わせWebPに統一
+
+        if (postType === 'postcard') {
+          // 絵葉書専用のレトロ加工・WebP変換
+          fileToUpload = await processPostcardImage(imageFile, spotName);
+        } else {
+          // 通常の手紙の圧縮・WebP変換
+          fileToUpload = await compressImage(imageFile);
+        }
+
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.webp`;
         
-        const { error: uploadError } = await supabase.storage.from('letter-images').upload(fileName, fileToUpload, { contentType: mimeType });
+        const { error: uploadError } = await supabase.storage
+          .from('letter-images')
+          .upload(fileName, fileToUpload, { 
+            contentType: mimeType,
+            cacheControl: '3600',
+            upsert: false 
+          });
+
         if (uploadError) throw uploadError;
         
         const { data: urlData } = supabase.storage.from('letter-images').getPublicUrl(fileName);
@@ -181,7 +191,7 @@ function PostForm() {
         user_id: latestUser.id,
         is_official: false,
         password: isPrivate ? password : null,
-        is_postcard: postType === 'postcard' // ★ 絵葉書フラグを保存
+        is_postcard: postType === 'postcard' 
       });
 
       if (insertError) throw insertError;
@@ -218,7 +228,6 @@ function PostForm() {
           <GeolocateControl position="top-right" />
           <Marker latitude={pinLocation.lat} longitude={pinLocation.lng} anchor="bottom">
             <div className="animate-bounce drop-shadow-lg">
-               {/* 投稿タイプによってマーカーアイコンを切り替え */}
                {postType === 'postcard' ? <IconPostcard className="w-12 h-12" /> : <IconUserLetter className="w-10 h-10" />}
             </div>
           </Marker>
@@ -233,7 +242,6 @@ function PostForm() {
             <div className="w-12 h-1.5 bg-gray-300 rounded-full"></div>
           </div>
 
-          {/* ★ 便箋と絵葉書のタブ切り替えUI */}
           <div className="px-6 flex gap-4 border-b border-gray-100 pb-2 shrink-0">
             <button 
               onClick={() => { setPostType('letter'); setPages(['']); }} 
@@ -292,7 +300,6 @@ function PostForm() {
                 {isPrivate && <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white border border-gray-300 rounded p-2 text-sm outline-none" placeholder="合言葉を入力" />}
               </div>
 
-              {/* ★ 写真アップロード：葉書のみ、通常はスイッチ連動で表示 */}
               {(ENABLE_PHOTO_UPLOAD || postType === 'postcard') && (
                 <div>
                   <label className="block text-xs font-bold text-gray-500 mb-1">
@@ -302,7 +309,7 @@ function PostForm() {
                     <input 
                       type="file" 
                       accept="image/*" 
-                      capture={postType === 'postcard' ? "environment" : undefined} // ★ 絵葉書の時はカメラ優先起動
+                      capture={postType === 'postcard' ? "environment" : undefined} 
                       className="hidden" 
                       onChange={(e) => e.target.files?.[0] && setImageFile(e.target.files[0])} 
                     />

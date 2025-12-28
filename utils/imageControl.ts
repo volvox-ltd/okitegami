@@ -1,58 +1,85 @@
-// --- 既存の画像を圧縮する便利関数 (維持) ---
+/**
+ * 画像のリサイズ・圧縮・WebP変換を行うユーティリティ
+ * 全てのロジックを保持した完成版です。
+ */
+
+// --- 1. 汎用的な画像を圧縮する関数 (WebP変換版) ---
 export const compressImage = async (file: File): Promise<File> => {
-  const MAX_WIDTH = 1200;
-  const QUALITY = 0.7;
+  const MAX_WIDTH = 1200; // スマホ閲覧に最適なサイズ
+  const QUALITY = 0.7;    // 画質と軽さのバランスが良い数値
 
   return new Promise((resolve, reject) => {
     const image = new Image();
-    image.src = URL.createObjectURL(file);
+    const objectUrl = URL.createObjectURL(file);
+    image.src = objectUrl;
+
     image.onload = () => {
+      URL.revokeObjectURL(objectUrl); // メモリ解放
       const canvas = document.createElement('canvas');
       let width = image.width;
       let height = image.height;
+
+      // アスペクト比を維持してリサイズ
       if (width > MAX_WIDTH) {
         height *= MAX_WIDTH / width;
         width = MAX_WIDTH;
       }
+
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (!ctx) return reject(new Error('Canvas context error'));
+
       ctx.drawImage(image, 0, 0, width, height);
+
+      // WebP形式で書き出し
       canvas.toBlob((blob) => {
         if (!blob) return reject(new Error('Image compression failed'));
-        const compressedFile = new File([blob], file.name, {
-          type: 'image/jpeg',
+        
+        // 拡張子を.webpに変換した新しいファイルオブジェクトを作成
+        const newFileName = file.name.replace(/\.[^/.]+$/, "") + ".webp";
+        const compressedFile = new File([blob], newFileName, {
+          type: 'image/webp',
           lastModified: Date.now(),
         });
         resolve(compressedFile);
-      }, 'image/jpeg', QUALITY);
+      }, 'image/webp', QUALITY);
     };
-    image.onerror = (error) => reject(error);
+    image.onerror = (error) => {
+      URL.revokeObjectURL(objectUrl);
+      reject(error);
+    };
   });
 };
 
-// --- 既存の切手（スタンプ）専用圧縮 (維持) ---
+// --- 2. 切手（スタンプ）専用圧縮 (維持) ---
 export const compressStamp = async (file: File): Promise<File> => {
-  const MAX_WIDTH = 400;
+  const MAX_WIDTH = 400; // 切手は小さく保持
   const QUALITY = 0.6;
 
   return new Promise((resolve, reject) => {
     const image = new Image();
-    image.src = URL.createObjectURL(file);
+    const objectUrl = URL.createObjectURL(file);
+    image.src = objectUrl;
+
     image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
       const canvas = document.createElement('canvas');
       let width = image.width;
       let height = image.height;
+
       if (width > MAX_WIDTH) {
         height *= MAX_WIDTH / width;
         width = MAX_WIDTH;
       }
+
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       if (!ctx) return reject(new Error('Canvas context error'));
+
       ctx.drawImage(image, 0, 0, width, height);
+
       canvas.toBlob((blob) => {
         if (!blob) return reject(new Error('Compression failed'));
         const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".webp", {
@@ -62,26 +89,34 @@ export const compressStamp = async (file: File): Promise<File> => {
         resolve(compressedFile);
       }, 'image/webp', QUALITY);
     };
-    image.onerror = (error) => reject(error);
+    image.onerror = (error) => {
+      URL.revokeObjectURL(objectUrl);
+      reject(error);
+    };
   });
 };
 
-// --- ★新規追加：絵葉書専用のレトロ加工＆WebP変換（刻印なし版） ---
+// --- 3. 絵葉書専用のレトロ加工＆WebP変換 (刻印なし版・維持) ---
 export const processPostcardImage = async (file: File, spotName: string): Promise<File> => {
   const MAX_WIDTH = 1200;
-  const QUALITY = 0.8;
+  const QUALITY = 0.8; // ハガキは少し高画質に維持
 
   return new Promise((resolve, reject) => {
     const image = new Image();
-    image.src = URL.createObjectURL(file);
+    const objectUrl = URL.createObjectURL(file);
+    image.src = objectUrl;
+
     image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
       const canvas = document.createElement('canvas');
       let width = image.width;
       let height = image.height;
+
       if (width > MAX_WIDTH) {
         height *= MAX_WIDTH / width;
         width = MAX_WIDTH;
       }
+
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext('2d');
@@ -92,7 +127,7 @@ export const processPostcardImage = async (file: File, spotName: string): Promis
 
       // 2. レトロ加工（セピアオーバーレイ）
       ctx.globalCompositeOperation = 'multiply';
-      ctx.fillStyle = 'rgba(112, 66, 20, 0.15)'; // 少し薄めに調整
+      ctx.fillStyle = 'rgba(112, 66, 20, 0.15)'; 
       ctx.fillRect(0, 0, width, height);
 
       // 3. ざらっとしたノイズ加工
@@ -106,8 +141,6 @@ export const processPostcardImage = async (file: File, spotName: string): Promis
       }
       ctx.globalCompositeOperation = 'source-over';
 
-      // ★ 以前ここにあった「4. 刻印」のロジックを削除しました
-
       // 5. WebPとして書き出し
       canvas.toBlob((blob) => {
         if (!blob) return reject(new Error('Postcard processing failed'));
@@ -118,6 +151,9 @@ export const processPostcardImage = async (file: File, spotName: string): Promis
         resolve(processedFile);
       }, 'image/webp', QUALITY);
     };
-    image.onerror = (error) => reject(error);
+    image.onerror = (error) => {
+      URL.revokeObjectURL(objectUrl);
+      reject(error);
+    };
   });
 };

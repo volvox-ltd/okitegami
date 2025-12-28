@@ -163,9 +163,27 @@ export default function AdminCreatePage() {
 
       let letterImageUrl = null;
       if ((postType === 'postcard' || ENABLE_PHOTO_UPLOAD) && imageFile) {
+        
+        // ★ 追加：アップロード前の最終チェック（例えば20MB以上は未加工でも重すぎるので警告）
+        if (imageFile.size > 20 * 1024 * 1024) {
+          alert('画像サイズが大きすぎます。20MB以下の画像を選択してください。');
+          setIsSubmitting(false);
+          return;
+        }
+
+        // ★ 圧縮・リサイズ実行
+        // ここで1200pxにリサイズされ、WebP化されます
         const compressedFile = await compressImage(imageFile);
-        const fileName = `letter_${Date.now()}.jpg`;
-        const { error: upErr } = await supabase.storage.from('letter-images').upload(fileName, compressedFile, { contentType: 'image/jpeg' });
+        
+        const fileName = `letter_${Date.now()}.webp`; // 拡張子をwebpに固定
+        const { error: upErr } = await supabase.storage
+          .from('letter-images')
+          .upload(fileName, compressedFile, { 
+            contentType: 'image/webp',
+            cacheControl: '3600',
+            upsert: false 
+          });
+
         if (upErr) throw upErr;
         letterImageUrl = supabase.storage.from('letter-images').getPublicUrl(fileName).data.publicUrl;
       }
