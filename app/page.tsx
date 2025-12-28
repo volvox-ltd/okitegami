@@ -13,10 +13,11 @@ import Link from 'next/link';
 import Header from '@/components/Header';
 import IconUserLetter from '@/components/IconUserLetter';
 import IconAdminLetter from '@/components/IconAdminLetter';
+import IconAdminPostcard from '@/components/IconAdminPostcard'; // ★ 修正：運営ハガキアイコンをインポート
 import IconPost from '@/components/IconPost';
-import IconPostcard from '@/components/IconPostcard'; // ★ 追加
+import IconPostcard from '@/components/IconPostcard'; 
 import LetterModal from '@/components/LetterModal';
-import PostcardModal from '@/components/PostcardModal'; // ★ 追加
+import PostcardModal from '@/components/PostcardModal'; 
 import PostModal from '@/components/PostModal';
 import AboutModal from '@/components/AboutModal';
 import NicknameModal from '@/components/NicknameModal';
@@ -40,7 +41,7 @@ type Letter = {
   user_id?: string; created_at: string; nickname?: string;
   password?: string | null; attached_stamp_id?: number | null;
   is_post?: boolean; parent_id?: string | null;
-  is_postcard?: boolean; // ★ 追加
+  is_postcard?: boolean;
 };
 
 const UNLOCK_DISTANCE = 30;      
@@ -65,6 +66,10 @@ function HomeContent() {
   const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
   const [hasCentered, setHasCentered] = useState(false);
   const [showPwaPrompt, setShowPwaPrompt] = useState(false);
+
+  // ★ カウント通知用のステート追加
+  const [showCounts, setShowCounts] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const [viewState, setViewState] = useState({
     latitude: 35.6288,
@@ -125,7 +130,7 @@ function HomeContent() {
     try {
       const { data: lettersData, error } = await supabase
         .from('letters')
-        .select('id, title, spot_name, lat, lng, is_official, user_id, created_at, attached_stamp_id, is_post, parent_id, password, is_postcard'); // ★ is_postcardを取得対象に追加
+        .select('id, title, spot_name, lat, lng, is_official, user_id, created_at, attached_stamp_id, is_post, parent_id, password, is_postcard');
       
       if (error || !lettersData) return;
       setAllLetters(lettersData as Letter[]);
@@ -179,6 +184,36 @@ function HomeContent() {
     return getDistance({ latitude: userLocation.lat, longitude: userLocation.lng }, { latitude: targetLat, longitude: targetLng });
   };
 
+  const handleGeolocateClick = () => {
+    if (!userLocation) return;
+
+    setViewState(prev => ({
+      ...prev,
+      latitude: userLocation.lat,
+      longitude: userLocation.lng,
+      zoom: 15,
+      transitionDuration: 1000
+    }));
+
+    const count = letters.reduce((acc, letter) => {
+      if (letter.is_post || (currentUser && letter.user_id === currentUser.id)) return acc;
+
+      const dist = getDistance(
+        { latitude: userLocation.lat, longitude: userLocation.lng },
+        { latitude: letter.lat, longitude: letter.lng }
+      );
+      
+      const isUnread = !readLetterIds.includes(letter.id);
+      if (dist <= 3000 && isUnread) acc++;
+      return acc;
+    }, 0);
+
+    setUnreadCount(count);
+    setShowCounts(true);
+
+    setTimeout(() => setShowCounts(false), 5000);
+  };
+
   const nearestNotificationLetter = useMemo<Letter | null>(() => {
     if (!userLocation) return null;
     let nearest: Letter | null = null;
@@ -229,7 +264,6 @@ function HomeContent() {
       const isRead = readLetterIds.includes(letter.id);
       const postHasLetters = allLetters.some(l => l.parent_id === letter.id);
 
-      // 跳ねるアニメーションの条件
       const shouldBounce = isReachable && !letter.is_post && !isRead;
 
       return (
@@ -241,7 +275,7 @@ function HomeContent() {
                  {letter.is_post 
                    ? (letter.spot_name ? `${letter.spot_name}のポスト` : 'ポスト') 
                    : letter.is_postcard 
-                     ? (letter.spot_name ? `${letter.spot_name}の絵葉書` : '名も無き絵葉書') // ★ 追加：ツールチップ
+                     ? (letter.is_official ? (letter.spot_name ? `${letter.spot_name}の絵葉書` : '運営の絵葉書') : (letter.spot_name ? `${letter.spot_name}の絵葉書` : '誰かの絵葉書'))
                      : (letter.is_official 
                          ? (letter.spot_name ? `${letter.spot_name}の手紙` : '名も無き手紙') 
                          : (letter.nickname ? `${letter.nickname}さんの手紙` : '誰かの手紙'))
@@ -256,9 +290,9 @@ function HomeContent() {
                    <IconPost className="w-14 h-14" hasLetters={postHasLetters} />
                  </div>
                ) : letter.is_postcard ? (
-                 /* ★ 追加：絵葉書アイコンの表示 */
-                 <div className={isReachable ? "text-orange-500" : "text-bunko-ink"}>
-                   <IconPostcard className="w-14 h-14" />
+                 /* ★ 修正：運営ハガキとユーザーハガキでコンポーネント自体を切り分け */
+                 <div className={isReachable ? (letter.is_official ? "text-yellow-500" : "text-orange-500") : "text-bunko-ink"}>
+                   {letter.is_official ? <IconAdminPostcard className="w-12 h-12" /> : <IconPostcard className="w-12 h-12" />}
                  </div>
                ) : (
                  <div className={isReachable ? (letter.is_official ? "text-yellow-500" : "text-orange-500") : "text-bunko-ink"}>
@@ -294,12 +328,21 @@ function HomeContent() {
 
       <Header currentUser={currentUser} nickname={myNickname} onAboutClick={() => setShowAbout(true)} isHidden={false} />
 
+      {showCounts && (
+        <div className="fixed top-[calc(env(safe-area-inset-top)+64px)] right-4 z-50 animate-fadeInDown">
+          <div className="bg-stone-500/85 backdrop-blur-md text-white px-3 py-1 rounded-lg shadow-xl border border-white/10 text-right leading-relaxed">
+            <p className="text-[10px] font-serif tracking-widest opacity-90">半径3kmに未読の手紙が</p>
+            <p className="text-[10px] font-serif tracking-wider whitespace-nowrap"><span className="text-sm">{unreadCount}通</span>あります</p>
+          </div>
+        </div>
+      )}
+
       <div className="absolute left-4 z-20 transition-all top-[calc(env(safe-area-inset-top)+64px)] md:top-[calc(env(safe-area-inset-top)+70px)]">
         <div className="flex items-center bg-white/90 backdrop-blur px-3 py-2 rounded-full shadow-md border border-gray-100">
           <span className="text-[10px] font-bold text-gray-600 mr-2 font-sans">みんなの手紙</span>
           <label className="relative inline-flex items-center cursor-pointer">
             <input type="checkbox" className="sr-only peer" checked={showUserPosts} onChange={() => setShowUserPosts(!showUserPosts)} />
-            <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
+            <div className="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:bg-green-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full"></div>
           </label>
         </div>
       </div>
@@ -324,8 +367,25 @@ function HomeContent() {
         mapboxAccessToken={mapToken}
         onClick={() => setPopupInfo(null)}
       >
-        <NavigationControl position="bottom-right" style={{ marginBottom: '150px', marginRight: '16px' }} />
-        <GeolocateControl position="bottom-right" trackUserLocation={true} style={{ marginBottom: '150px', marginRight: '16px' }} />
+        <div className="absolute bottom-[350px] right-[16px] z-10">
+          <div className="mapboxgl-ctrl mapboxgl-ctrl-group" style={{ margin: 0, background: '#fff', borderRadius: '4px', boxShadow: '0 0 0 2px rgba(0,0,0,0.1)' }}>
+            <button 
+              className="flex items-center justify-center transition-colors hover:bg-gray-50" 
+              style={{ width: '29px', height: '29px', border: 0, padding: 0, cursor: 'pointer', background: 'transparent', outline: 'none' }}
+              type="button" 
+              onClick={handleGeolocateClick}
+              title="Find my location"
+            >
+              <svg className="w-7 h-5" viewBox="0 0 427.17 709.4" xmlns="http://www.w3.org/2000/svg">
+                <path fill="#2196f3" d="M427.17,213.59c0,175.06-213.59,397.25-213.59,397.25,0,0-213.59-222.19-213.59-397.25C0,95.62,95.62,0,213.59,0s213.59,95.62,213.59,213.59Z"/>
+                <circle fill="#fff" cx="213.59" cy="213.59" r="102.43"/>
+                <path fill="#2196f3" d="M358.72,635.71c0,40.7-64.98,73.69-145.13,73.69s-145.13-32.99-145.13-73.69c0-29.53,34.21-55,83.61-66.75,28.47,34.97,49.36,56.8,50.74,58.23l10.79,11.22,10.79-11.22c1.38-1.44,22.27-23.27,50.74-58.23,49.4,11.75,83.61,37.23,83.61,66.75Z"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <NavigationControl position="bottom-right" style={{ marginBottom: '200px', marginRight: '16px' }} />
 
         {userLocation && (
           <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
@@ -389,10 +449,8 @@ function HomeContent() {
         </Link>
       </div>
 
-      {/* モーダル表示ロジック：★ 投稿タイプによってコンポーネントを切り分け */}
       {readingLetter && (
         readingLetter.is_postcard ? (
-          /* --- 絵葉書タイプの場合 --- */
           <PostcardModal 
             letter={readingLetter} 
             currentUser={currentUser} 
@@ -410,7 +468,6 @@ function HomeContent() {
             }} 
           />
         ) : (
-          /* --- 通常の便箋タイプの場合 --- */
           <LetterModal 
             letter={readingLetter} 
             currentUser={currentUser} 
@@ -446,8 +503,15 @@ function HomeContent() {
       <AddToHomeScreen isOpen={showPwaPrompt} onClose={() => setShowPwaPrompt(false)} message="ホーム画面に追加しておきませんか？" />
 
       <style jsx global>{`
+        @keyframes fadeInDown { 
+          from { opacity: 0; transform: translateY(-20px); } 
+          to { opacity: 1; transform: translateY(0); } 
+        }
+        .animate-fadeInDown { animation: fadeInDown 0.4s ease-out forwards; }
         @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         .animate-slideInRight { animation: slideInRight 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        /* Mapbox標準の現在地ボタンを隠す */
+        .mapboxgl-ctrl-geolocate { display: none !important; }
       `}</style>
     </main>
   );

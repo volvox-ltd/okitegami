@@ -4,15 +4,17 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Map, { Marker, NavigationControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-// ★ 修正：createClient ではなく createBrowserClient を使用
 import { createBrowserClient } from '@supabase/ssr';
 import Link from 'next/link';
 
+// アイコンのインポート
 import IconAdminLetter from '@/components/IconAdminLetter';
+import IconAdminPostcard from '@/components/IconAdminPostcard'; // ★ 追加
 import IconUserLetter from '@/components/IconUserLetter';
+import IconPostcard from '@/components/IconPostcard'; // ★ 追加
+import IconPost from '@/components/IconPost'; // ★ 追加
 import { ENABLE_PHOTO_UPLOAD } from '@/utils/constants';
 
-// ★ 修正：App Routerに最適化されたクライアント
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -32,6 +34,9 @@ type Letter = {
   password?: string | null;
   attached_stamp_id?: number | null;
   is_post?: boolean;
+  is_postcard?: boolean; // ★ 追加
+  user_id?: string;
+  parent_id?: string | null; // ★ 重なり防止判定用に追加
 };
 
 export default function AdminCreatePage() {
@@ -50,9 +55,13 @@ export default function AdminCreatePage() {
   const [stampFile, setStampFile] = useState<File | null>(null);
 
   const [isPost, setIsPost] = useState(false);
+  // ★ 運営用：通常投稿時の「便箋」か「ハガキ」かの選択ステート
+  const [postType, setPostType] = useState<'letter' | 'postcard'>('letter');
 
   const [lat, setLat] = useState(35.6288);
   const [lng, setLng] = useState(139.6842);
+  // ★ 管理者の現在地保持用
+  const [userLoc, setUserLoc] = useState<{lat: number, lng: number} | null>(null);
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [letters, setLetters] = useState<Letter[]>([]);
@@ -65,7 +74,26 @@ export default function AdminCreatePage() {
 
   const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
+  // ★ 修正：初期化時に現在地を取得し、マップの中心を移動させる
   useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { latitude, longitude } = pos.coords;
+          setLat(latitude);
+          setLng(longitude);
+          setUserLoc({ lat: latitude, lng: longitude });
+          setViewState(prev => ({
+            ...prev,
+            latitude,
+            longitude,
+            zoom: 15
+          }));
+        },
+        (err) => console.error("Geolocation error:", err),
+        { enableHighAccuracy: true }
+      );
+    }
     fetchLetters();
   }, []);
 
@@ -126,7 +154,6 @@ export default function AdminCreatePage() {
     setIsSubmitting(true);
 
     try {
-      // ★ 追加：ブラウザに保存されている最新のログイン情報を取得
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         alert('セッションが切れました。ログインし直してください。');
@@ -135,8 +162,7 @@ export default function AdminCreatePage() {
       }
 
       let letterImageUrl = null;
-      // ★ 修正：スイッチがONの時だけ画像アップロード
-      if (ENABLE_PHOTO_UPLOAD && imageFile) {
+      if ((postType === 'postcard' || ENABLE_PHOTO_UPLOAD) && imageFile) {
         const compressedFile = await compressImage(imageFile);
         const fileName = `letter_${Date.now()}.jpg`;
         const { error: upErr } = await supabase.storage.from('letter-images').upload(fileName, compressedFile, { contentType: 'image/jpeg' });
@@ -147,17 +173,11 @@ export default function AdminCreatePage() {
       let newStampId = null;
       if (hasStamp && stampFile) {
         let fileToUpload = stampFile;
-        let fileExt = 'jpg';
-        let mimeType = 'image/jpeg';
+        let fileExt = stampFile.type === 'image/png' ? 'png' : 'jpg';
+        let mimeType = stampFile.type === 'image/png' ? 'image/png' : 'image/jpeg';
 
-        if (stampFile.type === 'image/png') {
-          fileToUpload = stampFile;
-          fileExt = 'png';
-          mimeType = 'image/png';
-        } else {
+        if (fileExt === 'jpg') {
           fileToUpload = await compressImage(stampFile);
-          fileExt = 'jpg';
-          mimeType = 'image/jpeg';
         }
         
         const stampFileName = `stamp_${Date.now()}.${fileExt}`;
@@ -185,7 +205,6 @@ export default function AdminCreatePage() {
 
       const contentToSave = pages.join(PAGE_DELIMITER);
 
-      // ★ 修正：データに user_id: user.id を追加することで、RLSを正常に通過させる
       const { error: dbError } = await supabase
         .from('letters')
         .insert([{ 
@@ -199,17 +218,18 @@ export default function AdminCreatePage() {
           password: isPrivate ? password : null,
           attached_stamp_id: newStampId,
           is_post: isPost,
-          user_id: user.id // 管理者のIDを紐付け
+          is_postcard: !isPost && postType === 'postcard',
+          user_id: user.id 
         }]);
 
       if (dbError) throw dbError;
 
-      alert(isPost ? '【運営】常設ポストを設置しました！' : '【運営】として手紙を置きました！');
+      alert(isPost ? '【運営】常設ポストを設置しました！' : (postType === 'postcard' ? '【運営】として絵葉書を置きました！' : '【運営】として手紙を置きました！'));
       
       setTitle(''); setSpotName(''); setPages(['']); setImageFile(null);
       setIsPrivate(false); setPassword('');
       setHasStamp(false); setStampName(''); setStampFile(null);
-      setIsPost(false); 
+      setIsPost(false); setPostType('letter');
       fetchLetters();
 
     } catch (error: any) {
@@ -262,14 +282,33 @@ export default function AdminCreatePage() {
                 placeholder="場所の名前 (任意)" value={spotName} onChange={e => setSpotName(e.target.value)} 
               />
             </div>
-            {/* ★ 修正：スイッチで写真アップロードUIを隠す */}
-            {ENABLE_PHOTO_UPLOAD && (
+
+            {!isPost && (
+              <div className="bg-blue-50 p-3 rounded border border-blue-200">
+                <label className="block text-xs font-bold text-blue-700 mb-2">投稿タイプ</label>
+                <div className="flex gap-4">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" checked={postType === 'letter'} onChange={() => setPostType('letter')} className="accent-blue-600"/>
+                    <span className="text-sm font-bold">便箋</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" checked={postType === 'postcard'} onChange={() => setPostType('postcard')} className="accent-blue-600"/>
+                    <span className="text-sm font-bold">ハガキ</span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {(postType === 'postcard' || ENABLE_PHOTO_UPLOAD) && (
             <div>
-              <label className="block text-xs font-bold text-gray-500 mb-1">手紙の写真 (任意)</label>
+              <label className="block text-xs font-bold text-gray-500 mb-1">
+                {postType === 'postcard' ? 'ハガキの写真' : '手紙の写真 (任意)'}
+              </label>
               <input 
                 type="file" accept="image/*"
                 className="w-full text-sm text-gray-500"
                 onChange={(e) => e.target.files?.[0] && setImageFile(e.target.files[0])}
+                required={postType === 'postcard'} 
               />
             </div>
             )}
@@ -358,7 +397,10 @@ export default function AdminCreatePage() {
                  <input 
                    type="checkbox" 
                    checked={isPost} 
-                   onChange={() => setIsPost(!isPost)}
+                   onChange={() => {
+                     setIsPost(!isPost);
+                     if (!isPost) setPostType('letter');
+                   }}
                    className="w-4 h-4 accent-green-600"
                  />
                  <span className="text-sm font-bold text-green-900">📮 『常設ポスト』として開放する</span>
@@ -405,8 +447,14 @@ export default function AdminCreatePage() {
           <div className="space-y-2">
             {letters.map((letter) => (
               <div key={letter.id} className={`p-3 rounded border flex justify-between items-center ${letter.is_official ? 'bg-orange-50 border-orange-200' : 'bg-white'}`}>
-                <div className="cursor-pointer" onClick={() => setViewState(prev => ({...prev, latitude: letter.lat, longitude: letter.lng, zoom: 16}))}>
-                    <p className="font-bold text-sm text-gray-700">{letter.is_post ? '📮' : (letter.is_official ? '👑' : '👤')} {letter.title}</p>
+                <div className="cursor-pointer flex items-center gap-2" onClick={() => setViewState(prev => ({...prev, latitude: letter.lat, longitude: letter.lng, zoom: 16}))}>
+                    <span className="text-lg">
+                      {letter.is_post ? '📮' : (letter.is_postcard ? '🖼️' : '✉️')}
+                    </span>
+                    <div>
+                      <p className="font-bold text-sm text-gray-700 truncate w-32">{letter.title}</p>
+                      <p className="text-[9px] text-gray-400">{letter.is_official ? '運営' : 'ユーザー'}</p>
+                    </div>
                 </div>
                 <div className="flex gap-2">
                   <Link href={`/admin/edit/${letter.id}`} className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 font-bold">編集</Link>
@@ -428,21 +476,48 @@ export default function AdminCreatePage() {
           onClick={(e) => { setLat(e.lngLat.lat); setLng(e.lngLat.lng); }}
         >
           <NavigationControl position="top-right" />
+
+          {/* ★ 現在地アイコン */}
+          {userLoc && (
+            <Marker longitude={userLoc.lng} latitude={userLoc.lat} anchor="center">
+              <div className="relative">
+                <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-md z-10 relative"></div>
+                <div className="w-4 h-4 bg-blue-500 rounded-full absolute top-0 left-0 animate-ping opacity-50"></div>
+              </div>
+            </Marker>
+          )}
+
           <Marker 
             latitude={lat} longitude={lng} anchor="bottom" draggable
             onDragEnd={(e) => { setLat(e.lngLat.lat); setLng(e.lngLat.lng); }}
           >
-            <IconAdminLetter className="w-10 h-10 drop-shadow-lg" />
+            {isPost ? (
+              <IconPost className="w-10 h-10 drop-shadow-lg" />
+            ) : postType === 'postcard' ? (
+              <IconAdminPostcard className="w-10 h-10 drop-shadow-lg" />
+            ) : (
+              <IconAdminLetter className="w-10 h-10 drop-shadow-lg" />
+            )}
           </Marker>
           
-          {letters.map(l => (
-            <Marker key={l.id} latitude={l.lat} longitude={l.lng} anchor="bottom" onClick={(e) => {e.originalEvent.stopPropagation(); router.push(`/admin/edit/${l.id}`)}}>
-              <div className="relative cursor-pointer">
-                {l.is_official ? <IconAdminLetter className="w-10 h-10" /> : <IconUserLetter className="w-10 h-10 opacity-70" />}
-                {l.is_post && <div className="absolute -top-2 -right-2 bg-green-500 text-white rounded-full p-1 w-5 h-5 flex items-center justify-center text-[10px] shadow border border-white">📮</div>}
-              </div>
-            </Marker>
-          ))}
+          {/* ★ 修正：parent_id がない（ルートの）投稿のみ表示し、ポスト重なりを防止 */}
+          {letters.filter(l => !l.parent_id).map(l => {
+            // ポスト内に手紙があるか判定
+            const hasChildren = letters.some(child => child.parent_id === l.id);
+            return (
+              <Marker key={l.id} latitude={l.lat} longitude={l.lng} anchor="bottom" onClick={(e) => {e.originalEvent.stopPropagation(); router.push(`/admin/edit/${l.id}`)}}>
+                <div className="relative cursor-pointer">
+                  {l.is_post ? (
+                    <IconPost className="w-10 h-10" hasLetters={hasChildren} />
+                  ) : l.is_official ? (
+                    l.is_postcard ? <IconAdminPostcard className="w-10 h-10" /> : <IconAdminLetter className="w-10 h-10" />
+                  ) : (
+                    l.is_postcard ? <IconPostcard className="w-10 h-10 opacity-70" /> : <IconUserLetter className="w-10 h-10 opacity-70" />
+                  )}
+                </div>
+              </Marker>
+            );
+          })}
         </Map>
       </div>
     </main>

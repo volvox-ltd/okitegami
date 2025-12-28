@@ -1,161 +1,69 @@
+'use client';
 import React from 'react';
 
+/**
+ * ユーザー投稿用ハガキアイコン
+ * ご提示いただいた最新のシアン（水色）基調のシェイプSVGです。
+ */
 export default function IconPostcard({ className = "w-10 h-10" }) {
+  const filterId = "user-postcard-shadow";
+
   return (
     <svg 
       xmlns="http://www.w3.org/2000/svg" 
-      xmlnsXlink="http://www.w3.org/1999/xlink" 
-      viewBox="0 0 363 280" 
+      viewBox="0 0 284.35 201.8" 
       className={className}
+      preserveAspectRatio="xMidYMid meet"
     >
       <defs>
+        {/* 地図上で視認性を高めるためのドロップシャドウ */}
+        <filter id={filterId} x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="3" dy="3" stdDeviation="2" floodOpacity="0.15"/>
+        </filter>
         <style>{`
-          .icon-postcard-cls-1, .icon-postcard-cls-2 {
-            fill: none;
-          }
-          .icon-postcard-cls-3 {
-            mix-blend-mode: multiply;
-            opacity: .5;
-          }
-          .icon-postcard-cls-4 {
-            fill: #00d1df;
-          }
-          .icon-postcard-cls-5 {
-            fill: #b5a0a0;
-          }
-          .icon-postcard-cls-6 {
-            fill: #f1705f;
-          }
-          .icon-postcard-cls-7 {
-            isolation: isolate;
-          }
-          .icon-postcard-cls-8 {
-            letter-spacing: .14em;
-          }
-          .icon-postcard-cls-2 {
-            stroke: #00b0c6;
-            stroke-miterlimit: 10;
-            stroke-width: 3px;
-          }
-          .icon-postcard-cls-9 {
-            fill: #fcfbfc;
-          }
-          .icon-postcard-cls-10 {
-            fill: #383838;
-          }
-          .icon-postcard-cls-11 {
-            fill: #fcead8;
-          }
-          .icon-postcard-cls-12 {
-            letter-spacing: .1em;
-          }
-          .icon-postcard-cls-13 {
-            letter-spacing: .1em;
-          }
-          .icon-postcard-cls-14 {
-            letter-spacing: .12em;
-          }
-          .icon-postcard-cls-15 {
-            clip-path: url(#icon-postcard-clippath);
-          }
-          .icon-postcard-cls-16 {
-            fill: #00b0c6;
-            font-family: Helvetica-Bold, Helvetica;
-            font-size: 11.78px;
-            font-weight: 700;
-          }
+          .upc-cls-1 { fill: #b5a0a0; }
+          .upc-cls-2 { fill: #00b0c6; }
+          .upc-cls-3 { fill: none; stroke: #00b0c6; stroke-miterlimit: 10; stroke-width: 3px; }
+          .upc-cls-4 { fill: #383838; }
+          .upc-cls-5 { fill: #fcead8; }
         `}</style>
-        <clipPath id="icon-postcard-clippath">
-          <path className="icon-postcard-cls-1" d="M39.41,39.29v201.74h284.35V39.29H39.41ZM310.43,228.06H53.39V52.26h257.05v175.8Z"/>
-        </clipPath>
-        <image id="icon-postcard-img-src" width="357" height="274" xlinkHref="data:image/png;base64,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"/>
       </defs>
-      <g className="icon-postcard-cls-7">
-        <g id="_レイヤー_2" data-name="レイヤー 2">
-          <g id="OBJECTS">
+      <g filter={`url(#${filterId})`}>
+        <g id="_レイヤー_1-2" data-name="レイヤー 1">
+          <g>
+            {/* ハガキ本体ベース */}
+            <rect className="upc-cls-5" width="284.35" height="201.8"/>
+            {/* 仕切り線 */}
+            <rect className="upc-cls-3" x="141.94" y="68.69" width=".49" height="95.14"/>
+            <line className="upc-cls-3" x1="248.02" y1="162.83" x2="156.72" y2="162.83"/>
+            <line className="upc-cls-3" x1="248.02" y1="141" x2="156.72" y2="141"/>
+            
+            {/* 文字シェイプ部分 */}
             <g>
-              <g>
-                <g className="icon-postcard-cls-3">
-                  <use transform="translate(6 6)" xlinkHref="#icon-postcard-img-src"/>
-                </g>
-                <g className="icon-postcard-cls-3">
-                  <use xlinkHref="#icon-postcard-img-src"/>
-                </g>
-              </g>
-              <g>
-                <rect className="icon-postcard-cls-11" x="39.41" y="39.26" width="284.35" height="201.8"/>
-                <rect className="icon-postcard-cls-2" x="181.35" y="107.95" width=".49" height="95.14"/>
-                <line className="icon-postcard-cls-2" x1="287.43" y1="202.09" x2="196.13" y2="202.09"/>
-                <line className="icon-postcard-cls-2" x1="287.43" y1="180.26" x2="196.13" y2="180.26"/>
-                <text className="icon-postcard-cls-16" transform="translate(144.19 71.93)">
-                  <tspan className="icon-postcard-cls-13" x="0" y="0">POS</tspan>
-                  <tspan className="icon-postcard-cls-8" x="28.4" y="0">T</tspan>
-                  <tspan className="icon-postcard-cls-12" x="37.24" y="0">C</tspan>
-                  <tspan className="icon-postcard-cls-14" x="46.92" y="0">A</tspan>
-                  <tspan className="icon-postcard-cls-12" x="56.84" y="0">RD</tspan>
-                </text>
-                <g className="icon-postcard-cls-15">
-                  <g>
-                    <polygon className="icon-postcard-cls-6" points="221.8 -170.82 -153.96 177.87 -161.76 170.63 214.01 -178.06 221.8 -170.82"/>
-                    <polygon className="icon-postcard-cls-9" points="229.6 -163.59 -146.17 185.1 -153.96 177.87 221.8 -170.82 229.6 -163.59"/>
-                    <polygon className="icon-postcard-cls-4" points="237.37 -156.38 -138.4 192.31 -146.19 185.07 229.57 -163.61 237.37 -156.38"/>
-                    <polygon className="icon-postcard-cls-9" points="245.16 -149.14 -130.6 199.54 -138.4 192.31 237.37 -156.38 245.16 -149.14"/>
-                    <polygon className="icon-postcard-cls-6" points="190.64 -199.73 -185.12 148.95 -192.91 141.72 182.85 -206.97 190.64 -199.73"/>
-                    <polygon className="icon-postcard-cls-9" points="198.44 -192.5 -177.32 156.19 -185.12 148.95 190.64 -199.73 198.44 -192.5"/>
-                    <polygon className="icon-postcard-cls-4" points="206.21 -185.29 -169.55 163.4 -177.35 156.16 198.42 -192.52 206.21 -185.29"/>
-                    <polygon className="icon-postcard-cls-9" points="214.01 -178.06 -161.76 170.63 -169.55 163.4 206.21 -185.29 214.01 -178.06"/>
-                    <polygon className="icon-postcard-cls-6" points="284.12 -113 -91.65 235.69 -99.44 228.45 276.32 -120.23 284.12 -113"/>
-                    <polygon className="icon-postcard-cls-9" points="291.91 -105.76 -83.85 242.92 -91.65 235.69 284.12 -113 291.91 -105.76"/>
-                    <polygon className="icon-postcard-cls-4" points="299.68 -98.55 -76.08 250.13 -83.88 242.9 291.89 -105.79 299.68 -98.55"/>
-                    <polygon className="icon-postcard-cls-9" points="307.48 -91.32 -68.29 257.37 -76.08 250.13 299.68 -98.55 307.48 -91.32"/>
-                    <polygon className="icon-postcard-cls-6" points="252.96 -141.91 -122.81 206.78 -130.6 199.54 245.16 -149.14 252.96 -141.91"/>
-                    <polygon className="icon-postcard-cls-9" points="260.75 -134.68 -115.01 214.01 -122.81 206.78 252.96 -141.91 260.75 -134.68"/>
-                    <polygon className="icon-postcard-cls-4" points="268.52 -127.47 -107.24 221.22 -115.03 213.99 260.73 -134.7 268.52 -127.47"/>
-                    <polygon className="icon-postcard-cls-9" points="276.32 -120.23 -99.44 228.45 -107.24 221.22 268.52 -127.47 276.32 -120.23"/>
-                    <polygon className="icon-postcard-cls-6" points="346.43 -55.17 -29.33 293.51 -37.13 286.28 338.63 -62.41 346.43 -55.17"/>
-                    <polygon className="icon-postcard-cls-9" points="354.22 -47.94 -21.54 300.75 -29.33 293.51 346.43 -55.17 354.22 -47.94"/>
-                    <polygon className="icon-postcard-cls-4" points="361.99 -40.73 -13.77 307.95 -21.56 300.72 354.2 -47.96 361.99 -40.73"/>
-                    <polygon className="icon-postcard-cls-9" points="369.79 -33.5 -5.97 315.19 -13.77 307.95 361.99 -40.73 369.79 -33.5"/>
-                    <polygon className="icon-postcard-cls-6" points="315.27 -84.09 -60.49 264.6 -68.29 257.37 307.48 -91.32 315.27 -84.09"/>
-                    <polygon className="icon-postcard-cls-9" points="323.07 -76.85 -52.7 271.83 -60.49 264.6 315.27 -84.09 323.07 -76.85"/>
-                    <polygon className="icon-postcard-cls-4" points="330.84 -69.64 -44.93 279.05 -52.72 271.81 323.04 -76.88 330.84 -69.64"/>
-                    <polygon className="icon-postcard-cls-9" points="338.63 -62.41 -37.13 286.28 -44.93 279.05 330.84 -69.64 338.63 -62.41"/>
-                    <polygon className="icon-postcard-cls-6" points="408.74 2.65 32.98 351.33 25.19 344.1 400.95 -4.58 408.74 2.65"/>
-                    <polygon className="icon-postcard-cls-9" points="416.54 9.88 40.78 358.57 32.98 351.33 408.74 2.65 416.54 9.88"/>
-                    <polygon className="icon-postcard-cls-4" points="424.31 17.09 48.55 365.78 40.75 358.55 416.51 9.86 424.31 17.09"/>
-                    <polygon className="icon-postcard-cls-9" points="432.1 24.33 56.34 373.01 48.55 365.78 424.31 17.09 432.1 24.33"/>
-                    <polygon className="icon-postcard-cls-6" points="377.59 -26.26 1.82 322.42 -5.97 315.19 369.79 -33.5 377.59 -26.26"/>
-                    <polygon className="icon-postcard-cls-9" points="385.38 -19.03 9.62 329.66 1.82 322.42 377.59 -26.26 385.38 -19.03"/>
-                    <polygon className="icon-postcard-cls-4" points="393.15 -11.82 17.39 336.87 9.59 329.64 385.36 -19.05 393.15 -11.82"/>
-                    <polygon className="icon-postcard-cls-9" points="400.95 -4.58 25.19 344.1 17.39 336.87 393.15 -11.82 400.95 -4.58"/>
-                    <polygon className="icon-postcard-cls-6" points="471.06 60.47 95.29 409.16 87.5 401.93 463.26 53.23 471.06 60.47"/>
-                    <polygon className="icon-postcard-cls-9" points="478.85 67.7 103.09 416.39 95.29 409.16 471.06 60.47 478.85 67.7"/>
-                    <polygon className="icon-postcard-cls-4" points="486.62 74.91 110.86 423.61 103.06 416.37 478.83 67.68 486.62 74.91"/>
-                    <polygon className="icon-postcard-cls-9" points="494.42 82.15 118.65 430.84 110.86 423.61 486.62 74.91 494.42 82.15"/>
-                    <polygon className="icon-postcard-cls-6" points="439.9 31.56 64.14 380.25 56.34 373.01 432.1 24.33 439.9 31.56"/>
-                    <polygon className="icon-postcard-cls-9" points="447.7 38.79 71.93 387.48 64.14 380.25 439.9 31.56 447.7 38.79"/>
-                    <polygon className="icon-postcard-cls-4" points="455.47 46 79.7 394.69 71.91 387.46 447.67 38.77 455.47 46"/>
-                    <polygon className="icon-postcard-cls-9" points="463.26 53.23 87.5 401.93 79.7 394.69 455.47 46 463.26 53.23"/>
-                    <polygon className="icon-postcard-cls-6" points="533.37 118.29 157.61 466.98 149.81 459.75 525.57 111.06 533.37 118.29"/>
-                    <polygon className="icon-postcard-cls-9" points="541.16 125.52 165.4 474.22 157.61 466.98 533.37 118.29 541.16 125.52"/>
-                    <polygon className="icon-postcard-cls-4" points="548.94 132.73 173.17 481.43 165.38 474.19 541.14 125.5 548.94 132.73"/>
-                    <polygon className="icon-postcard-cls-9" points="556.73 139.97 180.96 488.66 173.17 481.43 548.94 132.73 556.73 139.97"/>
-                    <polygon className="icon-postcard-cls-6" points="502.21 89.38 126.45 438.07 118.65 430.84 494.42 82.15 502.21 89.38"/>
-                    <polygon className="icon-postcard-cls-9" points="510.01 96.61 134.25 445.31 126.45 438.07 502.21 89.38 510.01 96.61"/>
-                    <polygon className="icon-postcard-cls-4" points="517.78 103.82 142.02 452.52 134.22 445.28 509.99 96.59 517.78 103.82"/>
-                    <polygon className="icon-postcard-cls-9" points="525.57 111.06 149.81 459.75 142.02 452.52 517.78 103.82 525.57 111.06"/>
-                  </g>
-                </g>
-                <g>
-                  <path className="icon-postcard-cls-5" d="M243.55,130.01c0-1.52-1.24-2.76-2.76-2.76v-3.06c1.52,0,2.76-1.24,2.76-2.76s-1.24-2.76-2.76-2.76v-3.06c1.52,0,2.76-1.24,2.76-2.76s-1.24-2.76-2.76-2.76v-3.06c1.52,0,2.76-1.24,2.76-2.76s-1.24-2.76-2.76-2.76v-3.06c1.52,0,2.76-1.24,2.76-2.76s-1.24-2.76-2.76-2.76v-3.06c1.52,0,2.76-1.24,2.76-2.76s-1.24-2.76-2.76-2.76v-3.06c1.52,0,2.76-1.24,2.76-2.76s-1.24-2.76-2.76-2.76v-3.06c1.52,0,2.76-1.24,2.76-2.76s-1.24-2.76-2.76-2.76v-3.06c1.52,0,2.76-1.24,2.76-2.76s-1.24-2.76-2.76-2.76v-3.31h3.81c0,1.53,1.24,2.76,2.76,2.76s2.76-1.24,2.76-2.76h3.06c0,1.53,1.24,2.76,2.76,2.76s2.76-1.24,2.76-2.76h3.06c0,1.53,1.24,2.76,2.76,2.76s2.76-1.24,2.76-2.76h3.06c0,1.53,1.24,2.76,2.76,2.76s2.76-1.24,2.76-2.76h3.06c0,1.53,1.24,2.76,2.76,2.76s2.76-1.24,2.76-2.76h3.06c0,1.53,1.24,2.76,2.76,2.76s2.76-1.24,2.76-2.76h3.81v3.31c-1.53,0-2.76,1.24-2.76,2.76s1.24,2.76,2.76,2.76v3.06c-1.53,0-2.76,1.24-2.76,2.76s1.24,2.76,2.76,2.76v3.06c-1.53,0-2.76,1.24-2.76,2.76s1.24,2.76,2.76,2.76v3.06c-1.53,0-2.76,1.24-2.76,2.76s1.24,2.76,2.76,2.76v3.06c-1.53,0-2.76,1.24-2.76,2.76s1.24,2.76,2.76,2.76v3.06c-1.53,0-2.76,1.24-2.76,2.76s1.24,2.76,2.76,2.76v3.06c-1.53,0-2.76,1.24-2.76,2.76s1.24,2.76,2.76,2.76v3.06c-1.53,0-2.76,1.24-2.76,2.76s1.24,2.76,2.76,2.76v3.31h-3.81c0-1.53-1.24-2.76-2.76-2.76s-2.76,1.24-2.76,2.76h-3.06c0-1.53-1.24-2.76-2.76-2.76s-2.76,1.24-2.76,2.76h-3.06c0-1.53-1.24-2.76-2.76-2.76s-2.76,1.24-2.76,2.76h-3.06c0-1.53-1.24-2.76-2.76-2.76s-2.76,1.24-2.76,2.76h-3.06c0-1.53-1.24-2.76-2.76-2.76s-2.76,1.24-2.76,2.76h-3.06c0-1.53-1.24-2.76-2.76-2.76s-2.76,1.24-2.76,2.76h-3.81v-3.31c1.52,0,2.76-1.24,2.76-2.76Z"/>
-                  <rect className="icon-postcard-cls-11" x="247.22" y="70.27" width="43.63" height="59.37" rx="3.12" ry="3.12"/>
-                </g>
-                <g>
-                  <path className="icon-postcard-cls-10" d="M272.72,99.96c-3.42,0-5.15-.53-6.83-1.04-1.68-.51-3.27-1-6.54-1s-4.86.48-6.54,1c-1.68.51-3.42,1.04-6.84,1.04s-5.15-.53-6.83-1.04c-1.68-.51-3.27-1-6.54-1s-4.86.48-6.54,1c-1.68.51-3.42,1.04-6.83,1.04s-5.16-.53-6.83-1.04c-1.68-.51-3.27-1-6.54-1v-1.02c3.42,0,5.16.53,6.83,1.04,1.68.51,3.27,1,6.54,1s4.86-.48,6.54-1c1.68-.51,3.42-1.04,6.84-1.04s5.16.53,6.83,1.04c1.68.51,3.27,1,6.54,1s4.86-.48,6.54-1c1.68-.51,3.42-1.04,6.83-1.04s5.15.53,6.83,1.04c1.68.51,3.27,1,6.54,1v1.02Z"/>
-                  <path className="icon-postcard-cls-10" d="M272.72,108.48c-3.42,0-5.15-.53-6.83-1.04-1.68-.51-3.27-1-6.54-1s-4.86.48-6.54,1c-1.68.51-3.42,1.04-6.84,1.04s-5.15-.53-6.83-1.04c-1.68-.51-3.27-1-6.54-1s-4.86.48-6.54,1c-1.68.51-3.42,1.04-6.83,1.04s-5.16-.53-6.83-1.04c-1.68-.51-3.27-1-6.54-1v-1.02c3.42,0,5.16.53,6.83,1.04,1.68.51,3.27,1,6.54,1s4.86-.48,6.54-1c1.68-.51,3.42-1.04,6.84-1.04s5.16.53,6.83,1.04c1.68.51,3.27,1,6.54,1s4.86-.48,6.54-1c1.68-.51,3.42-1.04,6.83-1.04s5.15.53,6.83,1.04c1.68.51,3.27,1,6.54,1v1.02Z"/>
-                  <path className="icon-postcard-cls-10" d="M272.72,117c-3.42,0-5.15-.53-6.83-1.04-1.68-.51-3.27-1-6.54-1s-4.86.48-6.54,1c-1.68.51-3.42,1.04-6.84,1.04s-5.15-.53-6.83-1.04c-1.68-.51-3.27-1-6.54-1s-4.86.48-6.54,1c-1.68.51-3.42,1.04-6.83,1.04s-5.16-.53-6.83-1.04c-1.68-.51-3.27-1-6.54-1v-1.02c3.42,0,5.16.53,6.83,1.04,1.68.51,3.27,1,6.54,1s4.86-.48,6.54-1c1.68-.51,3.42-1.04,6.84-1.04s5.16.53,6.83,1.04c1.68.51,3.27,1,6.54,1s4.86-.48,6.54-1c1.68-.51,3.42-1.04,6.83-1.04s5.15.53,6.83,1.04c1.68.51,3.27,1,6.54,1v1.02Z"/>
-                </g>
-              </g>
+              <path className="upc-cls-2" d="M109.28,29.62h-1.8v3.05h-1.76v-8.47h3.69c.85,0,1.53.22,2.04.66s.76,1.11.76,2.03c0,1-.25,1.71-.76,2.12s-1.23.62-2.17.62ZM110.11,27.85c.23-.2.34-.53.34-.97s-.12-.75-.35-.94c-.23-.19-.56-.28-.97-.28h-1.65v2.5h1.65c.42,0,.74-.1.98-.3Z"/>
+              <path className="upc-cls-2" d="M118.46,32.9c-1.21,0-2.14-.33-2.78-.99-.86-.81-1.29-1.97-1.29-3.5s.43-2.72,1.29-3.5c.64-.66,1.57-.99,2.78-.99s2.14.33,2.78.99c.85.78,1.28,1.94,1.28,3.5s-.43,2.69-1.28,3.5c-.64.66-1.57.99-2.78.99ZM120.13,30.63c.41-.52.62-1.25.62-2.21s-.21-1.69-.62-2.21-.97-.78-1.67-.78-1.26.26-1.68.78c-.42.52-.63,1.25-.63,2.21s.21,1.69.63,2.21c.42.52.98.78,1.68.78s1.26-.26,1.67-.78Z"/>
+              <path className="upc-cls-2" d="M128.12,31.44c.42,0,.76-.05,1.02-.14.49-.18.74-.5.74-.98,0-.28-.12-.5-.37-.65-.25-.15-.63-.28-1.16-.4l-.9-.2c-.88-.2-1.49-.42-1.83-.65-.57-.39-.86-1-.86-1.83,0-.76.28-1.39.83-1.89s1.36-.75,2.43-.75c.89,0,1.65.24,2.29.71.63.47.96,1.16.99,2.06h-1.7c-.03-.51-.25-.87-.67-1.09-.28-.14-.62-.21-1.03-.21-.46,0-.82.09-1.09.28-.27.18-.41.44-.41.77,0,.3.13.53.4.68.17.1.54.22,1.1.35l1.46.35c.64.15,1.12.36,1.45.62.51.4.76.98.76,1.73s-.3,1.42-.89,1.93c-.59.51-1.43.77-2.51.77s-1.97-.25-2.6-.76c-.63-.5-.95-1.2-.95-2.08h1.69c.05.39.16.68.32.87.29.35.78.52,1.48.52Z"/>
+              <path className="upc-cls-2" d="M140.24,24.19v1.5h-2.54v6.97h-1.78v-6.97h-2.55v-1.5h6.86Z"/>
+              <path className="upc-cls-2" d="M148.9,32.03c-.63.58-1.44.87-2.43.87-1.22,0-2.18-.39-2.88-1.17-.7-.79-1.05-1.86-1.05-3.23,0-1.48.4-2.62,1.19-3.42.69-.7,1.57-1.05,2.63-1.05,1.43,0,2.47.47,3.13,1.4.36.52.56,1.05.59,1.58h-1.77c-.12-.41-.26-.71-.44-.92-.32-.37-.8-.55-1.43-.55s-1.15.26-1.52.78c-.37.52-.56,1.25-.56,2.21s.2,1.66.59,2.14c.39.47.89.71,1.5.71s1.09-.2,1.42-.61c.18-.22.33-.55.45-.98h1.75c-.15.92-.54,1.68-1.17,2.25Z"/>
+              <path className="upc-cls-2" d="M157.56,30.92h-3.12l-.59,1.74h-1.85l3.02-8.47h2l3,8.47h-1.92l-.55-1.74ZM157.07,29.46l-1.06-3.33-1.09,3.33h2.15Z"/>
+              <path className="upc-cls-2" d="M166.12,29.34h-1.83v3.32h-1.73v-8.47h4.16c.59.01,1.05.08,1.37.22.32.13.59.33.81.59.18.21.33.45.44.71s.16.56.16.89c0,.4-.1.8-.3,1.19-.2.39-.54.66-1.01.83.39.16.67.38.83.67.16.29.24.73.24,1.33v.57c0,.39.02.65.05.79.05.22.15.38.32.48v.21h-1.95c-.05-.19-.09-.34-.12-.45-.05-.24-.07-.48-.07-.73v-.79c-.02-.54-.12-.9-.31-1.08-.19-.18-.54-.27-1.07-.27ZM167.19,27.8c.35-.16.53-.48.53-.95,0-.51-.17-.86-.51-1.04-.19-.1-.48-.15-.86-.15h-2.06v2.28h2.01c.4,0,.7-.05.9-.14Z"/>
+              <path className="upc-cls-2" d="M175.85,32.67h-3.65v-8.47h3.65c.52,0,.96.07,1.31.18.59.2,1.08.55,1.44,1.08.3.42.5.88.6,1.37.11.49.16.96.16,1.4,0,1.13-.23,2.08-.68,2.86-.61,1.05-1.56,1.58-2.84,1.58ZM177.17,26.35c-.27-.46-.81-.69-1.62-.69h-1.63v5.53h1.63c.84,0,1.42-.41,1.75-1.24.18-.45.27-.99.27-1.62,0-.86-.13-1.53-.4-1.99Z"/>
+            </g>
+            
+            {/* 枠線 */}
+            <path className="upc-cls-2" d="M0,.03v201.74h284.35V.03H0ZM271.02,188.8H13.98V13h257.05v175.8Z"/>
+            
+            {/* 切手エリア */}
+            <g>
+              <path className="upc-cls-1" d="M204.14,90.75c0-1.52-1.24-2.76-2.76-2.76v-3.06c1.52,0,2.76-1.24,2.76-2.76s-1.24-2.76-2.76-2.76v-3.06c1.52,0,2.76-1.24,2.76-2.76s-1.24-2.76-2.76-2.76v-3.06c1.52,0,2.76-1.24,2.76-2.76s-1.24-2.76-2.76-2.76v-3.06c1.52,0,2.76-1.24,2.76-2.76s-1.24-2.76-2.76-2.76v-3.06c1.52,0,2.76-1.24,2.76-2.76s-1.24-2.76-2.76-2.76v-3.06c1.52,0,2.76-1.24,2.76-2.76s-1.24-2.76-2.76-2.76v-3.31h3.81c0,1.53,1.24,2.76,2.76,2.76s2.76-1.24,2.76-2.76h3.06c0,1.53,1.24,2.76,2.76,2.76s2.76-1.24,2.76-2.76h3.06c0,1.53,1.24,2.76,2.76,2.76s2.76-1.24,2.76-2.76h3.06c0,1.53,1.24,2.76,2.76,2.76s2.76-1.24,2.76-2.76h3.06c0,1.53,1.24,2.76,2.76,2.76s2.76-1.24,2.76-2.76h3.06c0,1.53,1.24,2.76,2.76,2.76s2.76-1.24,2.76-2.76h3.81v3.31c-1.53,0-2.76,1.24-2.76,2.76s1.24,2.76,2.76,2.76v3.06c-1.53,0-2.76,1.24-2.76,2.76s1.24,2.76,2.76,2.76v3.06c-1.53,0-2.76,1.24-2.76,2.76s1.24,2.76,2.76,2.76v3.06c-1.53,0-2.76,1.24-2.76,2.76s1.24,2.76,2.76,2.76v3.06c-1.53,0-2.76,1.24-2.76,2.76s1.24,2.76,2.76,2.76v3.06c-1.53,0-2.76,1.24-2.76,2.76s1.24,2.76,2.76,2.76v3.06c-1.53,0-2.76,1.24-2.76,2.76s1.24,2.76,2.76,2.76v3.06c-1.53,0-2.76,1.24-2.76,2.76s1.24,2.76,2.76,2.76v3.31h-3.81c0-1.53-1.24-2.76-2.76-2.76s-2.76,1.24-2.76,2.76h-3.06c0-1.53-1.24-2.76-2.76-2.76s-2.76,1.24-2.76,2.76h-3.06c0-1.53-1.24-2.76-2.76-2.76s-2.76,1.24-2.76,2.76h-3.06c0-1.53-1.24-2.76-2.76-2.76s-2.76,1.24-2.76,2.76h-3.06c0-1.53-1.24-2.76-2.76-2.76s-2.76,1.24-2.76,2.76h-3.06c0-1.53-1.24-2.76-2.76-2.76s-2.76,1.24-2.76,2.76h-3.81v-3.31c1.52,0,2.76-1.24,2.76-2.76Z"/>
+              <rect className="upc-cls-5" x="207.81" y="31.02" width="43.63" height="59.37" rx="3.12" ry="3.12"/>
+            </g>
+            
+            {/* 消印装飾 */}
+            <g>
+              <path className="upc-cls-4" d="M233.31,60.7c-3.42,0-5.15-.53-6.83-1.04-1.68-.51-3.27-1-6.54-1s-4.86.48-6.54,1c-1.68.51-3.42,1.04-6.84,1.04s-5.15-.53-6.83-1.04c-1.68-.51-3.27-1-6.54-1s-4.86.48-6.54,1c-1.68.51-3.42,1.04-6.83,1.04s-5.16-.53-6.83-1.04c-1.68-.51-3.27-1-6.54-1v-1.02c3.42,0,5.16.53,6.83,1.04,1.68.51,3.27,1,6.54,1s4.86-.48,6.54-1c1.68-.51,3.42-1.04,6.84-1.04s5.16.53,6.83,1.04c1.68.51,3.27,1,6.54,1s4.86-.48,6.54-1c1.68-.51,3.42-1.04,6.83-1.04s5.15.53,6.83,1.04c1.68.51,3.27,1,6.54,1v1.02Z"/>
+              <path className="upc-cls-4" d="M233.31,69.22c-3.42,0-5.15-.53-6.83-1.04-1.68-.51-3.27-1-6.54-1s-4.86.48-6.54,1c-1.68.51-3.42,1.04-6.84,1.04s-5.15-.53-6.83-1.04c-1.68-.51-3.27-1-6.54-1s-4.86.48-6.54,1c-1.68.51-3.42,1.04-6.83,1.04s-5.16-.53-6.83-1.04c-1.68-.51-3.27-1-6.54-1v-1.02c3.42,0,5.16.53,6.83,1.04,1.68.51,3.27,1,6.54,1s4.86-.48,6.54-1c1.68-.51,3.42-1.04,6.84-1.04s5.16.53,6.83,1.04c1.68.51,3.27,1,6.54,1s4.86-.48,6.54-1c1.68-.51,3.42-1.04,6.83-1.04s5.15.53,6.83,1.04c1.68.51,3.27,1,6.54,1v1.02Z"/>
+              <path className="upc-cls-4" d="M233.31,77.74c-3.42,0-5.15-.53-6.83-1.04-1.68-.51-3.27-1-6.54-1s-4.86.48-6.54,1c-1.68.51-3.42,1.04-6.84,1.04s-5.15-.53-6.83-1.04c-1.68-.51-3.27-1-6.54-1s-4.86.48-6.54,1c-1.68.51-3.42,1.04-6.83,1.04s-5.16-.53-6.83-1.04c-1.68-.51-3.27-1-6.54-1v-1.02c3.42,0,5.16.53,6.83,1.04,1.68.51,3.27,1,6.54,1s4.86-.48,6.54-1c1.68-.51,3.42-1.04,6.84-1.04s5.16.53,6.83,1.04c1.68.51,3.27,1,6.54,1s4.86-.48,6.54-1c1.68-.51,3.42-1.04,6.83-1.04s5.15.53,6.83,1.04c1.68.51,3.27,1,6.54,1v1.02Z"/>
             </g>
           </g>
         </g>

@@ -219,7 +219,7 @@ function PostForm() {
           <Marker latitude={pinLocation.lat} longitude={pinLocation.lng} anchor="bottom">
             <div className="animate-bounce drop-shadow-lg">
                {/* 投稿タイプによってマーカーアイコンを切り替え */}
-               {postType === 'postcard' ? <IconPostcard className="w-12 h-12" /> : <IconUserLetter className="w-12 h-12" />}
+               {postType === 'postcard' ? <IconPostcard className="w-12 h-12" /> : <IconUserLetter className="w-10 h-10" />}
             </div>
           </Marker>
         </Map>

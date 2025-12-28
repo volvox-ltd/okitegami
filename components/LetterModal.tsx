@@ -169,7 +169,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
 
       <div className="relative w-full max-w-[380px] aspect-[1/1.48] bg-white shadow-2xl flex flex-col px-6 py-4 rounded-sm z-20">
         <div className="flex justify-center items-center shrink-0 relative h-10 mb-2">
-          {/* 1. 左端：他人の投稿のみお気に入りボタンを表示 */}
           {!isLocked && !isMyPost && (
             <div className="absolute left-0 z-30">
               <button 
@@ -185,7 +184,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
           </button>
         </div>
 
-        {/* --- 本文エリア（タップでページめくり、最後なら最初に戻る） --- */}
         <div 
           className="flex-1 relative flex flex-col overflow-hidden mt-2" 
           onClick={() => currentPage < pages.length - 1 ? handleNext() : setCurrentPage(0)} 
@@ -202,7 +200,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
             </div>
           ) : (
             <>
-              {/* タイトルと投稿者名：固定表示 */}
               <div className="flex justify-between items-start mb-6 shrink-0 pointer-events-none min-h-[3rem]">
                 <h2 className="text-lg font-bold font-serif text-[#8a776a] flex-1 leading-relaxed pr-4">
                   {letter.title}
@@ -212,19 +209,22 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
                 </p>
               </div>
               
-              {/* 本文アニメーションエリア */}
               <div key={currentPage} className="flex-1 overflow-hidden animate-pageTurn">
+                {/* ★ 修正箇所：dangerouslySetInnerHTML を導入し HTML を有効化 */}
                 <div 
-                  className="w-full h-full text-[14px] font-serif tracking-[0.2em] [writing-mode:vertical-rl] whitespace-pre-wrap text-[#5d4037]" 
+                  className="w-full h-full text-[14px] font-serif tracking-[0.2em] [writing-mode:vertical-rl] whitespace-pre-wrap text-[#5d4037] modal-html-content" 
                   style={{ 
                     lineHeight: '2.5rem', 
                     backgroundImage: 'linear-gradient(to left, transparent calc(100% - 1px), #f0f4f5 1px)', 
                     backgroundSize: '2.5rem 100%', 
                     backgroundPosition: 'right top' 
                   }}
-                >
-                  {letter.content.split('<<<PAGE>>>')[currentPage] || pages[currentPage]?.content}
-                </div>
+                  dangerouslySetInnerHTML={{ __html: letter.content.split('<<<PAGE>>>')[currentPage] || pages[currentPage]?.content || '' }}
+                  onClick={(e) => {
+                    // aタグをクリックした際にページめくりが発動しないようにする
+                    if ((e.target as HTMLElement).tagName === 'A') e.stopPropagation();
+                  }}
+                />
               </div>
             </>
           )}
@@ -245,7 +245,6 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
                 <button onClick={(e) => { e.stopPropagation(); handlePrev(); }} className={`text-xs font-bold ${currentPage > 0 ? 'text-[#8a776a]' : 'text-gray-200 pointer-events-none'}`}>前へ →</button>
               </div>
               <div className="w-24 flex justify-end">
-                {/* 右下：自分の投稿のみ削除ボタンを表示 */}
                 {isMyPost && (
                   <button onClick={(e) => { e.stopPropagation(); handleDelete(); }} className="bg-pink-50 text-pink-500 text-[10px] px-4 py-2 rounded-full font-bold border border-pink-100 shadow-sm transition-all hover:bg-pink-100 active:scale-95">削除</button>
                 )}
@@ -254,7 +253,17 @@ export default function LetterModal({ letter, currentUser, onClose, onDeleted, o
           )}
         </div>
       </div>
-      <style jsx global>{` .animate-pageTurn { animation: pageTurn 0.5s cubic-bezier(0.23, 1, 0.32, 1) forwards; } @keyframes pageTurn { 0% { transform: translateX(30px); opacity: 0; } 100% { transform: translateX(0); opacity: 1; } } `}</style>
+      <style jsx global>{` 
+        .animate-pageTurn { animation: pageTurn 0.5s cubic-bezier(0.23, 1, 0.32, 1) forwards; } 
+        @keyframes pageTurn { 0% { transform: translateX(30px); opacity: 0; } 100% { transform: translateX(0); opacity: 1; } } 
+        /* リンク用スタイル */
+        .modal-html-content a {
+          color: #2563eb !important;
+          text-decoration: underline !important;
+          pointer-events: auto !important;
+          cursor: pointer !important;
+        }
+      `}</style>
     </div>
   );
 }
