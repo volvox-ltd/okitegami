@@ -26,13 +26,13 @@ type Props = {
   letter: Letter;
   currentUser: User | null;
   onClose: () => void;
-  onDeleted?: () => void;
+  onDeleted?: (id?: string) => void; // ★ 拡張
   onRead?: (id: string) => void;
   initialLayer?: number;
   isRainy?: boolean;
-  hideReply?: boolean;    // ★ マイページ用：返信ボタンを隠す
-  hideFavorite?: boolean; // ★ マイページ用：お気に入りボタンを隠す
-  isMyPage?: boolean;     // ★ 返信削除の連動判別用
+  hideReply?: boolean;    // マイページ用：返信ボタンを隠す
+  hideFavorite?: boolean; // マイページ用：お気に入りボタンを隠す
+  isMyPage?: boolean;     // ★ マイページ判定用
 };
 
 function PostcardModalContent({ 
@@ -196,16 +196,16 @@ function PostcardModalContent({
   const handleDeleteReply = async () => {
     const currentReply = replies[currentReplyIndex];
     if (!currentReply || !confirm('この返事を削除しますか？')) return;
-    const { error } = await supabase.from('letters').delete().eq('id', currentReply.id);
+    const deletedId = currentReply.id;
+    const { error } = await supabase.from('letters').delete().eq('id', deletedId);
     if (!error) {
       const newReplies = replies.filter((_, i) => i !== currentReplyIndex);
       setReplies(newReplies);
-      setCurrentReplyIndex(0);
       
-      // ★ 修正：マイページの場合のみ連動削除。地図の場合は親を表示し続ける
+      // ★ 修正：マイページ判定
       if (newReplies.length === 0) {
         if (isMyPage) {
-          onDeleted?.();
+          onDeleted?.(deletedId);
           handleClose();
         } else {
           setActiveLayer(0);
@@ -217,7 +217,7 @@ function PostcardModalContent({
   const handleDeleteParent = async () => {
     if (!confirm('本当に削除しますか？')) return;
     const { error } = await supabase.from('letters').delete().eq('id', letter.id);
-    if (!error) { handleClose(); onDeleted?.(); }
+    if (!error) { onDeleted?.(letter.id); handleClose(); }
   };
 
   if (isCheckingAuth) return null;
@@ -250,6 +250,7 @@ function PostcardModalContent({
           {/* --- 表面 (文字面) --- */}
           <div className="absolute inset-0 w-full h-full backface-hidden bg-white flex flex-col px-6 py-4 rounded-sm" onClick={() => { if(activeLayer === 0 && !isLocked && letter.image_url) setIsFlipped(!isFlipped) }}>
             
+            {/* ★ 雨の日の濡れシミ */}
             {isRainy && <div className="absolute inset-0 z-[35] pointer-events-none rainy-overlay"></div>}
 
             {!isLocked && (
@@ -299,7 +300,6 @@ function PostcardModalContent({
             <div className="h-10 flex items-center justify-between shrink-0 mt-auto z-[45]">
               {!isLocked && activeLayer === 0 && (
                 <>
-                  {/* ★ 中央配置を維持するため、左右の幅を固定 */}
                   <div className="w-28 flex items-center gap-2">
                      {letter.allow_reply && !isMyPost && !hasReply && !hideReply && (
                        <button onClick={handleReplyClick} className="bg-orange-500 text-white px-4 py-1.5 rounded-full text-[10px] font-bold shadow-md active:scale-95 tracking-widest whitespace-nowrap">返事を書く</button>
@@ -308,9 +308,11 @@ function PostcardModalContent({
                        <button onClick={e => { e.stopPropagation(); handleDeleteParent(); }} className="bg-pink-50 text-pink-500 text-[10px] px-4 py-1.5 rounded-full font-bold border border-pink-100 shadow-sm active:scale-95">削除</button>
                      )}
                   </div>
+                  
                   <div className="flex-1 flex justify-center items-center">
                     <span className="text-[10px] text-gray-300 tracking-widest font-bold animate-pulse whitespace-nowrap">タップで裏返す</span>
                   </div>
+                  
                   <div className="w-28 flex justify-end">
                      {!isMyPost && !hideFavorite && (
                        <button onClick={e => { e.stopPropagation(); toggleFavorite(); }} className={`flex items-center gap-1 text-[10px] font-bold py-1.5 px-3 rounded-full border shadow-sm transition-all active:scale-95 ${isFavorited ? 'bg-pink-50 text-pink-500 border-pink-100' : 'bg-gray-100 text-gray-400 border-gray-200 hover:text-pink-300'}`}>
@@ -324,6 +326,7 @@ function PostcardModalContent({
           </div>
           {/* --- 裏面 (写真面) --- */}
           <div className="absolute inset-0 w-full h-full backface-hidden [transform:rotateY(180deg)] bg-black flex flex-col rounded-sm overflow-hidden" onClick={() => { if(activeLayer === 0) setIsFlipped(!isFlipped); }}>
+            {/* ★ 雨の日の彩度低下（写真面） */}
             {isRainy && <div className="absolute inset-0 z-[15] pointer-events-none bg-[#1a3a5a]/10 backdrop-grayscale-[0.2]"></div>}
             {letter.image_url ? (
               <><Image src={letter.image_url} fill sizes="380px" className={`object-cover ${isRainy ? 'saturate-[0.7] brightness-[0.9]' : ''}`} alt="photo" priority /><div className="absolute top-4 inset-x-6 flex justify-center items-center z-20 h-10"><span className="text-white text-sm font-bold tracking-[0.4em] ml-[0.4em] drop-shadow-md">POST CARD</span></div><div className="absolute bottom-6 inset-x-6 flex flex-col items-center justify-center z-20"><p className="text-white text-[11px] font-bold tracking-[0.5em] mb-3 uppercase drop-shadow-md">{letter.spot_name}</p></div></>
@@ -411,7 +414,7 @@ function PostcardModalContent({
                  <div className="flex flex-col items-center gap-2">
                     <button onClick={handleClose} className="bg-stone-600 text-white px-10 py-2 rounded-full text-[10px] font-bold shadow-md active:scale-95 tracking-widest">閉じる</button>
                     {!isMyPost && (
-                      <button onClick={(e) => { e.stopPropagation(); handleDeleteReply(); }} className="text-[9px] text-red-400 underline opacity-70 hover:opacity-100">削除する</button>
+                      <button onClick={(e) => { e.stopPropagation(); handleDeleteReply(); }} className="text-[9px] text-red-400 underline opacity-70 hover:opacity-100">この返事を削除する</button>
                     )}
                  </div>
               </div>
@@ -434,5 +437,9 @@ function PostcardModalContent({
 }
 
 export default function PostcardModal(props: Props) {
-  return (<Suspense fallback={null}><PostcardModalContent {...props} /></Suspense>);
+  return (
+    <Suspense fallback={null}>
+      <PostcardModalContent {...props} />
+    </Suspense>
+  );
 }

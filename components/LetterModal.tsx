@@ -25,13 +25,13 @@ type Props = {
   letter: Letter;
   currentUser: User | null;
   onClose: () => void;
-  onDeleted?: () => void;
+  onDeleted?: (id?: string) => void;
   onRead?: (id: string) => void;
   initialLayer?: number;
   isRainy?: boolean;
-  hideReply?: boolean;    // ★ マイページ用に追加
-  hideFavorite?: boolean; // ★ マイページ用に追加
-  isMyPage?: boolean;     // ★ 返信削除の連動判別用に追加
+  hideReply?: boolean;    
+  hideFavorite?: boolean; 
+  isMyPage?: boolean;     
 };
 
 const CHARS_PER_PAGE = 140; 
@@ -175,10 +175,10 @@ function LetterModalContent({
     const text = letter.content || '';
     const PAGE_DELIMITER = '<<<PAGE>>>';
     if (text.includes(PAGE_DELIMITER)) {
-      text.split(PAGE_DELIMITER).forEach(p => newPages.push({ content: p }));
+      text.split(PAGE_DELIMITER).forEach(p => newPages.push({ type: 'text', content: p }));
     } else {
       for (let i = 0; i < text.length; i += CHARS_PER_PAGE) {
-        newPages.push({ content: text.slice(i, i + CHARS_PER_PAGE) });
+        newPages.push({ type: 'text', content: text.slice(i, i + CHARS_PER_PAGE) });
       }
     }
     setPages(newPages);
@@ -187,7 +187,6 @@ function LetterModalContent({
   const handleClose = () => { setIsVisible(false); setTimeout(onClose, 300); };
   const handleFinish = async () => { if (!(await checkStamp())) handleClose(); };
   
-  // ★ ループ機能：最後なら最初に戻る。複数枚あるときのみ動作
   const handleNext = () => { 
     if (currentPage < pages.length - 1) {
       setCurrentPage(currentPage + 1); 
@@ -236,19 +235,19 @@ function LetterModalContent({
   const handleDeleteReply = async () => {
     const currentReply = replies[currentReplyIndex];
     if (!currentReply || !confirm('この返事を削除しますか？')) return;
-    const { error } = await supabase.from('letters').delete().eq('id', currentReply.id);
+    const deletedId = currentReply.id;
+    const { error } = await supabase.from('letters').delete().eq('id', deletedId);
     if (!error) {
       const newReplies = replies.filter((_, i) => i !== currentReplyIndex);
       setReplies(newReplies);
       setCurrentReplyIndex(0);
       
-      // ★ 修正：マイページの場合のみ連動削除。地図の場合は親を表示し続ける
       if (newReplies.length === 0) {
         if (isMyPage) {
-          onDeleted?.();
+          onDeleted?.(deletedId); 
           handleClose();
         } else {
-          setActiveLayer(0);
+          setActiveLayer(0); 
         }
       }
     }
@@ -257,7 +256,10 @@ function LetterModalContent({
   const handleDeleteParent = async () => {
     if (!confirm('本当にこの手紙を削除しますか？')) return;
     const { error } = await supabase.from('letters').delete().eq('id', letter.id);
-    if (!error) { handleClose(); onDeleted?.(); }
+    if (!error) { 
+      onDeleted?.(letter.id);
+      handleClose(); 
+    }
   };
 
   const onTouchStart = (e: React.TouchEvent) => {
@@ -297,7 +299,6 @@ function LetterModalContent({
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose}></div>
       <div className="relative w-full max-w-[380px] aspect-[1/1.48] perspective-1000 overflow-visible" onClick={e => e.stopPropagation()}>
         
-        {/* カード0：メインの手紙 */}
         <div 
           className={`absolute inset-0 bg-white shadow-2xl flex flex-col px-6 py-4 rounded-sm transition-all duration-500 ease-out ${activeLayer === 0 ? 'z-30 translate-y-0 scale-100' : 'z-10 -translate-y-[85%] scale-[0.92] opacity-60 blur-[0.5px]'}`}
           onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
@@ -310,7 +311,7 @@ function LetterModalContent({
                 <button onClick={(e) => { e.stopPropagation(); toggleFavorite(); }} className={`flex items-center gap-1 text-[10px] font-bold py-1.5 px-3 rounded-full border shadow-sm transition-all active:scale-95 ${isFavorited ? 'bg-pink-50 text-pink-500 border-pink-100' : 'bg-gray-100 text-gray-400 border-gray-200'}`}>{isFavorited ? '♥' : '♡'} お気に入り</button>
               </div>
             )}
-            <button onClick={handleClose} className="absolute right-0 p-1 text-gray-400 hover:text-gray-600 z-[45]"><svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M6 18L18 6M6 6l12 12" /></svg></button>
+            <button onClick={handleClose} className="absolute right-0 p-1 text-gray-400 hover:text-gray-600 z-[45]"><svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
           </div>
 
           <div className={`flex-1 relative flex flex-col overflow-hidden mt-2 ${isRainy ? 'rainy-text-container' : ''}`} onClick={() => (activeLayer === 0 && mode === 'read' && pages.length > 1) && handleNext()}>
@@ -349,7 +350,7 @@ function LetterModalContent({
                 </div>
                 <div className="flex flex-col items-end gap-1">
                   <div className="flex gap-4">
-                    <button onClick={(e) => { e.stopPropagation(); handleNext(); }} className={`text-xs font-bold ${pages.length > 1 ? 'text-[#8a776a]' : 'text-gray-200 pointer-events-none'}`}>← 次へ</button>
+                    <button onClick={(e) => { e.stopPropagation(); handleNext(); }} className={`text-xs font-bold ${(pages.length > 1) ? 'text-[#8a776a]' : 'text-gray-200 pointer-events-none'}`}>← 次へ</button>
                     <button onClick={(e) => { e.stopPropagation(); handlePrev(); }} className={`text-xs font-bold ${currentPage > 0 ? 'text-[#8a776a]' : 'text-gray-200 pointer-events-none'}`}>前へ →</button>
                   </div>
                   <span className="text-[9px] text-gray-300 font-serif font-bold">{currentPage + 1} / {pages.length}</span>
@@ -369,7 +370,6 @@ function LetterModalContent({
           )}
         </div>
 
-        {/* 返信入力 */}
         {mode === 'write' && (
           <div className="absolute inset-0 bg-[#fdfcf5] shadow-2xl flex flex-col px-6 py-4 rounded-sm z-50 animate-slideUp">
              {isRainy && <div className="absolute inset-0 z-[55] pointer-events-none rainy-overlay"></div>}
@@ -377,14 +377,13 @@ function LetterModalContent({
               <span className="text-[10px] font-bold text-orange-600 tracking-widest font-serif uppercase">Write Reply</span>
               <button onClick={() => setMode('read')} className="text-[10px] text-gray-400 font-bold hover:text-gray-600">✕ 戻る</button>
             </div>
-            <textarea autoFocus value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="メッセージを入力..." className={`flex-1 w-full bg-transparent border-none focus:ring-0 text-[12px] font-serif leading-relaxed text-[#5d4037] resize-none z-[60] ${isRainy ? 'blur-[0.4px]' : ''}`} />
+            <textarea autoFocus value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="ここにメッセージを入力してください..." className={`flex-1 w-full bg-transparent border-none focus:ring-0 text-[12px] font-serif leading-relaxed text-[#5d4037] resize-none z-[60] ${isRainy ? 'blur-[0.4px]' : ''}`} />
             <div className="h-16 flex items-center justify-end z-[60]">
               <button onClick={submitReply} disabled={isSubmitting} className="bg-orange-600 text-white px-8 py-2.5 rounded-full text-[10px] font-bold shadow-lg active:scale-95 disabled:bg-gray-300">お返事を出す</button>
             </div>
           </div>
         )}
 
-        {/* レイヤー1：返信閲覧 */}
         {replies.length > 0 && mode === 'read' && (
           <div 
             className={`absolute inset-0 bg-[#fdfcf5] shadow-2xl flex flex-col px-6 py-4 rounded-sm transition-all duration-500 ease-out border border-[#5d4037]/5 ${activeLayer === 1 ? 'z-40 translate-y-0 scale-[0.96]' : 'z-10 translate-y-[96%] opacity-0 pointer-events-none'}`}
@@ -400,10 +399,10 @@ function LetterModalContent({
             </div>
             <div className={`flex-1 bg-white/60 p-[calc(var(--spacing)*6.6)] rounded border border-orange-50 overflow-hidden mb-2 relative z-[46] ${isRainy ? 'rainy-text-container' : ''}`}>
                <div className="w-full h-full text-[14px] font-serif tracking-[0.2em] [writing-mode:vertical-rl] [text-orientation:mixed] whitespace-pre-wrap text-[#5d4037]" style={{ lineHeight: '2.5rem', backgroundImage: 'linear-gradient(to left, transparent calc(100% - 1px), #f7f3f0 1px)', backgroundSize: '2.5rem 100%', fontFeatureSettings: '"vpal" 1' }}>
-                  {replies[currentReplyIndex]?.content}
+                  {currentReply?.content}
                </div>
                <div className="absolute bottom-4 left-4 [writing-mode:vertical-rl] text-[10px] text-[#8a776a] font-serif tracking-widest italic opacity-80">
-                  {replies[currentReplyIndex]?.nickname || '名無し'} より
+                  {currentReply?.nickname || '名無し'} より
                </div>
             </div>
             {activeLayer === 1 && replies.length > 1 && (

@@ -16,21 +16,11 @@ import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
 import SkeletonLetter from '@/components/SkeletonLetter';
 
 type Letter = {
-  id: string;
-  title: string;
-  spot_name: string;
-  content: string;
-  lat: number;
-  lng: number;
-  image_url?: string;
-  is_official?: boolean;
-  user_id?: string;
-  created_at: string;
-  password?: string | null;
-  attached_stamp_id?: number | null;
-  read_count?: number;
-  is_post?: boolean;
-  parent_id?: string | null;
+  id: string; title: string; spot_name: string; content: string;
+  lat: number; lng: number; image_url?: string; is_official?: boolean;
+  user_id?: string; created_at: string; password?: string | null;
+  attached_stamp_id?: number | null; read_count?: number;
+  is_post?: boolean; parent_id?: string | null;
   is_postcard?: boolean;
 };
 
@@ -68,7 +58,7 @@ export default function MyPage() {
   const [settingsMessage, setSettingsMessage] = useState<{type: 'success'|'error', text: string} | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // ★ 追加：雨天判定の状態（モーダルに渡すため）
+  // ★ 追加：雨天判定の状態
   const [isRainy, setIsRainy] = useState(false);
 
   const isExpired = (createdAt: string) => {
@@ -217,7 +207,7 @@ export default function MyPage() {
 
   const handleStampClick = (targetPost?: Letter) => {
     if (!targetPost) {
-      alert('この切手には場所の情報が紐付いていないため、開けません。古いデータの可能性があります。');
+      alert('この切手には場所の情報が紐付いていないため、開けません。');
       return;
     }
     setInitialLayer(0);
@@ -256,7 +246,7 @@ export default function MyPage() {
           <button onClick={() => setPostFilter('active')} className={`shrink-0 px-4 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'active' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>掲載中</button>
           <button onClick={() => setPostFilter('archive')} className={`shrink-0 px-4 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'archive' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>過去</button>
           <button onClick={() => setPostFilter('submitted')} className={`shrink-0 px-4 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'submitted' ? 'bg-red-600 text-white border-red-600 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>投函済み</button>
-          <button onClick={() => setPostFilter('replies')} className={`shrink-0 px-4 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'replies' ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>手紙の返事</button>
+          <button onClick={() => setPostFilter('replies')} className={`shrink-0 px-4 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'replies' ? 'bg-orange-50 text-white border-orange-500 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>手紙の返事</button>
         </div>
       )}
 
@@ -329,7 +319,7 @@ export default function MyPage() {
             {activeTab === 'stamps' && (
               <div className="animate-fadeIn">
                 {userStampRecords.length === 0 ? (
-                  <div className="text-center py-20 text-gray-400 text-xs font-sans">まだ切手はありません。<br/>運営ポストに手紙を投函してみましょう。</div>
+                  <div className="text-center py-20 text-gray-400 text-xs font-sans">まだ切手はありません。</div>
                 ) : (
                   <div className="grid grid-cols-3 md:grid-cols-6 gap-6 px-2 max-w-5xl mx-auto pt-4">
                     {userStampRecords.map(record => (
@@ -349,7 +339,6 @@ export default function MyPage() {
                         )}
                       </div>
                       <p className="text-[10px] font-bold text-center text-bunko-ink truncate w-full mt-2 font-sans">{record.stamp.name}</p>
-                      {record.post?.spot_name && <p className="text-[8px] text-gray-400 text-center truncate w-full mt-0.5 font-sans">📍 {record.post.spot_name}</p>}
                     </div>
                     ))}
                   </div>
@@ -363,11 +352,7 @@ export default function MyPage() {
             {activeTab !== 'stamps' && activeTab !== 'settings' && (
               <div className="animate-fadeIn space-y-3 max-w-3xl mx-auto">
                 {(activeTab === 'posts' ? filteredMyPosts : favorites).length === 0 && (
-                  <div className="text-center py-12 text-gray-400 text-xs font-sans">
-                    {activeTab === 'posts' 
-                      ? (postFilter === 'active' ? '掲載中の手紙はありません' : postFilter === 'archive' ? '思い出はありません' : postFilter === 'submitted' ? '投函した手紙はありません' : '返信した手紙はありません') 
-                      : 'お気に入りはありません'}
-                  </div>
+                  <div className="text-center py-12 text-gray-400 text-xs font-sans">データがありません。</div>
                 )}
 
                 {(activeTab === 'posts' ? filteredMyPosts : favorites).map((letter) => {
@@ -433,17 +418,15 @@ export default function MyPage() {
             isRainy={isRainy}
             onClose={() => { setSelectedLetter(null); setInitialLayer(0); }}
             onRead={() => {}}
-            onDeleted={() => {
+            // ★ 即時反映のロジックを統合
+            onDeleted={(deletedId) => {
+              setMyPosts(prev => prev.filter(l => l.id !== deletedId && l.id !== selectedLetter.id));
               setSelectedLetter(null);
-              if (user) { fetchMyPosts(user.id); fetchFavorites(user.id); }
             }}
-            // @ts-ignore
-            initialLayer={initialLayer}
-            // ★ アクション制限のプロパティ
-            // @ts-ignore
             hideReply={activeTab === 'favorites' || activeTab === 'stamps' || (activeTab === 'posts' && postFilter === 'replies')}
-            // @ts-ignore
             hideFavorite={activeTab === 'stamps' || (activeTab === 'posts' && postFilter === 'replies')}
+            initialLayer={initialLayer}
+            isMyPage={true}
           />
         ) : (
           <LetterModal 
@@ -452,17 +435,15 @@ export default function MyPage() {
             isRainy={isRainy}
             onClose={() => { setSelectedLetter(null); setInitialLayer(0); }} 
             onRead={() => {}} 
-            onDeleted={() => { 
-              setSelectedLetter(null); 
-              if (user) { fetchMyPosts(user.id); fetchFavorites(user.id); } 
+            // ★ 即時反映のロジックを統合
+            onDeleted={(deletedId) => {
+              setMyPosts(prev => prev.filter(l => l.id !== deletedId && l.id !== selectedLetter.id));
+              setSelectedLetter(null);
             }} 
-            // @ts-ignore
-            initialLayer={initialLayer}
-            // ★ アクション制限のプロパティ
-            // @ts-ignore
             hideReply={activeTab === 'favorites' || activeTab === 'stamps' || (activeTab === 'posts' && postFilter === 'replies')}
-            // @ts-ignore
             hideFavorite={activeTab === 'stamps' || (activeTab === 'posts' && postFilter === 'replies')}
+            initialLayer={initialLayer}
+            isMyPage={true}
           />
         )
       )}
