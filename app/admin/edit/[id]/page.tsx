@@ -1,18 +1,42 @@
 'use client';
 import { compressImage, compressStamp } from '@/utils/imageControl';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-// ★修正1: Map を MapGL という名前に変更してインポート（名前衝突回避）
+// ★修正: MapGL という名前に変更してインポート（名前衝突回避）
 import MapGL, { Marker, NavigationControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { supabase } from '@/utils/supabase';
 
+// アイコンのインポート
 import IconAdminLetter from '@/components/IconAdminLetter';
+import IconAdminPostcard from '@/components/IconAdminPostcard';
+import IconUserLetter from '@/components/IconUserLetter';
+import IconPostcard from '@/components/IconPostcard';
 import IconPost from '@/components/IconPost';
+// ★ 有効期限設定をインポート
+import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
 
 const PAGE_DELIMITER = '<<<PAGE>>>';
 const MAX_CHARS_PER_PAGE = 140;
 const MAX_PAGES_ADMIN = 20;
+
+type Letter = {
+  id: string;
+  title: string;
+  lat: number;
+  lng: number;
+  image_url?: string;
+  is_official?: boolean;
+  password?: string | null;
+  attached_stamp_id?: number | null;
+  is_post?: boolean;
+  is_postcard?: boolean;
+  user_id?: string;
+  parent_id?: string | null;
+  created_at: string;
+  spot_name?: string;
+  allow_reply?: boolean;
+};
 
 export default function EditPage() {
   const router = useRouter();
@@ -35,8 +59,12 @@ export default function EditPage() {
   const [newStampFile, setNewStampFile] = useState<File | null>(null);
   const [isPost, setIsPost] = useState(false);
   
+  // ★ 追加：返信許可ステート
+  const [allowReply, setAllowReply] = useState(true);
+  
   const [childLetters, setChildLetters] = useState<any[]>([]);
   const [loadingChildren, setLoadingChildren] = useState(false);
+  const [allLettersForMap, setAllLettersForMap] = useState<Letter[]>([]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -50,14 +78,18 @@ export default function EditPage() {
       if (layer.layout && layer.layout['text-field']) {
         try {
           map.setLayoutProperty(layer.id, 'text-field', [
-            'coalesce',
-            ['get', 'name_ja'],
-            ['get', 'name']
+            'coalesce', ['get', 'name_ja'], ['get', 'name']
           ]);
         } catch (e) {}
       }
     });
   };
+
+  // マップ表示用に全手紙を取得（期限切れ非表示用）
+  const fetchAllLetters = useCallback(async () => {
+    const { data } = await supabase.from('letters').select('*');
+    if (data) setAllLettersForMap(data as Letter[]);
+  }, []);
 
   useEffect(() => {
     const fetchLetter = async () => {
@@ -88,6 +120,9 @@ export default function EditPage() {
         setLng(letter.lng);
         setCurrentImageUrl(letter.image_url);
         setIsPost(letter.is_post || false);
+        // ★ DBから返信許可設定をロード
+        setAllowReply(letter.allow_reply ?? true);
+        
         if (letter.password) { setIsPrivate(true); setPassword(letter.password); }
         if (letter.attached_stamp_id) {
           const { data: stampData } = await supabase.from('stamps').select('*').eq('id', letter.attached_stamp_id).single();
@@ -99,16 +134,16 @@ export default function EditPage() {
             fetchChildLetters(letter.id);
         }
         
+        await fetchAllLetters();
         setIsLoading(false);
       }
     };
     fetchLetter();
-  }, [id, router]);
+  }, [id, router, fetchAllLetters]);
 
   const fetchChildLetters = async (parentId: string) => {
     try {
       setLoadingChildren(true);
-      
       const { data: lettersData, error } = await supabase
         .from('letters')
         .select('*')
@@ -120,13 +155,7 @@ export default function EditPage() {
 
       if (lettersData && lettersData.length > 0) {
         const userIds = Array.from(new Set(lettersData.map(l => l.user_id)));
-        
-        const { data: profilesData } = await supabase
-          .from('profiles')
-          .select('id, nickname')
-          .in('id', userIds);
-        
-        // ★ここでの new Map() が正常に動くようになります
+        const { data: profilesData } = await supabase.from('profiles').select('id, nickname').in('id', userIds);
         const profileMap = new Map(profilesData?.map((p: any) => [p.id, p.nickname]) || []);
 
         const mergedData = lettersData.map(l => ({
@@ -134,7 +163,6 @@ export default function EditPage() {
           nickname: profileMap.get(l.user_id) || '不明なユーザー',
           profiles: { nickname: profileMap.get(l.user_id) || '不明なユーザー' }
         }));
-        
         setChildLetters(mergedData);
       } else {
         setChildLetters([]);
@@ -187,36 +215,30 @@ export default function EditPage() {
       if (isStampDeleted) {
         finalStampId = null;
       } else if (newStampFile) {
-        // 画像の軽量圧縮（WebP）
         const compressedStampFile = await compressStamp(newStampFile);
         const sPath = `stamp_${Date.now()}.webp`;
         await supabase.storage.from('stamp-images').upload(sPath, compressedStampFile, { contentType: 'image/webp' });
         const sUrl = supabase.storage.from('stamp-images').getPublicUrl(sPath).data.publicUrl;
 
         if (isCreatingNewStamp) {
-          // 新規切手として登録
           const { data: newStamp } = await supabase.from('stamps').insert({ 
-            name: newStampName, 
-            image_url: sUrl, 
-            description: `${spotName}の記念切手` 
+            name: newStampName, image_url: sUrl, description: `${spotName}の記念切手` 
           }).select().single();
           if (newStamp) finalStampId = newStamp.id;
         } else if (currentStamp) {
-          // 既存切手の画像と名前を更新
-          await supabase.from('stamps').update({ 
-            name: newStampName, 
-            image_url: sUrl 
-          }).eq('id', currentStamp.id);
+          await supabase.from('stamps').update({ name: newStampName, image_url: sUrl }).eq('id', currentStamp.id);
         }
       } else if (currentStamp && newStampName !== currentStamp.name) {
-        // 名前だけの更新
         await supabase.from('stamps').update({ name: newStampName }).eq('id', currentStamp.id);
       }
 
       const contentToSave = pages.join(PAGE_DELIMITER);
       const { error } = await supabase.from('letters').update({
           title, spot_name: spotName || '名もなき場所', content: contentToSave, lat, lng,
-          image_url: finalImageUrl, password: isPrivate ? password : null, attached_stamp_id: finalStampId, is_post: isPost
+          image_url: finalImageUrl, password: isPrivate ? password : null, attached_stamp_id: finalStampId, 
+          is_post: isPost,
+          // ★ 追加：返信許可設定の更新
+          allow_reply: allowReply
         }).eq('id', id);
 
       if (error) throw error;
@@ -304,12 +326,27 @@ export default function EditPage() {
             </div>
 
             <div className="bg-orange-50 p-3 rounded border border-orange-200">
-              <label className="block text-xs font-bold text-gray-600 mb-2">公開設定</label>
+              <label className="block text-xs font-bold text-gray-600 mb-2">公開・返信設定</label>
               <div className="flex gap-4 mb-2">
                 <label className="flex items-center gap-2 cursor-pointer"><input type="radio" checked={!isPrivate} onChange={() => setIsPrivate(false)} className="accent-orange-600"/><span className="text-xs">誰でもOK</span></label>
                 <label className="flex items-center gap-2 cursor-pointer"><input type="radio" checked={isPrivate} onChange={() => setIsPrivate(true)} className="accent-orange-600"/><span className="text-xs">合言葉</span></label>
               </div>
               {isPrivate && (<input type="text" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white border border-gray-300 rounded p-2 text-xs" placeholder="合言葉を入力" />)}
+
+              {/* ★ 追加：返信を許可するチェックボックス */}
+              {!isPost && (
+                <div className="mt-4 pt-2 border-t border-orange-100">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={allowReply} 
+                      onChange={(e) => setAllowReply(e.target.checked)} 
+                      className="w-4 h-4 accent-orange-600 rounded"
+                    />
+                    <span className="text-xs font-bold text-gray-700">手紙の返信を許可する</span>
+                  </label>
+                </div>
+              )}
             </div>
 
             <div className="bg-gray-100 p-2 rounded text-xs text-gray-500">
@@ -318,7 +355,6 @@ export default function EditPage() {
             </div>
           </form>
 
-          {/* ★子手紙リスト */}
           {isPost && (
             <div className="mt-8 border-t-2 border-dashed border-gray-300 pt-6 pb-20">
               <div className="flex justify-between items-center mb-4">
@@ -366,7 +402,6 @@ export default function EditPage() {
       </div>
 
       <div className="w-full md:w-2/3 h-[50vh] md:h-screen relative">
-        {/* ★修正2: MapGL コンポーネントを使用 */}
         <MapGL
           {...viewState}
           onMove={evt => setViewState(evt.viewState)}
@@ -378,6 +413,22 @@ export default function EditPage() {
           onClick={(e) => { setLat(e.lngLat.lat); setLng(e.lngLat.lng); }}
         >
           <NavigationControl position="top-right" />
+          
+          {/* ★ 他の手紙の表示（期限切れは非表示） */}
+          {allLettersForMap.filter(l => l.id !== id && !l.parent_id).map(l => {
+            if (!l.is_official && !l.is_post && l.created_at) {
+              const exp = LETTER_EXPIRATION_HOURS || 48;
+              if ((new Date().getTime() - new Date(l.created_at).getTime()) / 3600000 > exp) return null;
+            }
+            return (
+              <Marker key={l.id} latitude={l.lat} longitude={l.lng} anchor="bottom">
+                <div className="opacity-40">
+                  {l.is_post ? <IconPost className="w-8 h-8" /> : (l.is_official ? <IconAdminLetter className="w-8 h-8" /> : <IconUserLetter className="w-8 h-8" />)}
+                </div>
+              </Marker>
+            );
+          })}
+
           <Marker latitude={lat} longitude={lng} anchor="bottom" draggable onDragEnd={(e) => { setLat(e.lngLat.lat); setLng(e.lngLat.lng); }}>
             <div className="animate-bounce">
                {isPost ? <IconPost className="w-12 h-12 text-red-600 drop-shadow-lg" /> : <IconAdminLetter className="w-10 h-10 drop-shadow-lg" />}

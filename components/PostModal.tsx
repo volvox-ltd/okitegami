@@ -19,6 +19,7 @@ type Props = {
   currentUser: User | null;
   onClose: () => void;
   isReachable: boolean; 
+  isRainy?: boolean;
 };
 
 export default function PostModal({ post, currentUser, onClose, isReachable }: Props) {

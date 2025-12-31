@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -19,8 +19,7 @@ export default function AdminDashboard() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'official' | 'posts' | 'users' | 'members' | 'stats' | 'create' | 'stamps'>('posts');
-  // ★追加：ユーザー投稿内のサブタブ
+  const [activeTab, setActiveTab] = useState<'official' | 'posts' | 'users' | 'members' | 'stats' | 'create' | 'stamps' | 'weather'>('posts');
   const [userSubTab, setUserSubTab] = useState<'active' | 'archive'>('active');
 
   const [stats, setStats] = useState({ userCount: 0, letterCount: 0, reportCount: 0 });
@@ -31,14 +30,30 @@ export default function AdminDashboard() {
   const [isCleaning, setIsCleaning] = useState(false);
   const [cleanLog, setCleanLog] = useState<string>('');
 
+  // ★ 追加：天候管理用
+  const [forceRain, setForceRain] = useState(false);
+
   useEffect(() => {
     const init = async () => {
       await fetchData();
       await fetchStamps();
+      await fetchWeatherSetting();
       setLoading(false);
     };
     init();
   }, []);
+
+  const fetchWeatherSetting = async () => {
+    const { data } = await supabase.from('system_settings').select('value').eq('key', 'force_rain').maybeSingle();
+    setForceRain(data?.value === 'true');
+  };
+
+  const toggleWeather = async () => {
+    const newValue = !forceRain;
+    const { error } = await supabase.from('system_settings').upsert({ key: 'force_rain', value: newValue.toString() });
+    if (!error) setForceRain(newValue);
+    else alert('設定の保存に失敗しました');
+  };
 
   const fetchData = async () => {
     try {
@@ -128,7 +143,7 @@ export default function AdminDashboard() {
   const handleResetStamps = async (userId: string, nickname: string) => {
     if (!confirm(`${nickname}さんの獲得済み切手をすべてリセットしますか？`)) return;
     try {
-      const { error } = await supabase.from('user_stamps').delete().eq('user_id', userId);
+      const { error } = await supabase.from('user_stamps').delete().eq('userId', userId);
       if (error) throw error;
       alert(`${nickname}さんの切手帳を空にしました。`);
       fetchData();
@@ -165,12 +180,10 @@ export default function AdminDashboard() {
 
   if (loading) return <div className="p-10 text-center font-bold text-green-800 font-sans">管理情報を照合中...</div>;
 
-  // 手紙の仕分け
   const officialLetters = letters.filter(l => l.is_official && !l.is_post);
   const postLetters = letters.filter(l => l.is_post);
   const allUserLetters = letters.filter(l => !l.is_official && !l.parent_id);
 
-  // ★ サブタブ用の仕分け
   const activeUserLetters = allUserLetters.filter(l => {
     const hours = (new Date().getTime() - new Date(l.created_at).getTime()) / 3600000;
     return hours <= LETTER_EXPIRATION_HOURS;
@@ -195,10 +208,37 @@ export default function AdminDashboard() {
           <TabButton label="ユーザー管理" isActive={activeTab === 'members'} onClick={() => setActiveTab('members')} icon="👥" count={stats.userCount} />
           <TabButton label="切手管理" isActive={activeTab === 'stamps'} onClick={() => setActiveTab('stamps')} icon="🏷️" count={allStamps.length} />
           <TabButton label="統計" isActive={activeTab === 'stats'} onClick={() => setActiveTab('stats')} icon="📊" />
+          {/* ★ 天候管理タブ追加 */}
+          <TabButton label="天候設定" isActive={activeTab === 'weather'} onClick={() => setActiveTab('weather')} icon="☁️" />
           <TabButton label="新規作成" isActive={activeTab === 'create'} onClick={() => setActiveTab('create')} icon="✏️" color="bg-green-700 text-white" />
         </div>
 
-        {/* --- 切手管理タブ --- */}
+        {/* --- 天候管理タブ --- */}
+        {activeTab === 'weather' && (
+          <div className="bg-white p-8 rounded-xl shadow border border-gray-200 animate-fadeIn max-w-lg mx-auto text-center">
+            <h2 className="font-bold text-lg mb-6">🌧️ 天候システムのテスト設定</h2>
+            <div className="flex flex-col items-center gap-4">
+              <p className="text-sm text-gray-500 leading-relaxed">
+                「強制雨モード」をオンにすると、実際の天候APIに関わらず<br/>
+                全てのユーザーの地図が雨の日の表現になり、<br/>
+                手紙の劣化スピードが加速します。
+              </p>
+              <div className="flex items-center gap-4 bg-gray-50 px-6 py-4 rounded-full border border-gray-200 mt-4">
+                <span className="font-bold text-sm">強制雨モード</span>
+                <button 
+                  onClick={toggleWeather}
+                  className={`w-14 h-8 rounded-full relative transition-all duration-300 ${forceRain ? 'bg-blue-600' : 'bg-gray-300'}`}
+                >
+                  <div className={`absolute top-1 w-6 h-6 bg-white rounded-full shadow transition-all duration-300 ${forceRain ? 'left-7' : 'left-1'}`}></div>
+                </button>
+              </div>
+              <p className={`text-xs font-bold mt-2 ${forceRain ? 'text-blue-600' : 'text-gray-400'}`}>
+                {forceRain ? '現在、全ユーザーの地図が「雨」になっています' : 'APIによる自動取得モードです'}
+              </p>
+            </div>
+          </div>
+        )}
+
         {activeTab === 'stamps' && (
           <div className="bg-white p-6 rounded-xl shadow border border-gray-200 animate-fadeIn">
             <div className="flex justify-between items-center mb-6">
@@ -221,7 +261,6 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* --- ユーザー管理タブ --- */}
         {activeTab === 'members' && (
           <div className="bg-white rounded-xl shadow overflow-hidden animate-fadeIn border border-gray-200">
             <div className="overflow-x-auto">
@@ -260,10 +299,8 @@ export default function AdminDashboard() {
           </div>
         )}
 
-        {/* --- みんなの投稿（メイン修正箇所） --- */}
         {activeTab === 'users' && (
           <div className="space-y-6 animate-fadeIn">
-            {/* サブタブ切り替え */}
             <div className="flex gap-4 border-b border-gray-200">
               <button onClick={() => setUserSubTab('active')} className={`pb-2 px-2 text-sm font-bold transition-all ${userSubTab === 'active' ? 'text-green-700 border-b-2 border-green-700' : 'text-gray-400'}`}>掲載中 ({activeUserLetters.length})</button>
               <button onClick={() => setUserSubTab('archive')} className={`pb-2 px-2 text-sm font-bold transition-all ${userSubTab === 'archive' ? 'text-gray-600 border-b-2 border-gray-600' : 'text-gray-400'}`}>アーカイブ ({archivedUserLetters.length})</button>
@@ -319,7 +356,6 @@ export default function AdminDashboard() {
                       ))}
                     </tbody>
                   </table>
-                  {archivedUserLetters.length === 0 && <div className="p-10 text-center text-gray-400 text-sm italic">アーカイブはありません。</div>}
                 </div>
               </div>
             )}

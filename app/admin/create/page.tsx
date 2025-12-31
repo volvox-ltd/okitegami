@@ -1,6 +1,6 @@
 'use client';
 import { compressImage } from '@/utils/imageControl';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Map, { Marker, NavigationControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -13,7 +13,8 @@ import IconAdminPostcard from '@/components/IconAdminPostcard'; // ★ 追加
 import IconUserLetter from '@/components/IconUserLetter';
 import IconPostcard from '@/components/IconPostcard'; // ★ 追加
 import IconPost from '@/components/IconPost'; // ★ 追加
-import { ENABLE_PHOTO_UPLOAD } from '@/utils/constants';
+// ★ 有効期限の設定と写真スイッチをインポート
+import { LETTER_EXPIRATION_HOURS, ENABLE_PHOTO_UPLOAD } from '@/utils/constants';
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -37,6 +38,8 @@ type Letter = {
   is_postcard?: boolean; // ★ 追加
   user_id?: string;
   parent_id?: string | null; // ★ 重なり防止判定用に追加
+  created_at: string; // ★ 期限判定用に追加
+  spot_name?: string; // 型定義の補完
 };
 
 export default function AdminCreatePage() {
@@ -58,6 +61,9 @@ export default function AdminCreatePage() {
   // ★ 運営用：通常投稿時の「便箋」か「ハガキ」かの選択ステート
   const [postType, setPostType] = useState<'letter' | 'postcard'>('letter');
 
+  // ★ 追加機能：手紙の返信を許可するステート（初期値は許可）
+  const [allowReply, setAllowReply] = useState(true);
+
   const [lat, setLat] = useState(35.6288);
   const [lng, setLng] = useState(139.6842);
   // ★ 管理者の現在地保持用
@@ -74,7 +80,13 @@ export default function AdminCreatePage() {
 
   const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
-  // ★ 修正：初期化時に現在地を取得し、マップの中心を移動させる
+  // ★ 手紙一覧の取得
+  const fetchLetters = useCallback(async () => {
+    const { data } = await supabase.from('letters').select('*').order('created_at', { ascending: false });
+    if (data) setLetters(data as Letter[]);
+  }, []);
+
+  // ★ 初期化時に現在地を取得し、マップの中心を移動させる
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -95,12 +107,7 @@ export default function AdminCreatePage() {
       );
     }
     fetchLetters();
-  }, []);
-
-  const fetchLetters = async () => {
-    const { data } = await supabase.from('letters').select('*').order('created_at', { ascending: false });
-    if (data) setLetters(data);
-  };
+  }, [fetchLetters]);
 
   const getVisibleLength = (text: string) => {
     return text.replace(/<[^>]+>/g, '').length;
@@ -123,6 +130,7 @@ export default function AdminCreatePage() {
     setPages(newPages);
   };
 
+  // ★ 削除機能（元のコードから復元）
   const handleDelete = async (id: string, imageUrl?: string) => {
     if (!window.confirm('本当にこの手紙を削除しますか？')) return;
     try {
@@ -163,19 +171,14 @@ export default function AdminCreatePage() {
 
       let letterImageUrl = null;
       if ((postType === 'postcard' || ENABLE_PHOTO_UPLOAD) && imageFile) {
-        
-        // ★ 追加：アップロード前の最終チェック（例えば20MB以上は未加工でも重すぎるので警告）
         if (imageFile.size > 20 * 1024 * 1024) {
           alert('画像サイズが大きすぎます。20MB以下の画像を選択してください。');
           setIsSubmitting(false);
           return;
         }
 
-        // ★ 圧縮・リサイズ実行
-        // ここで1200pxにリサイズされ、WebP化されます
         const compressedFile = await compressImage(imageFile);
-        
-        const fileName = `letter_${Date.now()}.webp`; // 拡張子をwebpに固定
+        const fileName = `letter_${Date.now()}.webp`; 
         const { error: upErr } = await supabase.storage
           .from('letter-images')
           .upload(fileName, compressedFile, { 
@@ -204,7 +207,6 @@ export default function AdminCreatePage() {
           .upload(stampFileName, fileToUpload, { contentType: mimeType });
           
         if (stampUpErr) throw stampUpErr;
-        
         const { data: stampUrlData } = supabase.storage.from('stamp-images').getPublicUrl(stampFileName);
 
         const { data: stampData, error: stampDbErr } = await supabase
@@ -214,8 +216,7 @@ export default function AdminCreatePage() {
             image_url: stampUrlData.publicUrl,
             description: `${spotName}の記念切手`
           })
-          .select()
-          .single();
+          .select().single();
         
         if (stampDbErr) throw stampDbErr;
         newStampId = stampData.id;
@@ -237,7 +238,8 @@ export default function AdminCreatePage() {
           attached_stamp_id: newStampId,
           is_post: isPost,
           is_postcard: !isPost && postType === 'postcard',
-          user_id: user.id 
+          user_id: user.id,
+          allow_reply: allowReply // ★ 返信許可設定を保存
         }]);
 
       if (dbError) throw dbError;
@@ -248,6 +250,7 @@ export default function AdminCreatePage() {
       setIsPrivate(false); setPassword('');
       setHasStamp(false); setStampName(''); setStampFile(null);
       setIsPost(false); setPostType('letter');
+      setAllowReply(true); // ★ リセット
       fetchLetters();
 
     } catch (error: any) {
@@ -426,7 +429,7 @@ export default function AdminCreatePage() {
             </div>
 
             <div className="bg-orange-50 p-3 rounded border border-orange-200">
-              <label className="block text-xs font-bold text-gray-600 mb-2">公開設定</label>
+              <label className="block text-xs font-bold text-gray-600 mb-2">公開・返信設定</label>
               <div className="flex gap-4 mb-2">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="radio" checked={!isPrivate} onChange={() => setIsPrivate(false)} className="accent-orange-600"/>
@@ -443,6 +446,21 @@ export default function AdminCreatePage() {
                   className="w-full bg-white border border-gray-300 rounded p-2 text-sm"
                   placeholder="合言葉を入力"
                 />
+              )}
+
+              {/* ★ 追加：返信を許可するチェックボックス */}
+              {!isPost && (
+                <div className="mt-4 pt-2 border-t border-orange-100">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={allowReply} 
+                      onChange={(e) => setAllowReply(e.target.checked)} 
+                      className="w-4 h-4 accent-orange-600 rounded"
+                    />
+                    <span className="text-xs font-bold text-gray-700">手紙の返信を許可する</span>
+                  </label>
+                </div>
               )}
             </div>
 
@@ -476,6 +494,7 @@ export default function AdminCreatePage() {
                 </div>
                 <div className="flex gap-2">
                   <Link href={`/admin/edit/${letter.id}`} className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded hover:bg-blue-200 font-bold">編集</Link>
+                  <button onClick={() => handleDelete(letter.id, letter.image_url)} className="text-xs bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200 font-bold">削除</button>
                 </div>
               </div>
             ))}
@@ -518,9 +537,16 @@ export default function AdminCreatePage() {
             )}
           </Marker>
           
-          {/* ★ 修正：parent_id がない（ルートの）投稿のみ表示し、ポスト重なりを防止 */}
+          {/* ★ 修正：期限切れの手紙をフィルタリングして表示 */}
           {letters.filter(l => !l.parent_id).map(l => {
-            // ポスト内に手紙があるか判定
+            // 有効期限チェック (運営・ポスト以外に適用)
+            if (!l.is_official && !l.is_post && l.created_at) {
+              const expirationHours = LETTER_EXPIRATION_HOURS || 48;
+              const diffMs = new Date().getTime() - new Date(l.created_at).getTime();
+              const diffHours = diffMs / 3600000;
+              if (diffHours > expirationHours) return null; // ★ 期限切れなら表示しない
+            }
+
             const hasChildren = letters.some(child => child.parent_id === l.id);
             return (
               <Marker key={l.id} latitude={l.lat} longitude={l.lng} anchor="bottom" onClick={(e) => {e.originalEvent.stopPropagation(); router.push(`/admin/edit/${l.id}`)}}>

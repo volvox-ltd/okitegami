@@ -1,7 +1,7 @@
 'use client';
 // ★ 修正：processPostcardImage と compressImage を使用
 import { compressImage, processPostcardImage } from '@/utils/imageControl';
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useCallback } from 'react';
 import Map, { Marker, NavigationControl, GeolocateControl } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -46,6 +46,9 @@ function PostForm() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState('');
+  
+  // ★ 追加：手紙の返信を許可するステート（初期値は許可）
+  const [allowReply, setAllowReply] = useState(true);
 
   const [viewState, setViewState] = useState({ latitude: 35.6288, longitude: 139.6842, zoom: 16 });
   const [pinLocation, setPinLocation] = useState({ lat: 35.6288, lng: 139.6842 });
@@ -191,7 +194,9 @@ function PostForm() {
         user_id: latestUser.id,
         is_official: false,
         password: isPrivate ? password : null,
-        is_postcard: postType === 'postcard' 
+        is_postcard: postType === 'postcard',
+        // ★ 追加：返信許可フラグ
+        allow_reply: allowReply
       });
 
       if (insertError) throw insertError;
@@ -298,6 +303,20 @@ function PostForm() {
                   <label className="flex items-center gap-2 cursor-pointer"><input type="radio" checked={isPrivate} onChange={() => setIsPrivate(true)} className="w-4 h-4 accent-green-600"/><span className="text-sm font-bold">合言葉をつける</span></label>
                 </div>
                 {isPrivate && <input type="text" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-white border border-gray-300 rounded p-2 text-sm outline-none" placeholder="合言葉を入力" />}
+                
+                {/* ★ 追加：返信を許可するチェックボックス */}
+                <div className="mt-4 pt-3 border-t border-gray-200">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={allowReply} 
+                      onChange={(e) => setAllowReply(e.target.checked)} 
+                      className="w-4 h-4 accent-green-600 rounded"
+                    />
+                    <span className="text-sm font-bold text-gray-700">手紙の返信を許可する</span>
+                  </label>
+                  <p className="text-[10px] text-gray-400 mt-1 ml-6">許可すると、他の人がこの手紙に返事を書けるようになります。</p>
+                </div>
               </div>
 
               {(ENABLE_PHOTO_UPLOAD || postType === 'postcard') && (

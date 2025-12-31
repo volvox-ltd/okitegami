@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, Suspense, useCallback } from 'react';
+import { useState, useEffect, useMemo, Suspense, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { User } from '@supabase/supabase-js';
@@ -13,7 +13,7 @@ import Link from 'next/link';
 import Header from '@/components/Header';
 import IconUserLetter from '@/components/IconUserLetter';
 import IconAdminLetter from '@/components/IconAdminLetter';
-import IconAdminPostcard from '@/components/IconAdminPostcard'; // ★ 修正：運営ハガキアイコンをインポート
+import IconAdminPostcard from '@/components/IconAdminPostcard';
 import IconPost from '@/components/IconPost';
 import IconPostcard from '@/components/IconPostcard'; 
 import LetterModal from '@/components/LetterModal';
@@ -24,6 +24,9 @@ import NicknameModal from '@/components/NicknameModal';
 import TutorialModal from '@/components/TutorialModal'; 
 import AddToHomeScreen from '@/components/AddToHomeScreen';
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
+
+// ★ 天候判定・劣化ロジックのインポート
+import { calculateEffectiveHours, fetchIsRainy } from '@/utils/weather';
 
 // react-map-gl は SSR を無効化
 const Map = dynamic(() => import('react-map-gl').then(mod => mod.Map), { 
@@ -50,6 +53,7 @@ const NOTIFICATION_DISTANCE = 100;
 function HomeContent() {
   const ADMIN_EMAILS = ["marei.suyama@gmail.com", "contact@volvox-ltd.com"];
   const router = useRouter();
+  const mapRef = useRef<any>(null); // ★ マップの参照を保持
   
   const [letters, setLetters] = useState<Letter[]>([]);
   const [allLetters, setAllLetters] = useState<Letter[]>([]);
@@ -67,9 +71,13 @@ function HomeContent() {
   const [hasCentered, setHasCentered] = useState(false);
   const [showPwaPrompt, setShowPwaPrompt] = useState(false);
 
-  // ★ カウント通知用のステート追加
+  // ★ カウント通知用のステート
   const [showCounts, setShowCounts] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  // ★ 雨モードのステート
+  const [isRainy, setIsRainy] = useState(false);
+  const [showRainNotice, setShowRainNotice] = useState(false);
 
   const [viewState, setViewState] = useState({
     latitude: 35.6288,
@@ -77,9 +85,18 @@ function HomeContent() {
     zoom: 15
   });
 
-  const handleMapLoad = (evt: any) => {
-    const map = evt.target;
-    map.getStyle().layers.forEach((layer: any) => {
+  // ★ スタイル設定（雨の日は彩度の低い Light スタイル）
+  const mapStyle = useMemo(() => {
+    return isRainy ? "mapbox://styles/mapbox/light-v11" : "mapbox://styles/mapbox/streets-v12";
+  }, [isRainy]);
+
+  // ★ 日本語化を強制適用する関数
+  const applyLocalization = useCallback((map: any) => {
+    if (!map) return;
+    const style = map.getStyle();
+    if (!style || !style.layers) return;
+
+    style.layers.forEach((layer: any) => {
       if (layer.layout && layer.layout['text-field']) {
         try {
           map.setLayoutProperty(layer.id, 'text-field', [
@@ -88,11 +105,58 @@ function HomeContent() {
         } catch (e) {}
       }
     });
+    // 不要な情報を隠す
     const layersToHide = ['road-number-shield', 'road-exit-shield', 'motorway-junction'];
     layersToHide.forEach(id => {
       if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', 'none');
     });
+  }, []);
+
+  // ★ スタイル切り替え時に日本語化を再実行するエフェクト
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+
+    const handleStyleLoad = () => applyLocalization(map);
+    
+    map.on('style.load', handleStyleLoad);
+    if (map.isStyleLoaded()) applyLocalization(map);
+
+    return () => map.off('style.load', handleStyleLoad);
+  }, [mapStyle, applyLocalization]);
+
+  const handleMapLoad = (evt: any) => {
+    applyLocalization(evt.target);
   };
+
+  // ★ 自動天気取得ロジック ＆ 10秒タイマー
+  useEffect(() => {
+    const checkWeather = async () => {
+      // 1. 管理画面での「強制雨モード」設定があるか確認
+      const { data: settings } = await supabase.from('system_settings').select('value').eq('key', 'force_rain').maybeSingle();
+      
+      if (settings?.value === 'true') {
+        setIsRainy(true);
+        setShowRainNotice(true);
+      } else if (userLocation) {
+        // 2. 設定がない場合は現在地からAPI取得
+        const rainy = await fetchIsRainy(userLocation.lat, userLocation.lng);
+        if (rainy) {
+          setIsRainy(true);
+          setShowRainNotice(true);
+        }
+      }
+    };
+    checkWeather();
+  }, [userLocation]);
+
+  // ★ 雨通知を10秒後に消す
+  useEffect(() => {
+    if (showRainNotice) {
+      const timer = setTimeout(() => setShowRainNotice(false), 10000);
+      return () => clearTimeout(timer);
+    }
+  }, [showRainNotice]);
 
   useEffect(() => {
     const checkUser = async () => {
@@ -251,9 +315,8 @@ function HomeContent() {
     return letters.map((letter) => {
       if (!letter.is_official && !letter.is_post && !letter.parent_id && letter.created_at) {
         const expirationHours = LETTER_EXPIRATION_HOURS || 48;
-        const diffMs = new Date().getTime() - new Date(letter.created_at).getTime();
-        const diffHours = diffMs / 3600000;
-        if (diffHours > expirationHours) return null; 
+        const effectiveHours = calculateEffectiveHours(letter.created_at, isRainy);
+        if (effectiveHours > expirationHours) return null; 
       }
       if (!letter.is_official && !showUserPosts) return null;
       
@@ -264,7 +327,8 @@ function HomeContent() {
       const isRead = readLetterIds.includes(letter.id);
       const postHasLetters = allLetters.some(l => l.parent_id === letter.id);
 
-      const shouldBounce = isReachable && !letter.is_post && !isRead;
+      // ★ 修正：自分の作った投稿（isMyPost）は跳ねないように条件を追加
+      const shouldBounce = isReachable && !letter.is_post && !isRead && !isMyPost;
 
       return (
         <Marker key={letter.id} latitude={letter.lat} longitude={letter.lng} anchor="bottom" onClick={(e) => { e.originalEvent.stopPropagation(); setPopupInfo(letter); }} style={{ zIndex: isReachable ? 10 : 1 }}>
@@ -284,13 +348,14 @@ function HomeContent() {
                {isReachable && <span className="block text-[8px] font-bold text-orange-500 text-center mt-1 font-sans">{letter.is_post ? '投函できます！' : '読めます！'}</span>}
             </div>
 
-            <div className={`transition-transform duration-300 drop-shadow-md relative ${shouldBounce ? 'animate-bounce' : 'hover:scale-110'}`}>
+            <div className={`transition-transform duration-300 drop-shadow-md relative ${shouldBounce ? 'animate-bounce' : 'hover:scale-110'}`}
+              style={{ filter: (isRainy && !letter.is_official) ? 'grayscale(0.7) blur(0.9px) brightness(0.85)' : 'none' }}
+            >
                {letter.is_post ? (
                  <div className={isReachable ? "text-red-600" : "text-red-700"}>
                    <IconPost className="w-14 h-14" hasLetters={postHasLetters} />
                  </div>
                ) : letter.is_postcard ? (
-                 /* ★ 修正：運営ハガキとユーザーハガキでコンポーネント自体を切り分け */
                  <div className={isReachable ? (letter.is_official ? "text-yellow-500" : "text-orange-500") : "text-bunko-ink"}>
                    {letter.is_official ? <IconAdminPostcard className="w-12 h-12" /> : <IconPostcard className="w-12 h-12" />}
                  </div>
@@ -310,7 +375,7 @@ function HomeContent() {
         </Marker>
       );
     });
-  }, [letters, allLetters, showUserPosts, userLocation, readLetterIds, currentUser]);
+  }, [letters, allLetters, showUserPosts, userLocation, readLetterIds, currentUser, isRainy]);
 
   const getPostUrl = () => {
     if (!currentUser) return '/login?next=/post';
@@ -328,14 +393,22 @@ function HomeContent() {
 
       <Header currentUser={currentUser} nickname={myNickname} onAboutClick={() => setShowAbout(true)} isHidden={false} />
 
-      {showCounts && (
-        <div className="fixed top-[calc(env(safe-area-inset-top)+64px)] right-4 z-50 animate-fadeInDown">
-          <div className="bg-stone-500/85 backdrop-blur-md text-white px-3 py-1 rounded-lg shadow-xl border border-white/10 text-right leading-relaxed">
+      {/* ★ 修正：雨告知バー ＆ 未読通知（同じ右上にスタックし、雨通知は10秒で消える） */}
+      <div className="fixed top-[calc(env(safe-area-inset-top)+64px)] right-4 z-50 flex flex-col gap-2 pointer-events-none">
+        {showRainNotice && (
+          <div className="bg-blue-600/85 backdrop-blur-md text-white px-3 py-1 rounded-lg shadow-xl border border-white/10 text-right leading-relaxed animate-fadeInDown pointer-events-auto">
+            <p className="text-[10px] font-serif tracking-widest opacity-90">現在、雨が降っています</p>
+            <p className="text-[10px] font-serif tracking-wider whitespace-nowrap">手紙が痛みやすくなっています</p>
+          </div>
+        )}
+        
+        {showCounts && (
+          <div className="bg-stone-500/85 backdrop-blur-md text-white px-3 py-1 rounded-lg shadow-xl border border-white/10 text-right leading-relaxed animate-fadeInDown pointer-events-auto">
             <p className="text-[10px] font-serif tracking-widest opacity-90">半径3kmに未読の手紙が</p>
             <p className="text-[10px] font-serif tracking-wider whitespace-nowrap"><span className="text-sm">{unreadCount}通</span>あります</p>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="absolute left-4 z-20 transition-all top-[calc(env(safe-area-inset-top)+64px)] md:top-[calc(env(safe-area-inset-top)+70px)]">
         <div className="flex items-center bg-white/90 backdrop-blur px-3 py-2 rounded-full shadow-md border border-gray-100">
@@ -358,84 +431,103 @@ function HomeContent() {
         </div>
       )}
 
-      <Map
-        {...viewState}
-        onMove={evt => setViewState(evt.viewState)}
-        onLoad={handleMapLoad}
-        style={{ width: '100%', height: '100%' }}
-        mapStyle="mapbox://styles/mapbox/streets-v12" 
-        mapboxAccessToken={mapToken}
-        onClick={() => setPopupInfo(null)}
-      >
-        <div className="absolute bottom-[350px] right-[16px] z-10">
-          <div className="mapboxgl-ctrl mapboxgl-ctrl-group" style={{ margin: 0, background: '#fff', borderRadius: '4px', boxShadow: '0 0 0 2px rgba(0,0,0,0.1)' }}>
-            <button 
-              className="flex items-center justify-center transition-colors hover:bg-gray-50" 
-              style={{ width: '29px', height: '29px', border: 0, padding: 0, cursor: 'pointer', background: 'transparent', outline: 'none' }}
-              type="button" 
-              onClick={handleGeolocateClick}
-              title="Find my location"
-            >
-              <svg className="w-7 h-5" viewBox="0 0 427.17 709.4" xmlns="http://www.w3.org/2000/svg">
-                <path fill="#2196f3" d="M427.17,213.59c0,175.06-213.59,397.25-213.59,397.25,0,0-213.59-222.19-213.59-397.25C0,95.62,95.62,0,213.59,0s213.59,95.62,213.59,213.59Z"/>
-                <circle fill="#fff" cx="213.59" cy="213.59" r="102.43"/>
-                <path fill="#2196f3" d="M358.72,635.71c0,40.7-64.98,73.69-145.13,73.69s-145.13-32.99-145.13-73.69c0-29.53,34.21-55,83.61-66.75,28.47,34.97,49.36,56.8,50.74,58.23l10.79,11.22,10.79-11.22c1.38-1.44,22.27-23.27,50.74-58.23,49.4,11.75,83.61,37.23,83.61,66.75Z"/>
-              </svg>
-            </button>
+      {/* 地図コンテナ */}
+      <div className="w-full h-full relative" style={{ 
+        filter: isRainy ? 'saturate(0.5) brightness(0.85) contrast(1.1)' : 'none', 
+        transition: 'filter 2s ease-in-out' 
+      }}>
+        {isRainy && (
+          <div className="absolute inset-0 z-10 pointer-events-none bg-[#1a3a5a]/25 mix-blend-multiply animate-pulse-slow"></div>
+        )}
+        
+        <Map
+          {...viewState}
+          ref={mapRef} 
+          onMove={evt => setViewState(evt.viewState)}
+          onLoad={handleMapLoad}
+          onStyleData={(evt) => applyLocalization(evt.target)} // ★ スタイル変更時にも日本語化を適用
+          style={{ width: '100%', height: '100%' }}
+          mapStyle={mapStyle}
+          mapboxAccessToken={mapToken}
+          onClick={() => setPopupInfo(null)}
+          fog={isRainy ? {
+            "range": [0.2, 5],
+            "color": "#94a3b8",
+            "high-color": "#475569",
+            "space-color": "#1e293b",
+            "horizon-blend": 0.7
+          } : undefined}
+        >
+          <div className="absolute bottom-[350px] right-[16px] z-10">
+            <div className="mapboxgl-ctrl mapboxgl-ctrl-group" style={{ margin: 0, background: '#fff', borderRadius: '4px', boxShadow: '0 0 0 2px rgba(0,0,0,0.1)' }}>
+              <button 
+                className="flex items-center justify-center transition-colors hover:bg-gray-50" 
+                style={{ width: '29px', height: '29px', border: 0, padding: 0, cursor: 'pointer', background: 'transparent', outline: 'none' }}
+                type="button" 
+                onClick={handleGeolocateClick}
+                title="Find my location"
+              >
+                <svg className="w-7 h-5" viewBox="0 0 427.17 709.4" xmlns="http://www.w3.org/2000/svg">
+                  <path fill="#2196f3" d="M427.17,213.59c0,175.06-213.59,397.25-213.59,397.25,0,0-213.59-222.19-213.59-397.25C0,95.62,95.62,0,213.59,0s213.59,95.62,213.59,213.59Z"/>
+                  <circle fill="#fff" cx="213.59" cy="213.59" r="102.43"/>
+                  <path fill="#2196f3" d="M358.72,635.71c0,40.7-64.98,73.69-145.13,73.69s-145.13-32.99-145.13-73.69c0-29.53,34.21-55,83.61-66.75,28.47,34.97,49.36,56.8,50.74,58.23l10.79,11.22,10.79-11.22c1.38-1.44,22.27-23.27,50.74-58.23,49.4,11.75,83.61,37.23,83.61,66.75Z"/>
+                </svg>
+              </button>
+            </div>
           </div>
-        </div>
 
-        <NavigationControl position="bottom-right" style={{ marginBottom: '200px', marginRight: '16px' }} />
+          <NavigationControl position="bottom-right" style={{ marginBottom: '200px', marginRight: '16px' }} />
 
-        {userLocation && (
-          <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
-            <div className="relative">
-              <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-md z-10 relative"></div>
-              <div className="w-4 h-4 bg-blue-500 rounded-full absolute top-0 left-0 animate-ping opacity-50"></div>
-            </div>
-          </Marker>
-        )}
+          {userLocation && (
+            <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
+              <div className="relative">
+                <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-md z-10 relative"></div>
+                <div className="w-4 h-4 bg-blue-500 rounded-full absolute top-0 left-0 animate-ping opacity-50"></div>
+              </div>
+            </Marker>
+          )}
 
-        {renderedMarkers}
+          {renderedMarkers}
 
-        {popupInfo && (
-          <Popup latitude={popupInfo.lat} longitude={popupInfo.lng} anchor="bottom" offset={[0, -40]} onClose={() => setPopupInfo(null)} closeOnClick={false} className="z-50">
-            <div className="p-2 min-w-[160px] text-center pt-4 font-sans"> 
-              <h3 className="font-bold text-sm mb-1 text-bunko-ink font-serif">{popupInfo.title}</h3>
-              <p className="text-[10px] text-gray-500 mb-1 font-sans">
-                {popupInfo.is_post ? (popupInfo.spot_name || 'ポスト') : (popupInfo.spot_name || '')}
-              </p>
-              {(() => {
-                const dist = calculateDistance(popupInfo.lat, popupInfo.lng);
-                const isMyPost = currentUser && currentUser.id === popupInfo.user_id;
-                const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
-                const isReachable = (dist !== null && dist <= UNLOCK_DISTANCE) || isAdmin || isMyPost;
-                if (dist === null) return <p className="text-xs text-gray-400 font-sans">確認中...</p>;
-                if (isReachable) {
-                  return (
-                    <button 
-                      onClick={async () => { 
-                        const detail = await fetchLetterDetail(popupInfo.id);
-                        if (!detail) return;
-                        if (popupInfo.is_post) setReadingPost(detail); 
-                        else setReadingLetter(detail);
-                      }} 
-                      className={`w-full text-white text-xs py-2 px-4 rounded-full transition-colors shadow-sm font-bold font-sans ${
-                        popupInfo.is_post 
-                          ? 'bg-red-600 hover:bg-red-700' 
-                          : (popupInfo.is_official ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-700 hover:bg-green-800')
-                      }`}
-                    >
-                      {popupInfo.is_post ? 'ポストを開く' : (popupInfo.is_postcard ? 'ハガキを読む' : '手紙を読む')}
-                    </button>
-                  );
-                }
-                return <div className="bg-gray-100 text-gray-500 text-xs py-2 px-2 rounded-full border border-gray-200 font-sans">🔒 あと {dist}m</div>;
-              })()}
-            </div>
-          </Popup>
-        )}
-      </Map>
+          {popupInfo && (
+            <Popup latitude={popupInfo.lat} longitude={popupInfo.lng} anchor="bottom" offset={[0, -40]} onClose={() => setPopupInfo(null)} closeOnClick={false} className="z-50">
+              <div className="p-2 min-w-[160px] text-center pt-4 font-sans"> 
+                <h3 className="font-bold text-sm mb-1 text-bunko-ink font-serif">{popupInfo.title}</h3>
+                <p className="text-[10px] text-gray-500 mb-1 font-sans">
+                  {popupInfo.is_post ? (popupInfo.spot_name || 'ポスト') : (popupInfo.spot_name || '')}
+                </p>
+                {(() => {
+                  const dist = calculateDistance(popupInfo.lat, popupInfo.lng);
+                  const isMyPost = currentUser && currentUser.id === popupInfo.user_id;
+                  const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
+                  const isReachable = (dist !== null && dist <= UNLOCK_DISTANCE) || isAdmin || isMyPost;
+                  if (dist === null) return <p className="text-xs text-gray-400 font-sans">確認中...</p>;
+                  if (isReachable) {
+                    return (
+                      <button 
+                        onClick={async () => { 
+                          const detail = await fetchLetterDetail(popupInfo.id);
+                          if (!detail) return;
+                          if (popupInfo.is_post) setReadingPost(detail); 
+                          else setReadingLetter(detail);
+                        }} 
+                        className={`w-full text-white text-xs py-2 px-4 rounded-full transition-colors shadow-sm font-bold font-sans ${
+                          popupInfo.is_post 
+                            ? 'bg-red-600 hover:bg-red-700' 
+                            : (popupInfo.is_official ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-700 hover:bg-green-800')
+                        }`}
+                      >
+                        {popupInfo.is_post ? 'ポストを開く' : (popupInfo.is_postcard ? 'ハガキを読む' : '手紙を読む')}
+                      </button>
+                    );
+                  }
+                  return <div className="bg-gray-100 text-gray-500 text-xs py-2 px-2 rounded-full border border-gray-200 font-sans">🔒 あと {dist}m</div>;
+                })()}
+              </div>
+            </Popup>
+          )}
+        </Map>
+      </div>
 
       <div className="fixed bottom-8 right-4 z-40 flex flex-col items-end gap-2 font-sans">
         <div className="bg-white/90 p-2 rounded-lg shadow-sm text-[10px] text-gray-600 font-bold animate-bounce cursor-pointer relative" onClick={() => router.push(getPostUrl())}>
@@ -454,6 +546,7 @@ function HomeContent() {
           <PostcardModal 
             letter={readingLetter} 
             currentUser={currentUser} 
+            isRainy={isRainy}
             onClose={() => {
               setReadingLetter(null);
               setPopupInfo(null);
@@ -471,6 +564,7 @@ function HomeContent() {
           <LetterModal 
             letter={readingLetter} 
             currentUser={currentUser} 
+            isRainy={isRainy}
             onClose={() => {
               setReadingLetter(null);
               setPopupInfo(null);
@@ -491,6 +585,7 @@ function HomeContent() {
         <PostModal 
           post={readingPost} 
           currentUser={currentUser} 
+          isRainy={isRainy} // ★ 画像2のエラーを修正するためにプロパティを渡す
           onClose={() => {
             setReadingPost(null);
             setPopupInfo(null);
@@ -510,6 +605,10 @@ function HomeContent() {
         .animate-fadeInDown { animation: fadeInDown 0.4s ease-out forwards; }
         @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         .animate-slideInRight { animation: slideInRight 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+        @keyframes bounce-slow { 0%, 100% { transform: translate(-50%, 0); } 50% { transform: translate(-50%, 8px); } }
+        .animate-bounce-slow { animation: bounce-slow 2s infinite ease-in-out; }
+        @keyframes pulse-slow { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.25; } }
+        .animate-pulse-slow { animation: pulse-slow 5s infinite ease-in-out; }
         /* Mapbox標準の現在地ボタンを隠す */
         .mapboxgl-ctrl-geolocate { display: none !important; }
       `}</style>
