@@ -129,7 +129,7 @@ function HomeContent() {
     applyLocalization(evt.target);
   };
 
-  // ★ 自動天気取得ロジック ＆ 10秒タイマー
+  // ★ 自動天気取得ロジック
   useEffect(() => {
     const checkWeather = async () => {
       // 1. 管理画面での「強制雨モード」設定があるか確認
@@ -327,7 +327,7 @@ function HomeContent() {
       const isRead = readLetterIds.includes(letter.id);
       const postHasLetters = allLetters.some(l => l.parent_id === letter.id);
 
-      // ★ 修正：自分の作った投稿（isMyPost）は跳ねないように条件を追加
+      // ★ 自分のは跳ねないように修正済
       const shouldBounce = isReachable && !letter.is_post && !isRead && !isMyPost;
 
       return (
@@ -393,7 +393,7 @@ function HomeContent() {
 
       <Header currentUser={currentUser} nickname={myNickname} onAboutClick={() => setShowAbout(true)} isHidden={false} />
 
-      {/* ★ 修正：雨告知バー ＆ 未読通知（同じ右上にスタックし、雨通知は10秒で消える） */}
+      {/* ★ 雨告知バー ＆ 未読通知（同じ右上にスタックし、雨通知は10秒で消える） */}
       <div className="fixed top-[calc(env(safe-area-inset-top)+64px)] right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {showRainNotice && (
           <div className="bg-blue-600/85 backdrop-blur-md text-white px-3 py-1 rounded-lg shadow-xl border border-white/10 text-right leading-relaxed animate-fadeInDown pointer-events-auto">
@@ -445,7 +445,7 @@ function HomeContent() {
           ref={mapRef} 
           onMove={evt => setViewState(evt.viewState)}
           onLoad={handleMapLoad}
-          onStyleData={(evt) => applyLocalization(evt.target)} // ★ スタイル変更時にも日本語化を適用
+          onStyleData={(evt: any) => applyLocalization(evt.target)} // ★ ビルドエラー修正： :any を追加
           style={{ width: '100%', height: '100%' }}
           mapStyle={mapStyle}
           mapboxAccessToken={mapToken}
@@ -530,11 +530,11 @@ function HomeContent() {
       </div>
 
       <div className="fixed bottom-8 right-4 z-40 flex flex-col items-end gap-2 font-sans">
-        <div className="bg-white/90 p-2 rounded-lg shadow-sm text-[10px] text-gray-600 font-bold animate-bounce cursor-pointer relative" onClick={() => router.push(getPostUrl())}>
+        <div className="bg-white/90 p-2 rounded-lg shadow-sm text-[10px] text-gray-600 font-bold animate-bounce cursor-pointer relative" onClick={() => router.push(currentUser ? (userLocation ? `/post?lat=${userLocation.lat}&lng=${userLocation.lng}` : '/post') : '/login?next=/post')}>
            {currentUser ? '手紙を書く' : 'ログインして手紙を書く'}
            <div className="absolute right-4 top-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white/90"></div>
         </div>
-        <Link href={getPostUrl()}>
+        <Link href={currentUser ? (userLocation ? `/post?lat=${userLocation.lat}&lng=${userLocation.lng}` : '/post') : '/login?next=/post'}>
           <button className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-105 active:scale-95 border-2 border-white ${currentUser ? 'bg-green-700 text-white' : 'bg-gray-400 text-white'}`}>
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
           </button>
@@ -585,7 +585,7 @@ function HomeContent() {
         <PostModal 
           post={readingPost} 
           currentUser={currentUser} 
-          isRainy={isRainy} // ★ 画像2のエラーを修正するためにプロパティを渡す
+          isRainy={isRainy}
           onClose={() => {
             setReadingPost(null);
             setPopupInfo(null);
@@ -609,7 +609,6 @@ function HomeContent() {
         .animate-bounce-slow { animation: bounce-slow 2s infinite ease-in-out; }
         @keyframes pulse-slow { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.25; } }
         .animate-pulse-slow { animation: pulse-slow 5s infinite ease-in-out; }
-        /* Mapbox標準の現在地ボタンを隠す */
         .mapboxgl-ctrl-geolocate { display: none !important; }
       `}</style>
     </main>
