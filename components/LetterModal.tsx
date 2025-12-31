@@ -31,13 +31,14 @@ type Props = {
   isRainy?: boolean;
   hideReply?: boolean;    // ★ マイページ用に追加
   hideFavorite?: boolean; // ★ マイページ用に追加
+  isMyPage?: boolean;     // ★ 返信削除の連動判別用に追加
 };
 
 const CHARS_PER_PAGE = 140; 
 
 function LetterModalContent({ 
   letter, currentUser, onClose, onDeleted, onRead, initialLayer = 0, isRainy = false,
-  hideReply = false, hideFavorite = false 
+  hideReply = false, hideFavorite = false, isMyPage = false
 }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -53,7 +54,6 @@ function LetterModalContent({
   const [nickname, setNickname] = useState<string | null>(null);
   const [myNickname, setMyNickname] = useState<string | null>(null);
   
-  // 返信・地層管理
   const [mode, setMode] = useState<'read' | 'write'>('read');
   const [activeLayer, setActiveLayer] = useState(initialLayer); 
   const [replies, setReplies] = useState<ReplyLetter[]>([]); 
@@ -61,7 +61,6 @@ function LetterModalContent({
   const [replyContent, setReplyContent] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  // スワイプ制御
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   const [touchEndX, setTouchEndX] = useState<number | null>(null);
   const [touchStartY, setTouchStartY] = useState<number | null>(null);
@@ -176,10 +175,10 @@ function LetterModalContent({
     const text = letter.content || '';
     const PAGE_DELIMITER = '<<<PAGE>>>';
     if (text.includes(PAGE_DELIMITER)) {
-      text.split(PAGE_DELIMITER).forEach(p => newPages.push({ type: 'text', content: p }));
+      text.split(PAGE_DELIMITER).forEach(p => newPages.push({ content: p }));
     } else {
       for (let i = 0; i < text.length; i += CHARS_PER_PAGE) {
-        newPages.push({ type: 'text', content: text.slice(i, i + CHARS_PER_PAGE) });
+        newPages.push({ content: text.slice(i, i + CHARS_PER_PAGE) });
       }
     }
     setPages(newPages);
@@ -242,10 +241,15 @@ function LetterModalContent({
       const newReplies = replies.filter((_, i) => i !== currentReplyIndex);
       setReplies(newReplies);
       setCurrentReplyIndex(0);
-      // ★ 修正：返信タブで返信を消した際、元の手紙（記録）も一覧から消すための連動
+      
+      // ★ 修正：マイページの場合のみ連動削除。地図の場合は親を表示し続ける
       if (newReplies.length === 0) {
-        onDeleted?.();
-        handleClose();
+        if (isMyPage) {
+          onDeleted?.();
+          handleClose();
+        } else {
+          setActiveLayer(0);
+        }
       }
     }
   };
@@ -286,6 +290,8 @@ function LetterModalContent({
 
   if (isCheckingAuth) return null;
 
+  const currentReply = replies[currentReplyIndex];
+
   return (
     <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose}></div>
@@ -307,7 +313,6 @@ function LetterModalContent({
             <button onClick={handleClose} className="absolute right-0 p-1 text-gray-400 hover:text-gray-600 z-[45]"><svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M6 18L18 6M6 6l12 12" /></svg></button>
           </div>
 
-          {/* ループ対応のonClick */}
           <div className={`flex-1 relative flex flex-col overflow-hidden mt-2 ${isRainy ? 'rainy-text-container' : ''}`} onClick={() => (activeLayer === 0 && mode === 'read' && pages.length > 1) && handleNext()}>
             {isLocked ? (
               <div className="flex flex-col items-center justify-center h-full space-y-4" onClick={e => e.stopPropagation()}>
@@ -331,7 +336,6 @@ function LetterModalContent({
           <div className="h-16 flex items-center justify-between shrink-0 font-sans mt-auto z-[45]">
             {!isLocked && activeLayer === 0 && (
               <>
-                {/* ★ ボタンレイアウト修正：w-24を削除。削除ボタンが適切に左へ寄るように修正 */}
                 <div className="flex items-center gap-2">
                   {currentPage === pages.length - 1 && (
                     <>

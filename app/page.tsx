@@ -327,7 +327,7 @@ function HomeContent() {
       const isRead = readLetterIds.includes(letter.id);
       const postHasLetters = allLetters.some(l => l.parent_id === letter.id);
 
-      // ★ 自分のは跳ねないように修正済
+      // ★ 自分のは跳ねない
       const shouldBounce = isReachable && !letter.is_post && !isRead && !isMyPost;
 
       return (
@@ -393,7 +393,7 @@ function HomeContent() {
 
       <Header currentUser={currentUser} nickname={myNickname} onAboutClick={() => setShowAbout(true)} isHidden={false} />
 
-      {/* ★ 雨告知バー ＆ 未読通知（同じ右上にスタックし、雨通知は10秒で消える） */}
+      {/* ★ 修正：雨告知バー ＆ 未読通知（同じ右上にスタックし、雨通知は10秒で消える） */}
       <div className="fixed top-[calc(env(safe-area-inset-top)+64px)] right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {showRainNotice && (
           <div className="bg-blue-600/85 backdrop-blur-md text-white px-3 py-1 rounded-lg shadow-xl border border-white/10 text-right leading-relaxed animate-fadeInDown pointer-events-auto">
@@ -559,6 +559,7 @@ function HomeContent() {
               setPopupInfo(null);
               setReadingLetter(null);
             }} 
+            isMyPage={false}
           />
         ) : (
           <LetterModal 
@@ -577,6 +578,7 @@ function HomeContent() {
               setPopupInfo(null);
               setReadingLetter(null);
             }} 
+            isMyPage={false}
           />
         )
       )}   
@@ -609,6 +611,7 @@ function HomeContent() {
         .animate-bounce-slow { animation: bounce-slow 2s infinite ease-in-out; }
         @keyframes pulse-slow { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.25; } }
         .animate-pulse-slow { animation: pulse-slow 5s infinite ease-in-out; }
+        /* Mapbox標準の現在地ボタンを隠す */
         .mapboxgl-ctrl-geolocate { display: none !important; }
       `}</style>
     </main>
