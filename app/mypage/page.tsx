@@ -246,7 +246,7 @@ export default function MyPage() {
           <button onClick={() => setPostFilter('active')} className={`shrink-0 px-4 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'active' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>掲載中</button>
           <button onClick={() => setPostFilter('archive')} className={`shrink-0 px-4 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'archive' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>過去</button>
           <button onClick={() => setPostFilter('submitted')} className={`shrink-0 px-4 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'submitted' ? 'bg-red-600 text-white border-red-600 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>投函済み</button>
-          <button onClick={() => setPostFilter('replies')} className={`shrink-0 px-4 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'replies' ? 'bg-orange-50 text-white border-orange-500 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>手紙の返事</button>
+          <button onClick={() => setPostFilter('replies')} className={`shrink-0 px-4 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'replies' ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>手紙の返事</button>
         </div>
       )}
 

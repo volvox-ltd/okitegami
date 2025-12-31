@@ -338,9 +338,9 @@ function PostcardModalContent({
         {mode === 'write' && (
           <div className="absolute inset-0 bg-[#fefdfa] shadow-2xl flex flex-col px-6 py-4 rounded-sm z-50 border-t-4 border-orange-200 animate-slideUp">
              {isRainy && <div className="absolute inset-0 z-[55] pointer-events-none rainy-overlay"></div>}
-            <div className="flex justify-between items-center h-10 mb-4 shrink-0 z-[60]"><span className="text-[10px] font-bold text-orange-600 tracking-widest font-serif uppercase">Write Reply</span><button onClick={() => setMode('read')} className="text-[10px] text-gray-400 font-bold hover:text-gray-600">✕ 戻る</button></div>
+            <div className="flex justify-between items-center h-10 mb-4 shrink-0 z-[60]"><span className="text-[10px] font-bold text-orange-600 tracking-widest font-serif uppercase">返事を書く</span><button onClick={() => setMode('read')} className="text-[10px] text-gray-400 font-bold hover:text-gray-600">✕ 戻る</button></div>
             <textarea autoFocus value={replyContent} onChange={(e) => setReplyContent(e.target.value)} placeholder="思い出に言葉を添えてください..." className={`flex-1 w-full bg-transparent border-none focus:ring-0 text-[12px] font-serif leading-relaxed text-[#5d4037] resize-none z-[60] ${isRainy ? 'blur-[0.4px]' : ''}`} />
-            <div className="h-16 flex items-center justify-end z-[60]"><button onClick={submitReply} disabled={isSubmitting} className="bg-orange-600 text-white px-8 py-2 rounded-full text-[10px] font-bold shadow-lg active:scale-95 disabled:bg-gray-300">お返事を出す</button></div>
+            <div className="h-16 flex items-center justify-end z-[60]"><button onClick={submitReply} disabled={isSubmitting} className="bg-orange-600 text-white px-8 py-2 rounded-full text-[10px] font-bold shadow-lg active:scale-95 disabled:bg-gray-300">ハガキに返事を出す</button></div>
           </div>
         )}
 
