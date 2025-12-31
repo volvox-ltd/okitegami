@@ -215,18 +215,8 @@ function HomeContent() {
     } catch (err) { console.error(err); }
   }, []);
 
-  useEffect(() => {
-    if (!localStorage.getItem('hasSeenTutorial')) setShowTutorial(true);
-    fetchLetters();
-  }, [fetchLetters]);
-
-  const fetchLetterDetail = async (id: string) => {
-    const { data, error } = await supabase.from('letters').select('*').eq('id', id).single();
-    if (error) return null;
-    return data as Letter;
-  };
-
-  useEffect(() => {
+  // ★ 位置情報取得を開始する関数を定義
+  const startTracking = useCallback(() => {
     if (!navigator.geolocation) return;
     const watchId = navigator.geolocation.watchPosition(
       (position) => {
@@ -240,8 +230,24 @@ function HomeContent() {
       (error) => console.error(error),
       { enableHighAccuracy: true }
     );
-    return () => navigator.geolocation.clearWatch(watchId);
+    return watchId;
   }, [hasCentered]);
+
+  useEffect(() => {
+    if (!localStorage.getItem('hasSeenTutorial')) {
+      setShowTutorial(true);
+    } else {
+      // チュートリアル済みの場合は自動開始
+      startTracking();
+    }
+    fetchLetters();
+  }, [fetchLetters, startTracking]);
+
+  const fetchLetterDetail = async (id: string) => {
+    const { data, error } = await supabase.from('letters').select('*').eq('id', id).single();
+    if (error) return null;
+    return data as Letter;
+  };
 
   const calculateDistance = (targetLat: number, targetLng: number) => {
     if (!userLocation) return null;
@@ -249,7 +255,11 @@ function HomeContent() {
   };
 
   const handleGeolocateClick = () => {
-    if (!userLocation) return;
+    if (!userLocation) {
+      // 位置情報がない場合は再リクエストを試みる
+      startTracking();
+      return;
+    }
 
     setViewState(prev => ({
       ...prev,
@@ -284,8 +294,8 @@ function HomeContent() {
     let minDist = Infinity;
     letters.forEach(letter => {
       if (!letter.is_official && !showUserPosts) return;
-      const dist = getDistance({ latitude: userLocation.lat, longitude: userLocation.lng }, { latitude: letter.lat, longitude: letter.lng });
-      if (dist <= NOTIFICATION_DISTANCE && dist > UNLOCK_DISTANCE && dist < minDist) {
+      const dist = calculateDistance(letter.lat, letter.lng);
+      if (dist !== null && dist <= NOTIFICATION_DISTANCE && dist > UNLOCK_DISTANCE && dist < minDist) {
         minDist = dist; nearest = letter;
       }
     });
@@ -375,12 +385,7 @@ function HomeContent() {
         </Marker>
       );
     });
-  }, [letters, allLetters, showUserPosts, userLocation, readLetterIds, currentUser, isRainy]);
-
-  const getPostUrl = () => {
-    if (!currentUser) return '/login?next=/post';
-    return userLocation ? `/post?lat=${userLocation.lat}&lng=${userLocation.lng}` : '/post';
-  };
+  }, [letters, allLetters, showUserPosts, calculateDistance, readLetterIds, currentUser, isRainy]);
 
   const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   if (!mapToken) return null;
@@ -393,7 +398,7 @@ function HomeContent() {
 
       <Header currentUser={currentUser} nickname={myNickname} onAboutClick={() => setShowAbout(true)} isHidden={false} />
 
-      {/* ★ 修正：雨告知バー ＆ 未読通知（同じ右上にスタックし、雨通知は10秒で消える） */}
+      {/* 雨告知バー ＆ 未読通知 */}
       <div className="fixed top-[calc(env(safe-area-inset-top)+64px)] right-4 z-50 flex flex-col gap-2 pointer-events-none">
         {showRainNotice && (
           <div className="bg-blue-600/85 backdrop-blur-md text-white px-3 py-1 rounded-lg shadow-xl border border-white/10 text-right leading-relaxed animate-fadeInDown pointer-events-auto">
@@ -445,7 +450,7 @@ function HomeContent() {
           ref={mapRef} 
           onMove={evt => setViewState(evt.viewState)}
           onLoad={handleMapLoad}
-          onStyleData={(evt: any) => applyLocalization(evt.target)} // ★ ビルドエラー修正： :any を追加
+          onStyleData={(evt: any) => applyLocalization(evt.target)} 
           style={{ width: '100%', height: '100%' }}
           mapStyle={mapStyle}
           mapboxAccessToken={mapToken}
@@ -501,7 +506,10 @@ function HomeContent() {
                   const isMyPost = currentUser && currentUser.id === popupInfo.user_id;
                   const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
                   const isReachable = (dist !== null && dist <= UNLOCK_DISTANCE) || isAdmin || isMyPost;
-                  if (dist === null) return <p className="text-xs text-gray-400 font-sans">確認中...</p>;
+                  
+                  // ★ 位置情報がない場合はステータスバーに任せる
+                  if (dist === null) return <p className="text-[10px] text-gray-400 font-sans">位置情報を取得中...</p>;
+                  
                   if (isReachable) {
                     return (
                       <button 
@@ -529,6 +537,14 @@ function HomeContent() {
         </Map>
       </div>
 
+      {/* ★ 追加：現在地特定中のステータスバー（チュートリアル非表示かつ位置情報未取得時のみ） */}
+      {!userLocation && !showTutorial && (
+        <div className="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-md py-4 px-6 z-[60] flex items-center justify-center gap-4 border-t border-gray-100 animate-slideUp shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+          <div className="w-4 h-4 border-2 border-green-700 border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-xs font-bold text-gray-600 font-sans tracking-widest">現在地を特定しています...</span>
+        </div>
+      )}
+
       <div className="fixed bottom-8 right-4 z-40 flex flex-col items-end gap-2 font-sans">
         <div className="bg-white/90 p-2 rounded-lg shadow-sm text-[10px] text-gray-600 font-bold animate-bounce cursor-pointer relative" onClick={() => router.push(currentUser ? (userLocation ? `/post?lat=${userLocation.lat}&lng=${userLocation.lng}` : '/post') : '/login?next=/post')}>
            {currentUser ? '手紙を書く' : 'ログインして手紙を書く'}
@@ -552,8 +568,8 @@ function HomeContent() {
               setPopupInfo(null);
             }} 
             onRead={(id) => markAsRead(id)} 
-            onDeleted={() => {
-              const deletedId = readingLetter.id;
+            onDeleted={(id) => {
+              const deletedId = id || readingLetter.id;
               setLetters(prev => prev.filter(l => l.id !== deletedId));
               setAllLetters(prev => prev.filter(l => l.id !== deletedId));
               setPopupInfo(null);
@@ -571,8 +587,8 @@ function HomeContent() {
               setPopupInfo(null);
             }} 
             onRead={(id) => markAsRead(id)} 
-            onDeleted={() => {
-              const deletedId = readingLetter.id;
+            onDeleted={(id) => {
+              const deletedId = id || readingLetter.id;
               setLetters(prev => prev.filter(l => l.id !== deletedId));
               setAllLetters(prev => prev.filter(l => l.id !== deletedId));
               setPopupInfo(null);
@@ -596,14 +612,14 @@ function HomeContent() {
         />
       )}
       {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}
-      {showTutorial && <TutorialModal onClose={() => { localStorage.setItem('hasSeenTutorial', 'true'); setShowTutorial(false); }} />}
+
+      {/* ★ チュートリアル終了時に位置情報を開始するように onClose を設定 */}
+      {showTutorial && <TutorialModal onClose={() => { localStorage.setItem('hasSeenTutorial', 'true'); setShowTutorial(false); startTracking(); }} />}
+      
       <AddToHomeScreen isOpen={showPwaPrompt} onClose={() => setShowPwaPrompt(false)} message="ホーム画面に追加しておきませんか？" />
 
       <style jsx global>{`
-        @keyframes fadeInDown { 
-          from { opacity: 0; transform: translateY(-20px); } 
-          to { opacity: 1; transform: translateY(0); } 
-        }
+        @keyframes fadeInDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fadeInDown { animation: fadeInDown 0.4s ease-out forwards; }
         @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         .animate-slideInRight { animation: slideInRight 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
@@ -611,7 +627,8 @@ function HomeContent() {
         .animate-bounce-slow { animation: bounce-slow 2s infinite ease-in-out; }
         @keyframes pulse-slow { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.25; } }
         .animate-pulse-slow { animation: pulse-slow 5s infinite ease-in-out; }
-        /* Mapbox標準の現在地ボタンを隠す */
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .animate-slideUp { animation: slideUp 0.4s ease-out forwards; }
         .mapboxgl-ctrl-geolocate { display: none !important; }
       `}</style>
     </main>
