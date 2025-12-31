@@ -552,19 +552,27 @@ function HomeContent() {
 
       {/* ★ 修正：位置情報特定中 or エラー時のステータスバー */}
       {!userLocation && !showTutorial && (
-        <div className="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-md py-4 px-6 z-[60] flex items-center justify-center gap-4 border-t border-gray-100 animate-slideUp shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
+        <div className="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-md py-4 px-6 z-[60] flex flex-col items-center justify-center gap-3 border-t border-gray-100 animate-slideUp shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
           {locationError ? (
             <>
-              <div className="text-red-500 text-lg">⚠️</div>
-              <span className="text-xs font-bold text-gray-600 font-sans tracking-widest leading-relaxed">
-                位置情報を取得できません。<br/>ブラウザの設定を確認してください。
-              </span>
+              <div className="flex items-center gap-2">
+                <div className="text-red-500 text-lg">⚠️</div>
+                <span className="text-xs font-bold text-gray-600 font-sans tracking-widest leading-relaxed text-center">
+                  位置情報が取得できません。<br/>ブラウザの設定を確認してください。
+                </span>
+              </div>
+              <button
+                onClick={() => window.location.reload()}
+                className="bg-gray-800 text-white text-[10px] font-bold px-6 py-2 rounded-full shadow-md active:scale-95 transition-transform tracking-widest"
+              >
+                再読み込みする
+              </button>
             </>
           ) : (
-            <>
+            <div className="flex items-center justify-center gap-4">
               <div className="w-4 h-4 border-2 border-green-700 border-t-transparent rounded-full animate-spin"></div>
               <span className="text-xs font-bold text-gray-600 font-sans tracking-widest">現在地を特定しています...</span>
-            </>
+            </div>
           )}
         </div>
       )}
