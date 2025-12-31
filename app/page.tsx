@@ -59,7 +59,7 @@ function HomeContent() {
   const [allLetters, setAllLetters] = useState<Letter[]>([]);
   const [popupInfo, setPopupInfo] = useState<Letter | null>(null);
   const [readingLetter, setReadingLetter] = useState<Letter | null>(null);
-  const [readingPost, setReadingPost] = useState<Letter | null>(null);
+  const [readingPost, setReadingLetterPost] = useState<Letter | null>(null);
   const [readLetterIds, setReadLetterIds] = useState<string[]>([]);
   const [showAbout, setShowAbout] = useState(false);
   const [showUserPosts, setShowUserPosts] = useState(true);
@@ -78,6 +78,9 @@ function HomeContent() {
   // ★ 雨モードのステート
   const [isRainy, setIsRainy] = useState(false);
   const [showRainNotice, setShowRainNotice] = useState(false);
+
+  // ★ 位置情報エラー判定用のステート
+  const [locationError, setLocationError] = useState(false);
 
   const [viewState, setViewState] = useState({
     latitude: 35.6288,
@@ -222,12 +225,18 @@ function HomeContent() {
       (position) => {
         const { latitude, longitude } = position.coords;
         setUserLocation({ lat: latitude, lng: longitude });
+        setLocationError(false); // 成功したらエラーをリセット
         if (!hasCentered) {
           setViewState(prev => ({ ...prev, latitude, longitude, zoom: 15 }));
           setHasCentered(true);
         }
       },
-      (error) => console.error(error),
+      (error) => {
+        console.error(error);
+        if (error.code === 1) { // 拒否された場合
+          setLocationError(true);
+        }
+      },
       { enableHighAccuracy: true }
     );
     return watchId;
@@ -300,7 +309,7 @@ function HomeContent() {
       }
     });
     return nearest;
-  }, [userLocation, letters, showUserPosts]);
+  }, [userLocation, letters, showUserPosts, calculateDistance]);
 
   useEffect(() => {
     const handleOpenPostParam = async () => {
@@ -310,7 +319,7 @@ function HomeContent() {
         const targetPost = await fetchLetterDetail(openPostId);
         if (targetPost) {
           setTimeout(() => {
-            if (targetPost.is_post) setReadingPost(targetPost);
+            if (targetPost.is_post) setReadingLetterPost(targetPost);
             else setReadingLetter(targetPost);
             setViewState(prev => ({ ...prev, latitude: targetPost.lat, longitude: targetPost.lng, zoom: 16 }));
             window.history.replaceState(null, '', '/');
@@ -386,6 +395,11 @@ function HomeContent() {
       );
     });
   }, [letters, allLetters, showUserPosts, calculateDistance, readLetterIds, currentUser, isRainy]);
+
+  const getPostUrl = () => {
+    if (!currentUser) return '/login?next=/post';
+    return userLocation ? `/post?lat=${userLocation.lat}&lng=${userLocation.lng}` : '/post';
+  };
 
   const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   if (!mapToken) return null;
@@ -474,8 +488,7 @@ function HomeContent() {
               >
                 <svg className="w-7 h-5" viewBox="0 0 427.17 709.4" xmlns="http://www.w3.org/2000/svg">
                   <path fill="#2196f3" d="M427.17,213.59c0,175.06-213.59,397.25-213.59,397.25,0,0-213.59-222.19-213.59-397.25C0,95.62,95.62,0,213.59,0s213.59,95.62,213.59,213.59Z"/>
-                  <circle fill="#fff" cx="213.59" cy="213.59" r="102.43"/>
-                  <path fill="#2196f3" d="M358.72,635.71c0,40.7-64.98,73.69-145.13,73.69s-145.13-32.99-145.13-73.69c0-29.53,34.21-55,83.61-66.75,28.47,34.97,49.36,56.8,50.74,58.23l10.79,11.22,10.79-11.22c1.38-1.44,22.27-23.27,50.74-58.23,49.4,11.75,83.61,37.23,83.61,66.75Z"/>
+                  <circle fill="#fff" cx="213.59" cy="213.59" r="102.43"/><path fill="#2196f3" d="M358.72,635.71c0,40.7-64.98,73.69-145.13,73.69s-145.13-32.99-145.13-73.69c0-29.53,34.21-55,83.61-66.75,28.47,34.97,49.36,56.8,50.74,58.23l10.79,11.22,10.79-11.22c1.38-1.44,22.27-23.27,50.74-58.23,49.4,11.75,83.61,37.23,83.61,66.75Z"/>
                 </svg>
               </button>
             </div>
@@ -516,7 +529,7 @@ function HomeContent() {
                         onClick={async () => { 
                           const detail = await fetchLetterDetail(popupInfo.id);
                           if (!detail) return;
-                          if (popupInfo.is_post) setReadingPost(detail); 
+                          if (popupInfo.is_post) setReadingLetterPost(detail); 
                           else setReadingLetter(detail);
                         }} 
                         className={`w-full text-white text-xs py-2 px-4 rounded-full transition-colors shadow-sm font-bold font-sans ${
@@ -537,20 +550,31 @@ function HomeContent() {
         </Map>
       </div>
 
-      {/* ★ 追加：現在地特定中のステータスバー（チュートリアル非表示かつ位置情報未取得時のみ） */}
+      {/* ★ 修正：位置情報特定中 or エラー時のステータスバー */}
       {!userLocation && !showTutorial && (
         <div className="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-md py-4 px-6 z-[60] flex items-center justify-center gap-4 border-t border-gray-100 animate-slideUp shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
-          <div className="w-4 h-4 border-2 border-green-700 border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-xs font-bold text-gray-600 font-sans tracking-widest">現在地を特定しています...</span>
+          {locationError ? (
+            <>
+              <div className="text-red-500 text-lg">⚠️</div>
+              <span className="text-xs font-bold text-gray-600 font-sans tracking-widest leading-relaxed">
+                位置情報を取得できません。<br/>ブラウザの設定を確認してください。
+              </span>
+            </>
+          ) : (
+            <>
+              <div className="w-4 h-4 border-2 border-green-700 border-t-transparent rounded-full animate-spin"></div>
+              <span className="text-xs font-bold text-gray-600 font-sans tracking-widest">現在地を特定しています...</span>
+            </>
+          )}
         </div>
       )}
 
       <div className="fixed bottom-8 right-4 z-40 flex flex-col items-end gap-2 font-sans">
-        <div className="bg-white/90 p-2 rounded-lg shadow-sm text-[10px] text-gray-600 font-bold animate-bounce cursor-pointer relative" onClick={() => router.push(currentUser ? (userLocation ? `/post?lat=${userLocation.lat}&lng=${userLocation.lng}` : '/post') : '/login?next=/post')}>
+        <div className="bg-white/90 p-2 rounded-lg shadow-sm text-[10px] text-gray-600 font-bold animate-bounce cursor-pointer relative" onClick={() => router.push(getPostUrl())}>
            {currentUser ? '手紙を書く' : 'ログインして手紙を書く'}
            <div className="absolute right-4 top-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white/90"></div>
         </div>
-        <Link href={currentUser ? (userLocation ? `/post?lat=${userLocation.lat}&lng=${userLocation.lng}` : '/post') : '/login?next=/post'}>
+        <Link href={getPostUrl()}>
           <button className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-105 active:scale-95 border-2 border-white ${currentUser ? 'bg-green-700 text-white' : 'bg-gray-400 text-white'}`}>
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg>
           </button>
@@ -605,7 +629,7 @@ function HomeContent() {
           currentUser={currentUser} 
           isRainy={isRainy}
           onClose={() => {
-            setReadingPost(null);
+            setReadingLetterPost(null);
             setPopupInfo(null);
           }} 
           isReachable={true} 
