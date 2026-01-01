@@ -19,6 +19,7 @@ type ReplyLetter = {
   created_at: string;
   user_id: string;
   nickname?: string | null;
+  is_thanked?: boolean; // ★ 追加
 };
 
 type Props = {
@@ -105,7 +106,7 @@ function LetterModalContent({
       if (currentUser) {
         await checkFavorite();
         let query = supabase.from('letters')
-          .select('id, content, created_at, user_id')
+          .select('id, content, created_at, user_id, is_thanked') // ★ is_thankedを追加
           .eq('parent_id', letter.id)
           .order('created_at', { ascending: false });
 
@@ -221,8 +222,9 @@ function LetterModalContent({
         lng: letter.lng,
         user_id: currentUser.id,
         parent_id: letter.id,
-        is_official: false
-      }).select('id, content, created_at, user_id').single();
+        is_official: false,
+        is_thanked: false // ★ 明示的にfalseで初期化
+      }).select('id, content, created_at, user_id, is_thanked').single();
 
       if (error) throw error;
       const newReply = { ...data, nickname: myNickname };
@@ -230,6 +232,26 @@ function LetterModalContent({
       setMode('read');
       setActiveLayer(0); 
     } catch (e) { alert('送信に失敗しました'); } finally { setIsSubmitting(false); }
+  };
+
+  // ★ 追加：お返事ありがとうの切り替え機能
+  const toggleThank = async () => {
+    const currentReply = replies[currentReplyIndex];
+    if (!currentReply) return;
+
+    const newStatus = !currentReply.is_thanked;
+    const { error } = await supabase
+      .from('letters')
+      .update({ is_thanked: newStatus })
+      .eq('id', currentReply.id);
+
+    if (!error) {
+      const updatedReplies = [...replies];
+      updatedReplies[currentReplyIndex] = { ...currentReply, is_thanked: newStatus };
+      setReplies(updatedReplies);
+    } else {
+      alert('更新に失敗しました');
+    }
   };
 
   const handleDeleteReply = async () => {
@@ -418,6 +440,17 @@ function LetterModalContent({
                     {isMyPost ? 'あなただけに届いた特別な言葉です' : '返事の手紙はあなたにだけ表示されています'}
                  </p>
                  <button onClick={handleClose} className="bg-stone-600 text-white px-14 py-2 rounded-full text-[10px] font-bold shadow-md active:scale-95 tracking-widest">閉じる</button>
+                 
+                 {/* ★ 追加：お返事ありがとうボタン（本人のみ表示） */}
+                 {isMyPost && (
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); toggleThank(); }}
+                      className={`text-[10px] font-bold px-6 py-1.5 rounded-full border transition-all active:scale-95 ${currentReply?.is_thanked ? 'bg-pink-50 text-pink-500 border-pink-100' : 'bg-white text-gray-400 border-gray-200'}`}
+                    >
+                      {currentReply?.is_thanked ? '♥ お返事ありがとう' : '♡ お返事ありがとう'}
+                    </button>
+                 )}
+
                  {!isMyPost && (
                     <button onClick={handleDeleteReply} className="text-[9px] text-red-400 hover:text-red-500 underline underline-offset-4 opacity-70">削除する</button>
                  )}

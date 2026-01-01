@@ -19,6 +19,7 @@ type ReplyLetter = {
   created_at: string;
   user_id: string;
   nickname?: string | null;
+  is_thanked?: boolean; // ★ 追加
 };
 
 type Props = {
@@ -97,7 +98,7 @@ function PostcardModalContent({
       if (currentUser) {
         await checkFavorite();
         let query = supabase.from('letters')
-          .select('id, content, created_at, user_id')
+          .select('id, content, created_at, user_id, is_thanked') // ★ is_thankedを追加
           .eq('parent_id', letter.id)
           .order('created_at', { ascending: false });
 
@@ -177,8 +178,9 @@ function PostcardModalContent({
         user_id: currentUser.id,
         parent_id: letter.id,
         is_official: false,
-        is_postcard: true
-      }).select('id, content, created_at, user_id').single();
+        is_postcard: true,
+        is_thanked: false // ★ 明示的に初期化
+      }).select('id, content, created_at, user_id, is_thanked').single();
 
       if (error) throw error;
       const newReply = { ...data, nickname: myNickname };
@@ -188,6 +190,26 @@ function PostcardModalContent({
     } catch (e) {
       alert('送信に失敗しました');
     } finally { setIsSubmitting(false); }
+  };
+
+  // ★ 追加：お返事ありがとうの切り替え機能
+  const toggleThank = async () => {
+    const currentReply = replies[currentReplyIndex];
+    if (!currentReply) return;
+
+    const newStatus = !currentReply.is_thanked;
+    const { error } = await supabase
+      .from('letters')
+      .update({ is_thanked: newStatus })
+      .eq('id', currentReply.id);
+
+    if (!error) {
+      const updatedReplies = [...replies];
+      updatedReplies[currentReplyIndex] = { ...currentReply, is_thanked: newStatus };
+      setReplies(updatedReplies);
+    } else {
+      alert('更新に失敗しました');
+    }
   };
 
   const handleDeleteReply = async () => {
@@ -318,7 +340,7 @@ function PostcardModalContent({
                   <div className="w-28 flex justify-end">
                      {!isMyPost && !hideFavorite && (
                        <button onClick={e => { e.stopPropagation(); toggleFavorite(); }} className={`flex items-center gap-1 text-[10px] font-bold py-1.5 px-3 rounded-full border shadow-sm transition-all active:scale-95 ${isFavorited ? 'bg-pink-50 text-pink-500 border-pink-100' : 'bg-gray-100 text-gray-400 border-gray-200 hover:text-pink-300'}`}>
-                         {isFavorited ? '♥' : '♡'} お気に入り
+                         {isFavorited ? '♥' : '♡'}
                        </button>
                      )}
                   </div>
@@ -426,6 +448,17 @@ function PostcardModalContent({
                  </p>
                  <div className="flex flex-col items-center gap-2">
                     <button onClick={handleClose} className="bg-stone-600 text-white px-10 py-2 rounded-full text-[10px] font-bold shadow-md active:scale-95 tracking-widest">閉じる</button>
+                    
+                    {/* ★ 追加：お返事ありがとうボタン（本人のみ表示） */}
+                    {isMyPost && (
+                       <button 
+                         onClick={(e) => { e.stopPropagation(); toggleThank(); }}
+                         className={`text-[10px] font-bold px-6 py-1.5 rounded-full border transition-all active:scale-95 ${currentReply?.is_thanked ? 'bg-pink-50 text-pink-500 border-pink-100' : 'bg-white text-gray-400 border-gray-200'}`}
+                       >
+                         {currentReply?.is_thanked ? '♥ お返事ありがとう' : '♡ お返事ありがとう'}
+                       </button>
+                    )}
+
                     {!isMyPost && (
                       <button onClick={(e) => { e.stopPropagation(); handleDeleteReply(); }} className="text-[9px] text-red-400 underline opacity-70 hover:opacity-100">この返事を削除する</button>
                     )}

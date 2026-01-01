@@ -42,7 +42,8 @@ export default function MyPage() {
   const [user, setUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'posts' | 'favorites' | 'stamps' | 'settings'>('posts');
-  const [postFilter, setPostFilter] = useState<'active' | 'archive' | 'submitted' | 'replies'>('active');
+  // ★ postFilterの選択肢を統合・整理
+  const [postFilter, setPostFilter] = useState<'written' | 'submitted' | 'replies'>('written');
   
   const [myPosts, setMyPosts] = useState<Letter[]>([]);
   const [favorites, setFavorites] = useState<Letter[]>([]);
@@ -58,9 +59,9 @@ export default function MyPage() {
   const [settingsMessage, setSettingsMessage] = useState<{type: 'success'|'error', text: string} | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // ★ 追加：雨天判定の状態
   const [isRainy, setIsRainy] = useState(false);
 
+  // 手紙の期限切れ判定 [cite: 46, 66]
   const isExpired = (createdAt: string) => {
     return (new Date().getTime() - new Date(createdAt).getTime()) / (1000 * 60 * 60) > LETTER_EXPIRATION_HOURS;
   };
@@ -75,7 +76,6 @@ export default function MyPage() {
       setUser(user);
       setNewEmail(user.email || '');
 
-      // システム天候の取得
       const { data: settings } = await supabase.from('system_settings').select('value').eq('key', 'force_rain').maybeSingle();
       if (settings?.value === 'true') setIsRainy(true);
 
@@ -164,19 +164,30 @@ export default function MyPage() {
     setIsUpdating(false);
   };
 
+  // ★ フィルタリングロジックの修正
   const filteredMyPosts = useMemo(() => {
     return myPosts.filter(letter => {
       const isSubmittedToPost = !!letter.parent_id && letter.is_post === true; 
       const isReplyToUser = !!letter.parent_id && !letter.is_post; 
-      const expired = isExpired(letter.created_at);
-
+      
       if (postFilter === 'replies') return isReplyToUser;
       if (postFilter === 'submitted') return isSubmittedToPost;
       
-      if (postFilter === 'active') return !letter.parent_id && !expired;
-      if (postFilter === 'archive') return !letter.parent_id && expired;
+      // 「書いた手紙（written）」：親要素（parent_idがないもの）すべて [cite: 92, 153]
+      if (postFilter === 'written') return !letter.parent_id;
 
       return false;
+    }).sort((a, b) => {
+      // 「書いた手紙」の場合のみ、掲載中を上に、過去を下に並べる
+      if (postFilter === 'written') {
+        const aExpired = isExpired(a.created_at);
+        const bExpired = isExpired(b.created_at);
+        if (aExpired !== bExpired) {
+          return aExpired ? 1 : -1; // 有効なものを上へ
+        }
+      }
+      // それ以外、または同じステータス内では日付順
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
   }, [myPosts, postFilter]);
 
@@ -205,19 +216,6 @@ export default function MyPage() {
     }
   };
 
-  const handleStampClick = (targetPost?: Letter) => {
-    if (!targetPost) {
-      alert('この切手には場所の情報が紐付いていないため、開けません。');
-      return;
-    }
-    setInitialLayer(0);
-    if (targetPost.is_post) {
-      setSelectedPost(targetPost);
-    } else {
-      setSelectedLetter(targetPost);
-    }
-  };
-
   const handleLogout = async () => {
     await supabase.auth.signOut();
     window.location.href = '/';
@@ -243,10 +241,10 @@ export default function MyPage() {
 
       {activeTab === 'posts' && (
         <div className="flex justify-center gap-1.5 py-3 bg-[#fdfcf5] px-2 overflow-x-auto">
-          <button onClick={() => setPostFilter('active')} className={`shrink-0 px-4 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'active' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>掲載中</button>
-          <button onClick={() => setPostFilter('archive')} className={`shrink-0 px-4 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'archive' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>過去</button>
-          <button onClick={() => setPostFilter('submitted')} className={`shrink-0 px-4 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'submitted' ? 'bg-red-600 text-white border-red-600 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>投函済み</button>
-          <button onClick={() => setPostFilter('replies')} className={`shrink-0 px-4 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'replies' ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>手紙の返事</button>
+          {/* ★ フィルターボタンの整理 */}
+          <button onClick={() => setPostFilter('written')} className={`shrink-0 px-6 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'written' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>書いた手紙</button>
+          <button onClick={() => setPostFilter('submitted')} className={`shrink-0 px-6 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'submitted' ? 'bg-red-600 text-white border-red-600 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>投函した手紙</button>
+          <button onClick={() => setPostFilter('replies')} className={`shrink-0 px-6 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'replies' ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>手紙の返事</button>
         </div>
       )}
 
@@ -371,7 +369,7 @@ export default function MyPage() {
                         ) : letter.is_official ? (
                           <IconAdminLetter className="w-10 h-10" />
                         ) : letter.is_postcard ? (
-                          <div className={`${(expired && (postFilter === 'archive' || activeTab === 'favorites')) ? 'opacity-30 grayscale' : ''}`}>
+                          <div className={`${(expired && (postFilter === 'written' || activeTab === 'favorites')) ? 'opacity-30 grayscale' : ''}`}>
                              <IconPostcard className="w-10 h-10" />
                           </div>
                         ) : (
@@ -418,7 +416,6 @@ export default function MyPage() {
             isRainy={isRainy}
             onClose={() => { setSelectedLetter(null); setInitialLayer(0); }}
             onRead={() => {}}
-            // ★ 即時反映のロジックを統合
             onDeleted={(deletedId) => {
               setMyPosts(prev => prev.filter(l => l.id !== deletedId && l.id !== selectedLetter.id));
               setSelectedLetter(null);
@@ -435,7 +432,6 @@ export default function MyPage() {
             isRainy={isRainy}
             onClose={() => { setSelectedLetter(null); setInitialLayer(0); }} 
             onRead={() => {}} 
-            // ★ 即時反映のロジックを統合
             onDeleted={(deletedId) => {
               setMyPosts(prev => prev.filter(l => l.id !== deletedId && l.id !== selectedLetter.id));
               setSelectedLetter(null);
