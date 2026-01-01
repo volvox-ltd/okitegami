@@ -13,6 +13,7 @@ type Letter = {
   allow_reply?: boolean;
 };
 
+// 返信用データの型
 type ReplyLetter = {
   id: string;
   content: string;
@@ -25,13 +26,13 @@ type Props = {
   letter: Letter;
   currentUser: User | null;
   onClose: () => void;
-  onDeleted?: (id?: string) => void;
+  onDeleted?: (id?: string) => void; // ★ 拡張
   onRead?: (id: string) => void;
   initialLayer?: number;
   isRainy?: boolean;
-  hideReply?: boolean;
-  hideFavorite?: boolean;
-  isMyPage?: boolean;
+  hideReply?: boolean;    // マイページ用：返信ボタンを隠す
+  hideFavorite?: boolean; // マイページ用：お気に入りボタンを隠す
+  isMyPage?: boolean;     // ★ マイページ判定用
 };
 
 function PostcardModalContent({ 
@@ -50,6 +51,7 @@ function PostcardModalContent({
   const [nickname, setNickname] = useState<string | null>(null);
   const [myNickname, setMyNickname] = useState<string | null>(null);
 
+  // 返信・地層管理
   const [mode, setMode] = useState<'read' | 'write'>('read');
   const [activeLayer, setActiveLayer] = useState(initialLayer); 
   const [replies, setReplies] = useState<ReplyLetter[]>([]); 
@@ -59,6 +61,7 @@ function PostcardModalContent({
 
   const isMyPost = currentUser && currentUser.id === letter.user_id;
 
+  // ログイン後の復帰処理
   useEffect(() => {
     if (searchParams.get('trigger_reply') === 'true' && searchParams.get('open_post') === letter.id && currentUser) {
       setMode('write');
@@ -198,6 +201,8 @@ function PostcardModalContent({
     if (!error) {
       const newReplies = replies.filter((_, i) => i !== currentReplyIndex);
       setReplies(newReplies);
+      
+      // ★ 修正：マイページ判定
       if (newReplies.length === 0) {
         if (isMyPage) {
           onDeleted?.(deletedId);
@@ -248,9 +253,8 @@ function PostcardModalContent({
             {/* ★ 雨の日の濡れシミ */}
             {isRainy && <div className="absolute inset-0 z-[35] pointer-events-none rainy-overlay"></div>}
 
-            {/* ★ 切手と消印：裏返した時は消去 */}
-            {!isLocked && !isFlipped && (
-              <div className="absolute pointer-events-none z-30 animate-fadeIn" style={{ left: '12px', top: '12px', width: '72px', height: '90px' }}>
+            {!isLocked && (
+              <div className="absolute pointer-events-none z-30" style={{ left: '12px', top: '12px', width: '72px', height: '90px' }}>
                  <div className="relative w-full h-full">
                    <Image src={letter.is_official ? "/Postcard_Admin.png" : "/PostcardStamp.png"} fill sizes="72px" className="object-contain" alt="stamp" priority />
                    <div className="absolute left-6 top-14 w-16 h-16 border-2 border-[#5d4037]/10 rounded-full flex items-center justify-center flex-col rotate-12 mix-blend-multiply opacity-60">
@@ -262,19 +266,14 @@ function PostcardModalContent({
               </div>
             )}
 
-            {/* ヘッダー：POST CARD文字とCloseボタン */}
             <div className="flex justify-center items-center shrink-0 relative h-10 mb-2">
-              <span className={`text-sm font-bold tracking-[0.4em] ml-[0.4em] text-[#8a776a] font-sans uppercase transition-opacity duration-300 ${isFlipped ? 'opacity-0' : 'opacity-100'}`}>POST CARD</span>
-              {/* ★ Closeボタン：裏返した時は消去 */}
-              {activeLayer === 0 && !isFlipped && (
-                <button onClick={e => { e.stopPropagation(); handleClose(); }} className="absolute right-0 p-1 text-gray-400 hover:text-gray-600 z-[45] animate-fadeIn">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M6 18L18 6M6 6l12 12" /></svg>
-                </button>
+              <span className="text-sm font-bold tracking-[0.4em] ml-[0.4em] text-[#8a776a] font-sans uppercase">POST CARD</span>
+              {activeLayer === 0 && (
+                <button onClick={e => { e.stopPropagation(); handleClose(); }} className="absolute right-0 p-1 text-gray-400 hover:text-gray-600 z-[45]"><svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path d="M6 18L18 6M6 6l12 12" /></svg></button>
               )}
             </div>
 
-            {/* 本文エリア */}
-            <div className={`flex-1 relative flex flex-row-reverse items-start overflow-hidden mt-2 ${isRainy ? 'rainy-text-container' : ''} ${isFlipped ? 'opacity-0' : 'opacity-100'}`}>
+            <div className={`flex-1 relative flex flex-row-reverse items-start overflow-hidden mt-2 ${isRainy ? 'rainy-text-container' : ''}`}>
               {isLocked ? (
                 <div className="flex flex-col items-center justify-center w-full h-full space-y-4" onClick={e => e.stopPropagation()}>
                   <div className="text-4xl">🔒</div>
@@ -298,8 +297,7 @@ function PostcardModalContent({
               )}
             </div>
 
-            {/* フッターアクション：裏返した時は消去 */}
-            <div className={`h-10 flex items-center justify-between shrink-0 mt-auto z-[45] transition-opacity duration-300 ${isFlipped ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+            <div className="h-10 flex items-center justify-between shrink-0 mt-auto z-[45]">
               {!isLocked && activeLayer === 0 && (
                 <>
                   <div className="w-28 flex items-center gap-2">
@@ -326,28 +324,17 @@ function PostcardModalContent({
               )}
             </div>
           </div>
-
           {/* --- 裏面 (写真面) --- */}
           <div className="absolute inset-0 w-full h-full backface-hidden [transform:rotateY(180deg)] bg-black flex flex-col rounded-sm overflow-hidden" onClick={() => { if(activeLayer === 0) setIsFlipped(!isFlipped); }}>
+            {/* ★ 雨の日の彩度低下（写真面） */}
             {isRainy && <div className="absolute inset-0 z-[15] pointer-events-none bg-[#1a3a5a]/10 backdrop-grayscale-[0.2]"></div>}
             {letter.image_url ? (
-              <>
-                <Image src={letter.image_url} fill sizes="380px" className={`object-cover ${isRainy ? 'saturate-[0.7] brightness-[0.9]' : ''}`} alt="photo" priority />
-                {/* 裏面の文字要素：表面から独立して描画 */}
-                <div className="absolute top-4 inset-x-6 flex justify-center items-center z-20 h-10">
-                  <span className="text-white text-sm font-bold tracking-[0.4em] ml-[0.4em] drop-shadow-md">POST CARD</span>
-                </div>
-                <div className="absolute bottom-6 inset-x-6 flex flex-col items-center justify-center z-20">
-                  <p className="text-white text-[11px] font-bold tracking-[0.5em] mb-3 uppercase drop-shadow-md">{letter.spot_name}</p>
-                </div>
-              </>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center bg-gray-900 text-gray-500 text-sm">写真がありません</div>
-            )}
+              <><Image src={letter.image_url} fill sizes="380px" className={`object-cover ${isRainy ? 'saturate-[0.7] brightness-[0.9]' : ''}`} alt="photo" priority /><div className="absolute top-4 inset-x-6 flex justify-center items-center z-20 h-10"><span className="text-white text-sm font-bold tracking-[0.4em] ml-[0.4em] drop-shadow-md">POST CARD</span></div><div className="absolute bottom-6 inset-x-6 flex flex-col items-center justify-center z-20"><p className="text-white text-[11px] font-bold tracking-[0.5em] mb-3 uppercase drop-shadow-md">{letter.spot_name}</p></div></>
+            ) : (<div className="w-full h-full flex items-center justify-center bg-gray-900 text-gray-500 text-sm">写真がありません</div>)}
           </div>
         </div>
 
-        {/* 返信入力（変更なし） */}
+        {/* 返信入力 */}
         {mode === 'write' && (
           <div className="absolute inset-0 bg-[#fefdfa] shadow-2xl flex flex-col px-6 py-4 rounded-sm z-50 border-t-4 border-orange-200 animate-slideUp">
              {isRainy && <div className="absolute inset-0 z-[55] pointer-events-none rainy-overlay"></div>}
@@ -357,7 +344,7 @@ function PostcardModalContent({
           </div>
         )}
 
-        {/* レイヤー1：返信ハガキ（変更なし） */}
+        {/* レイヤー1：返信ハガキ */}
         {hasReply && mode === 'read' && (
           <div 
             className={`absolute inset-0 bg-[#fefdfa] flex flex-col px-6 py-4 rounded-sm transition-all duration-500 ease-out border border-[#5d4037]/10 ${activeLayer === 1 ? 'z-40 translate-x-0 translate-y-0 rotate-0 scale-100 pointer-events-auto shadow-2xl' : 'z-20 translate-x-14 -translate-y-12 rotate-[5deg] scale-[0.96] opacity-100 cursor-pointer hover:translate-x-16'}`}
@@ -441,8 +428,6 @@ function PostcardModalContent({
         .backface-hidden { backface-visibility: hidden; -webkit-backface-visibility: hidden; } 
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
         .animate-slideUp { animation: slideUp 0.4s ease-out forwards; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
         .modal-html-content a { color: #2563eb !important; text-decoration: underline !important; }
         .rainy-overlay { background: radial-gradient(circle at 25% 30%, rgba(180, 200, 255, 0.08) 0%, transparent 45%), radial-gradient(circle at 75% 65%, rgba(180, 200, 255, 0.05) 0%, transparent 40%), radial-gradient(circle at 45% 85%, rgba(180, 200, 255, 0.07) 0%, transparent 35%); backdrop-filter: grayscale(0.1) brightness(0.98); }
         .rainy-text-container { mask-image: radial-gradient(circle at 35% 45%, black 0%, rgba(0,0,0,0.6) 40%, black 90%); -webkit-mask-image: radial-gradient(circle at 35% 45%, black 0%, rgba(0,0,0,0.6) 40%, black 90%); filter: blur(0.45px) contrast(0.95); }

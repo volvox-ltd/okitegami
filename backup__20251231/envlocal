@@ -1,0 +1,8 @@
+# Mapboxのトークン (pk.から始まるやつ)
+NEXT_PUBLIC_MAPBOX_TOKEN=pk.eyJ1Ijoic3ltbXJpIiwiYSI6ImNtajV1ZmczbDBvcm8za3BvbTBpNG9obzAifQ.0C9T52jq7zSML5nzSKDU2w
+
+# SupabaseのURL (Settings > API で確認)
+NEXT_PUBLIC_SUPABASE_URL=https://fevsactrqsfxazatyzqu.supabase.co
+
+# SupabaseのAnon Key (Settings > API で確認)
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZldnNhY3RycXNmeGF6YXR5enF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU3MTg5MTIsImV4cCI6MjA4MTI5NDkxMn0.lr1C5kT8DlCiM96au_CET2TKg-HQ2yWO0TK6hHHUZyE
