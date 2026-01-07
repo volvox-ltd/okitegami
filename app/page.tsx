@@ -595,7 +595,7 @@ function HomeContent() {
           } : undefined}
         >
           
-          <div className="absolute bottom-[365px] right-[16px] z-10 landscape:bottom-[185px] transition-all duration-300">
+          <div className="absolute bottom-[465px] right-[16px] z-10 landscape:bottom-[185px] transition-all duration-300">
             <div className="mapboxgl-ctrl mapboxgl-ctrl-group" style={{ margin: 0, background: '#fff', borderRadius: '4px', boxShadow: '0 0 0 2px rgba(0,0,0,0.1)' }}>
               <button 
                 className="flex items-center justify-center transition-colors hover:bg-gray-50" 
@@ -619,7 +619,7 @@ function HomeContent() {
             showCompass={true} 
             style={{ 
               // 横向き時は CSS で定義した値（180px）、それ以外は 220px を使用
-              marginBottom: 'var(--nav-margin, 220px)', 
+              marginBottom: 'var(--nav-margin, 320px)', 
               marginRight: '16px' 
             }} 
           />
@@ -813,7 +813,7 @@ function HomeContent() {
         }
         @media (orientation: landscape) {
           :root {
-            --nav-margin: 190px; /* 横向き時は180pxに変更 */
+            --nav-margin: 200px; /* 横向き時は200pxに変更 */
           }
           .mapboxgl-ctrl-bottom-right {
             /* コンテナ自体が浮き上がらないよう、下端に固定 */
