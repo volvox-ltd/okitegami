@@ -594,7 +594,7 @@ function HomeContent() {
           } : undefined}
         >
           {/* 現在地に戻るボタン */}
-          <div className="absolute bottom-[325px] right-[16px] z-10 landscape:bottom-[125px] transition-all duration-300">
+          <div className="absolute bottom-[425px] right-[16px] z-10 landscape:bottom-[225px] transition-all duration-300">
             <div className="mapboxgl-ctrl mapboxgl-ctrl-group" style={{ margin: 0, background: '#fff', borderRadius: '4px', boxShadow: '0 0 0 2px rgba(0,0,0,0.1)' }}>
               <button 
                 className="flex items-center justify-center transition-colors hover:bg-gray-50" 
@@ -615,7 +615,7 @@ function HomeContent() {
             position="bottom-right" 
             showCompass={true} 
             style={{ 
-              marginBottom: '180px', 
+              marginBottom: '280px', 
               marginRight: '16px' 
             }} 
           />
