@@ -7,7 +7,6 @@ import Logo from '@/components/Logo';
 import FooterLinks from '@/components/FooterLinks';
 
 function LoginContent() {
-  // ★修正：クライアント側も SSR 対応のクライアントを作成
   const supabase = createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -56,9 +55,7 @@ function LoginContent() {
       setMessage('おかえりなさい。まもなく地図が開きます...');
 
       setTimeout(() => {
-        // next パラメータ（%2Fadmin など）をデコードして正しいパスにする
         const decodedNext = decodeURIComponent(nextUrl);
-        // 完全な URL（http://localhost:3000/admin）を作って飛ばす
         window.location.href = window.location.origin + decodedNext;
       }, 1500);
 
@@ -117,7 +114,8 @@ function LoginContent() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f7f4ea] font-sans text-gray-800 relative">
-      <Link href={nextUrl === '/' ? '/' : nextUrl} className="fixed top-4 left-4 z-50 w-10 h-10 flex items-center justify-center rounded-full bg-white/80 hover:bg-white text-gray-600 hover:text-black transition-colors shadow-sm border border-gray-200">
+      {/* ★修正：戻るボタンのリンクを「/」に固定してループを防止 */}
+      <Link href="/" className="fixed top-4 left-4 z-50 w-10 h-10 flex items-center justify-center rounded-full bg-white/80 hover:bg-white text-gray-600 hover:text-black transition-colors shadow-sm border border-gray-200">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
           <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
         </svg>
@@ -156,7 +154,6 @@ function LoginContent() {
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="block text-xs font-bold text-gray-500">パスワード</label>
-                  {/* ★修正：className を正しく適用 */}
                   <Link href="/forgot-password" title="忘れた場合" className="text-xs text-green-600 hover:underline">
                     忘れた場合
                   </Link>

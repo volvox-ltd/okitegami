@@ -9,6 +9,8 @@ import PostcardModal from '@/components/PostcardModal';
 import PostModal from '@/components/PostModal'; 
 import IconUserLetter from '@/components/IconUserLetter';
 import IconAdminLetter from '@/components/IconAdminLetter';
+// ★ アイコンのインポート追加
+import IconAdminPostcard from '@/components/IconAdminPostcard'; 
 import IconPost from '@/components/IconPost'; 
 import IconPostcard from '@/components/IconPostcard'; 
 import FooterLinks from '@/components/FooterLinks';
@@ -42,7 +44,6 @@ export default function MyPage() {
   const [user, setUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'posts' | 'favorites' | 'stamps' | 'settings'>('posts');
-  // ★ postFilterの選択肢を統合・整理
   const [postFilter, setPostFilter] = useState<'written' | 'submitted' | 'replies'>('written');
   
   const [myPosts, setMyPosts] = useState<Letter[]>([]);
@@ -61,7 +62,6 @@ export default function MyPage() {
 
   const [isRainy, setIsRainy] = useState(false);
 
-  // 手紙の期限切れ判定 [cite: 46, 66]
   const isExpired = (createdAt: string) => {
     return (new Date().getTime() - new Date(createdAt).getTime()) / (1000 * 60 * 60) > LETTER_EXPIRATION_HOURS;
   };
@@ -95,6 +95,7 @@ export default function MyPage() {
       .from('letters')
       .select('*, letter_reads(count)')
       .eq('user_id', userId)
+      .eq('is_deleted_from_map', false)
       .order('created_at', { ascending: false });
     
     if (data) {
@@ -167,31 +168,47 @@ export default function MyPage() {
   // ★ フィルタリングロジックの修正
   const filteredMyPosts = useMemo(() => {
     return myPosts.filter(letter => {
+      // 赤いポストへの返事、または赤いポスト自体の作成
       const isSubmittedToPost = !!letter.parent_id && letter.is_post === true; 
-      const isReplyToUser = !!letter.parent_id && !letter.is_post; 
+      // ユーザーが書いた通常の手紙への返事
+      const isReplyToUser = !!letter.parent_id && letter.is_post !== true; 
       
       if (postFilter === 'replies') return isReplyToUser;
       if (postFilter === 'submitted') return isSubmittedToPost;
-      
-      // 「書いた手紙（written）」：親要素（parent_idがないもの）すべて [cite: 92, 153]
       if (postFilter === 'written') return !letter.parent_id;
 
       return false;
     }).sort((a, b) => {
-      // 「書いた手紙」の場合のみ、掲載中を上に、過去を下に並べる
       if (postFilter === 'written') {
         const aExpired = isExpired(a.created_at);
         const bExpired = isExpired(b.created_at);
         if (aExpired !== bExpired) {
-          return aExpired ? 1 : -1; // 有効なものを上へ
+          return aExpired ? 1 : -1; 
         }
       }
-      // それ以外、または同じステータス内では日付順
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
   }, [myPosts, postFilter]);
 
+  // ★ アイテムクリック時の挙動：ポスト関連ならPostModalを開く
   const handleItemClick = async (item: Letter) => {
+    // 赤いポストへの投函の場合、その親であるポストを取得
+    if (item.is_post && item.parent_id) {
+      const { data: parentPost } = await supabase
+        .from('letters')
+        .select('*')
+        .eq('id', item.parent_id)
+        .single();
+      
+      if (parentPost) {
+        setSelectedPost(parentPost as Letter);
+      } else {
+        alert('ポストが見つかりませんでした。');
+      }
+      return;
+    }
+
+    // ユーザー間のお返事の場合
     if (!!item.parent_id && !item.is_post) {
       const { data: parentLetter } = await supabase
         .from('letters')
@@ -241,7 +258,6 @@ export default function MyPage() {
 
       {activeTab === 'posts' && (
         <div className="flex justify-center gap-1.5 py-3 bg-[#fdfcf5] px-2 overflow-x-auto">
-          {/* ★ フィルターボタンの整理 */}
           <button onClick={() => setPostFilter('written')} className={`shrink-0 px-6 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'written' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>書いた手紙</button>
           <button onClick={() => setPostFilter('submitted')} className={`shrink-0 px-6 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'submitted' ? 'bg-red-600 text-white border-red-600 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>投函した手紙</button>
           <button onClick={() => setPostFilter('replies')} className={`shrink-0 px-6 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'replies' ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>手紙の返事</button>
@@ -364,14 +380,15 @@ export default function MyPage() {
                       className={`bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4 cursor-pointer transition-transform hover:scale-[1.01] active:scale-[0.99] ${expired && !isSubmittedToPost && !isReply ? 'opacity-70 saturate-[0.3] bg-gray-50' : ''}`}
                     >
                       <div className="shrink-0 relative">
+                        {/* ★ アイコン出し分けの修正：ハガキ・便箋・ポスト・運営 */}
                         {isSubmittedToPost ? (
                           <div className="text-red-600"><IconPost className="w-10 h-10" /></div>
-                        ) : letter.is_official ? (
-                          <IconAdminLetter className="w-10 h-10" />
                         ) : letter.is_postcard ? (
                           <div className={`${(expired && (postFilter === 'written' || activeTab === 'favorites')) ? 'opacity-30 grayscale' : ''}`}>
-                             <IconPostcard className="w-10 h-10" />
+                             {letter.is_official ? <IconAdminPostcard className="w-10 h-10" /> : <IconPostcard className="w-10 h-10" />}
                           </div>
+                        ) : letter.is_official ? (
+                          <IconAdminLetter className="w-10 h-10" />
                         ) : (
                           <IconUserLetter className="w-10 h-10" />
                         )}
@@ -450,7 +467,8 @@ export default function MyPage() {
           currentUser={user} 
           isRainy={isRainy}
           onClose={() => setSelectedPost(null)} 
-          isReachable={false} 
+          isReachable={false}
+          isMyPage={true} // ★ マイページモード：投函タブ非表示
         />
       )}
 

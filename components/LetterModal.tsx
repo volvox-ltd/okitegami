@@ -4,6 +4,7 @@ import { supabase } from '@/utils/supabase';
 import { User } from '@supabase/supabase-js';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
+import { updateBookshelf } from '@/utils/bookshelf';
 
 type Letter = {
   id: string; title: string; spot_name: string; content: string;
@@ -106,7 +107,7 @@ function LetterModalContent({
       if (currentUser) {
         await checkFavorite();
         let query = supabase.from('letters')
-          .select('id, content, created_at, user_id, is_thanked') // ★ is_thankedを追加
+          .select('id, content, created_at, user_id, is_thanked') 
           .eq('parent_id', letter.id)
           .order('created_at', { ascending: false });
 
@@ -223,6 +224,7 @@ function LetterModalContent({
         user_id: currentUser.id,
         parent_id: letter.id,
         is_official: false,
+        is_postcard: true,
         is_thanked: false // ★ 明示的にfalseで初期化
       }).select('id, content, created_at, user_id, is_thanked').single();
 
@@ -234,15 +236,23 @@ function LetterModalContent({
     } catch (e) { alert('送信に失敗しました'); } finally { setIsSubmitting(false); }
   };
 
-  // ★ 追加：お返事ありがとうの切り替え機能
+  // ★ 修正：お返事ありがとうの数値連動解除対応版
   const toggleThank = async () => {
     const currentReply = replies[currentReplyIndex];
     if (!currentReply) return;
 
     const newStatus = !currentReply.is_thanked;
+
+    // 1. 本棚の数値を更新 (+1 または -1)
+    const cityKey = await updateBookshelf(letter.lat, letter.lng, newStatus ? 1 : -1);
+
+    // 2. 手紙データの更新
     const { error } = await supabase
       .from('letters')
-      .update({ is_thanked: newStatus })
+      .update({ 
+        is_thanked: newStatus,
+        area_key: newStatus ? cityKey : null
+      })
       .eq('id', currentReply.id);
 
     if (!error) {
@@ -276,10 +286,16 @@ function LetterModalContent({
   };
 
   const handleDeleteParent = async () => {
-    if (!confirm('本当にこの手紙を削除しますか？')) return;
-    const { error } = await supabase.from('letters').delete().eq('id', letter.id);
+    if (!confirm('本当に削除しますか？（地図から消去されます）')) return;
+    
+    // 地層（is_thanked）になっている場合は、データを消さずに非表示フラグを立てる
+    const { error } = await supabase
+      .from('letters')
+      .update({ is_deleted_from_map: true })
+      .eq('id', letter.id);
+      
     if (!error) { 
-      onDeleted?.(letter.id);
+      onDeleted?.(letter.id); 
       handleClose(); 
     }
   };

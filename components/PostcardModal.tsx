@@ -4,6 +4,7 @@ import { supabase } from '@/utils/supabase';
 import { User } from '@supabase/supabase-js';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
+import { updateBookshelf } from '@/utils/bookshelf'; // インポートを追加
 
 type Letter = {
   id: string; title: string; spot_name: string; content: string;
@@ -192,15 +193,24 @@ function PostcardModalContent({
     } finally { setIsSubmitting(false); }
   };
 
-  // ★ 追加：お返事ありがとうの切り替え機能
+  // ★ 修正：お返事ありがとうの数値連動解除対応版
   const toggleThank = async () => {
     const currentReply = replies[currentReplyIndex];
     if (!currentReply) return;
 
     const newStatus = !currentReply.is_thanked;
+    
+    // 1. 本棚の数値を更新 (+1 または -1)
+    // 解除時 (newStatus が false) は -1 を渡します
+    const cityKey = await updateBookshelf(letter.lat, letter.lng, newStatus ? 1 : -1);
+
+    // 2. 手紙データの更新
     const { error } = await supabase
       .from('letters')
-      .update({ is_thanked: newStatus })
+      .update({ 
+        is_thanked: newStatus,
+        area_key: newStatus ? cityKey : null // 解除時はタグも消す
+      })
       .eq('id', currentReply.id);
 
     if (!error) {
@@ -232,9 +242,18 @@ function PostcardModalContent({
   };
 
   const handleDeleteParent = async () => {
-    if (!confirm('本当に削除しますか？')) return;
-    const { error } = await supabase.from('letters').delete().eq('id', letter.id);
-    if (!error) { onDeleted?.(letter.id); handleClose(); }
+    if (!confirm('本当に削除しますか？（地図から消去されます）')) return;
+    
+    // 地層（is_thanked）になっている場合は、データを消さずに非表示フラグを立てる
+    const { error } = await supabase
+      .from('letters')
+      .update({ is_deleted_from_map: true })
+      .eq('id', letter.id);
+      
+    if (!error) { 
+      onDeleted?.(letter.id); 
+      handleClose(); 
+    }
   };
 
   if (isCheckingAuth) return null;
@@ -449,7 +468,7 @@ function PostcardModalContent({
                  <div className="flex flex-col items-center gap-2">
                     <button onClick={handleClose} className="bg-stone-600 text-white px-10 py-2 rounded-full text-[10px] font-bold shadow-md active:scale-95 tracking-widest">閉じる</button>
                     
-                    {/* ★ 追加：お返事ありがとうボタン（本人のみ表示） */}
+                    {/* ★ 修正：お返事ありがとうボタン（本人のみ表示） */}
                     {isMyPost && (
                        <button 
                          onClick={(e) => { e.stopPropagation(); toggleThank(); }}
@@ -473,8 +492,8 @@ function PostcardModalContent({
         .preserve-3d { transform-style: preserve-3d; } 
         .backface-hidden { backface-visibility: hidden; -webkit-backface-visibility: hidden; } 
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
-        .animate-slideUp { animation: slideUp 0.4s ease-out forwards; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .animate-slideUp { animation: slideUp 0.4s ease-out forwards; } 
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } } 
         .animate-fadeIn { animation: fadeIn 0.3s ease-out forwards; }
         .modal-html-content a { color: #2563eb !important; text-decoration: underline !important; }
         .rainy-overlay { background: radial-gradient(circle at 25% 30%, rgba(180, 200, 255, 0.08) 0%, transparent 45%), radial-gradient(circle at 75% 65%, rgba(180, 200, 255, 0.05) 0%, transparent 40%), radial-gradient(circle at 45% 85%, rgba(180, 200, 255, 0.07) 0%, transparent 35%); backdrop-filter: grayscale(0.1) brightness(0.98); }

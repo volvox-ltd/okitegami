@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -9,6 +9,11 @@ import IconUserLetter from '@/components/IconUserLetter';
 import IconPost from '@/components/IconPost';
 import { compressStamp } from '@/utils/imageControl';
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
+// ★ Mapboxのインポート追加
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+
+mapboxgl.accessToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN || '';
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,7 +24,7 @@ export default function AdminDashboard() {
   const router = useRouter();
 
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'official' | 'posts' | 'users' | 'members' | 'stats' | 'create' | 'stamps' | 'weather'>('posts');
+  const [activeTab, setActiveTab] = useState<'official' | 'posts' | 'users' | 'members' | 'stats' | 'create' | 'stamps' | 'weather' | 'bookshelves'>('posts');
   const [userSubTab, setUserSubTab] = useState<'active' | 'archive'>('active');
 
   const [stats, setStats] = useState({ userCount: 0, letterCount: 0, reportCount: 0 });
@@ -27,21 +32,65 @@ export default function AdminDashboard() {
   const [profiles, setProfiles] = useState<any[]>([]);
   const [allStamps, setAllStamps] = useState<any[]>([]);
   
+  const [bookshelves, setBookshelves] = useState<any[]>([]);
+  const [editingShelf, setEditingShelf] = useState<any>(null);
+  const [shelfLetters, setShelfLetters] = useState<any[]>([]);
+  const [selectedShelfKey, setSelectedShelfKey] = useState<string | null>(null);
+  
   const [isCleaning, setIsCleaning] = useState(false);
   const [cleanLog, setCleanLog] = useState<string>('');
-
-  // ★ 追加：天候管理用
   const [forceRain, setForceRain] = useState(false);
+
+  // ★ 地図管理用
+  const mapContainer = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
+  const markerRef = useRef<mapboxgl.Marker | null>(null);
 
   useEffect(() => {
     const init = async () => {
       await fetchData();
       await fetchStamps();
       await fetchWeatherSetting();
+      await fetchBookshelves();
       setLoading(false);
     };
     init();
   }, []);
+
+  // ★ 編集パネルが開いた時に地図を初期化
+  useEffect(() => {
+    if (activeTab === 'bookshelves' && editingShelf && mapContainer.current) {
+      if (!mapRef.current) {
+        mapRef.current = new mapboxgl.Map({
+          container: mapContainer.current,
+          style: 'mapbox://styles/mapbox/light-v11',
+          center: [editingShelf.lng, editingShelf.lat],
+          zoom: 15
+        });
+
+        const marker = new mapboxgl.Marker({ draggable: true, color: '#ef4444' })
+          .setLngLat([editingShelf.lng, editingShelf.lat])
+          .addTo(mapRef.current);
+
+        marker.on('dragend', () => {
+          const lngLat = marker.getLngLat();
+          setEditingShelf((prev: any) => ({ ...prev, lat: lngLat.lat, lng: lngLat.lng }));
+        });
+
+        markerRef.current = marker;
+      } else {
+        mapRef.current.setCenter([editingShelf.lng, editingShelf.lat]);
+        markerRef.current?.setLngLat([editingShelf.lng, editingShelf.lat]);
+      }
+    }
+    return () => {
+      if (!editingShelf && mapRef.current) {
+        mapRef.current.remove();
+        mapRef.current = null;
+        markerRef.current = null;
+      }
+    };
+  }, [editingShelf, activeTab]);
 
   const fetchWeatherSetting = async () => {
     const { data } = await supabase.from('system_settings').select('value').eq('key', 'force_rain').maybeSingle();
@@ -53,6 +102,22 @@ export default function AdminDashboard() {
     const { error } = await supabase.from('system_settings').upsert({ key: 'force_rain', value: newValue.toString() });
     if (!error) setForceRain(newValue);
     else alert('設定の保存に失敗しました');
+  };
+
+  const fetchBookshelves = async () => {
+    const { data } = await supabase.from('bookshelves').select('*').order('thank_count', { ascending: false });
+    if (data) setBookshelves(data);
+  };
+
+  const fetchShelfLetters = async (areaKey: string) => {
+    setSelectedShelfKey(areaKey);
+    const { data } = await supabase
+      .from('letters')
+      .select('*, profiles(nickname)')
+      .eq('area_key', areaKey)
+      .eq('is_thanked', true)
+      .order('created_at', { ascending: false });
+    if (data) setShelfLetters(data);
   };
 
   const fetchData = async () => {
@@ -137,7 +202,28 @@ export default function AdminDashboard() {
       }
       await supabase.from('letters').delete().eq('id', id);
       fetchData();
+      if (selectedShelfKey) fetchShelfLetters(selectedShelfKey);
     } catch (e: any) { alert('エラー: ' + e.message); }
+  };
+
+  const handleUpdateShelf = async () => {
+    if (!editingShelf) return;
+    const { error } = await supabase
+      .from('bookshelves')
+      .update({
+        display_name: editingShelf.display_name,
+        lat: parseFloat(editingShelf.lat),
+        lng: parseFloat(editingShelf.lng)
+      })
+      .eq('id', editingShelf.id);
+    
+    if (!error) {
+      alert('書架情報を更新しました');
+      setEditingShelf(null);
+      fetchBookshelves();
+    } else {
+      alert('更新に失敗しました: ' + error.message);
+    }
   };
 
   const handleResetStamps = async (userId: string, nickname: string) => {
@@ -206,12 +292,129 @@ export default function AdminDashboard() {
           <TabButton label="運営の投稿" isActive={activeTab === 'official'} onClick={() => setActiveTab('official')} icon="👑" count={officialLetters.length} />
           <TabButton label="みんなの投稿" isActive={activeTab === 'users'} onClick={() => setActiveTab('users')} icon="👤" count={allUserLetters.length} badgeColor={stats.reportCount > 0 ? "bg-red-500 text-white" : undefined} />
           <TabButton label="ユーザー管理" isActive={activeTab === 'members'} onClick={() => setActiveTab('members')} icon="👥" count={stats.userCount} />
+          <TabButton label="書架管理" isActive={activeTab === 'bookshelves'} onClick={() => setActiveTab('bookshelves')} icon="📚" count={bookshelves.length} />
           <TabButton label="切手管理" isActive={activeTab === 'stamps'} onClick={() => setActiveTab('stamps')} icon="🏷️" count={allStamps.length} />
           <TabButton label="統計" isActive={activeTab === 'stats'} onClick={() => setActiveTab('stats')} icon="📊" />
-          {/* ★ 天候管理タブ追加 */}
           <TabButton label="天候設定" isActive={activeTab === 'weather'} onClick={() => setActiveTab('weather')} icon="☁️" />
           <TabButton label="新規作成" isActive={activeTab === 'create'} onClick={() => setActiveTab('create')} icon="✏️" color="bg-green-700 text-white" />
         </div>
+
+        {/* --- 図書館書架管理タブ --- */}
+        {activeTab === 'bookshelves' && (
+          <div className="space-y-6 animate-fadeIn">
+            <div className="bg-white rounded-xl shadow border border-gray-200 overflow-hidden">
+              <div className="p-4 bg-gray-50 border-b font-bold text-sm flex justify-between items-center">
+                <span>📚 街の書架（本棚）一覧</span>
+                <span className="text-[10px] text-gray-400 font-normal">※位置を微調整するには編集ボタンを押してください</span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-gray-50 text-gray-600 border-b uppercase text-[10px] font-bold">
+                    <tr>
+                      <th className="p-4">エリアキー</th>
+                      <th className="p-4">表示名</th>
+                      <th className="p-4">座標 (Lat, Lng)</th>
+                      <th className="p-4">地層の厚さ</th>
+                      <th className="p-4 text-center">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bookshelves.map((shelf) => (
+                      <tr key={shelf.id} className="border-b hover:bg-gray-50 transition-colors">
+                        <td className="p-4 font-mono text-xs">{shelf.area_key}</td>
+                        <td className="p-4 font-bold">{shelf.display_name}</td>
+                        <td className="p-4 text-xs text-gray-500">{shelf.lat.toFixed(6)}, {shelf.lng.toFixed(6)}</td>
+                        <td className="p-4">
+                          <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded-full text-xs font-bold">
+                            {shelf.thank_count} 通
+                          </span>
+                        </td>
+                        <td className="p-4 text-center">
+                          <div className="flex gap-2 justify-center">
+                            <button onClick={() => setEditingShelf(shelf)} className="text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-lg font-bold text-xs border border-blue-100">編集</button>
+                            <button onClick={() => fetchShelfLetters(shelf.area_key)} className="text-green-700 hover:bg-green-50 px-3 py-1.5 rounded-lg font-bold text-xs border border-green-100">地層を管理</button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* 書架編集フォーム（地図付き） */}
+            {editingShelf && (
+              <div className="bg-blue-50 p-6 rounded-xl border border-blue-200 shadow-inner animate-fadeIn">
+                <h3 className="font-bold text-blue-800 mb-4 flex items-center gap-2">📍 {editingShelf.area_key} の場所を微調整</h3>
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* 左：地図 */}
+                  <div className="space-y-2">
+                    <div ref={mapContainer} className="w-full h-[300px] rounded-lg border-2 border-blue-200 shadow-sm" />
+                    <p className="text-[10px] text-blue-400 font-bold">※地図上のピンをドラッグして位置を微調整できます</p>
+                  </div>
+
+                  {/* 右：入力フォーム */}
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-blue-400 mb-1">表示名</label>
+                      <input type="text" value={editingShelf.display_name} onChange={e => setEditingShelf({...editingShelf, display_name: e.target.value})} className="w-full p-2 rounded border border-blue-200 text-sm focus:ring-2 focus:ring-blue-400 outline-none" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-blue-400 mb-1">緯度 (Lat)</label>
+                        <input type="number" step="0.000001" value={editingShelf.lat} onChange={e => setEditingShelf({...editingShelf, lat: parseFloat(e.target.value)})} className="w-full p-2 rounded border border-blue-200 text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-blue-400 mb-1">経度 (Lng)</label>
+                        <input type="number" step="0.000001" value={editingShelf.lng} onChange={e => setEditingShelf({...editingShelf, lng: parseFloat(e.target.value)})} className="w-full p-2 rounded border border-blue-200 text-sm" />
+                      </div>
+                    </div>
+                    <div className="flex gap-2 pt-4">
+                      <button onClick={handleUpdateShelf} className="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-bold text-xs shadow-md hover:bg-blue-700 transition-colors">設定を保存する</button>
+                      <button onClick={() => setEditingShelf(null)} className="bg-white text-gray-500 px-6 py-3 rounded-lg font-bold text-xs border border-gray-200 hover:bg-gray-100 transition-colors">キャンセル</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 地層（アーカイブ手紙）の管理 */}
+            {selectedShelfKey && (
+              <div className="bg-white rounded-xl shadow border border-orange-200 overflow-hidden animate-fadeIn">
+                <div className="p-4 bg-orange-50 border-b font-bold text-sm flex justify-between items-center text-orange-800">
+                  <span>📖 「{selectedShelfKey}」に積もった記憶の地層 ({shelfLetters.length}通)</span>
+                  <button onClick={() => setSelectedShelfKey(null)} className="text-orange-400 hover:text-orange-600 px-2 text-lg font-bold">✕</button>
+                </div>
+                <div className="max-h-96 overflow-y-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-gray-50 text-gray-600 border-b text-[10px] font-bold uppercase">
+                      <tr>
+                        <th className="p-4">日付</th>
+                        <th className="p-4">内容（冒頭）</th>
+                        <th className="p-4">投稿者</th>
+                        <th className="p-4 text-center">操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shelfLetters.map((letter) => (
+                        <tr key={letter.id} className="border-b hover:bg-gray-50 transition-colors">
+                          <td className="p-4 text-xs text-gray-500 whitespace-nowrap">{new Date(letter.created_at).toLocaleDateString()}</td>
+                          <td className="p-4 text-xs text-gray-700 font-serif max-w-md truncate">{letter.content}</td>
+                          <td className="p-4 font-bold text-gray-800">{letter.profiles?.nickname || '不明'}</td>
+                          <td className="p-4 text-center">
+                            <button onClick={() => handleDeletePost(letter.id)} className="text-red-500 hover:underline font-bold text-xs">地層から削除</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {shelfLetters.length === 0 && <p className="p-10 text-center text-gray-400 italic font-serif">この街にはまだ感謝の記録がありません。</p>}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* --- 天候管理タブ --- */}
         {activeTab === 'weather' && (
@@ -386,7 +589,7 @@ export default function AdminDashboard() {
         {activeTab === 'create' && (
           <div className="bg-white p-8 rounded-xl shadow-sm text-center animate-fadeIn">
             <h2 className="text-lg font-bold mb-4 font-serif">新規作成</h2>
-            <Link href="/admin/create" className="inline-block bg-green-700 text-white px-8 py-3 rounded-full font-bold hover:bg-green-800 shadow-lg">投稿画面を開く 🚀</Link>
+            <Link href="/admin/create" className="inline-block bg-green-700 text-white px-8 py-3 rounded-full font-bold hover:bg-green-800 shadow-lg transition-transform hover:scale-105 active:scale-95">投稿画面を開く 🚀</Link>
           </div>
         )}
       </div>

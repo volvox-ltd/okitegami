@@ -20,9 +20,10 @@ type Props = {
   onClose: () => void;
   isReachable: boolean; 
   isRainy?: boolean;
+  isMyPage?: boolean; // ★ 追加：マイページからの呼び出し判定
 };
 
-export default function PostModal({ post, currentUser, onClose, isReachable }: Props) {
+export default function PostModal({ post, currentUser, onClose, isReachable, isMyPage = false }: Props) {
   const [activeTab, setActiveTab] = useState<'read' | 'write'>('read');
   const [letters, setLetters] = useState<Letter[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -47,10 +48,18 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
     setIsLoading(true);
 
     try {
-      const { data: newLetters, error } = await supabase
+      // ★ 修正：削除フラグが立っていないものだけを取得
+      let query = supabase
         .from('letters')
         .select('*')
         .eq('parent_id', post.id)
+        .eq('is_deleted_from_map', false); // 追加
+
+      if (isMyPage && currentUser) {
+        query = query.eq('user_id', currentUser.id);
+      }
+
+      const { data: newLetters, error } = await query
         .order('created_at', { ascending: false })
         .range(offset, offset + PAGE_SIZE - 1);
 
@@ -84,25 +93,29 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
       isFetchingRef.current = false;
       setHasFetchedOnce(true);
     }
-  }, [post.id, hasMore]);
+  }, [post.id, hasMore, isMyPage, currentUser]);
 
   useEffect(() => {
     let isMounted = true;
     const init = async () => {
-      const fetchCount = supabase
+      let countQuery = supabase
         .from('letters')
         .select('*', { count: 'exact', head: true })
-        .eq('parent_id', post.id);
+        .eq('parent_id', post.id)
+        .eq('is_deleted_from_map', false); // カウントも削除済みを除外
       
+      if (isMyPage && currentUser) {
+        countQuery = countQuery.eq('user_id', currentUser.id);
+      }
+
       const [countRes] = await Promise.all([
-        fetchCount,
+        countQuery,
         fetchLetters(0, true)
       ]);
 
       if (isMounted) {
         setTotalCount(countRes.count || 0);
         
-        // ★ 修正：post_logs（履歴テーブル）をチェックして、手紙が削除されても制限がかかるようにする
         if (currentUser) {
           const now = new Date();
           const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
@@ -112,7 +125,7 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
             .select('id')
             .eq('user_id', currentUser.id)
             .eq('post_id', post.id)
-            .gt('created_at', twentyFourHoursAgo) // 24時間以内のログがあるか
+            .gt('created_at', twentyFourHoursAgo) 
             .maybeSingle();
             
           setHasPostedToday(!!recentLog);
@@ -121,7 +134,7 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
     };
     init();
     return () => { isMounted = false; };
-  }, [post.id, currentUser, fetchLetters]);
+  }, [post.id, currentUser, fetchLetters, isMyPage]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     if (isLoading || !hasMore || activeTab !== 'read') return;
@@ -139,7 +152,6 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
     
     setIsSubmitting(true);
     try {
-      // 1. 手紙の保存
       const { data: newLetter, error: letterError } = await supabase.from('letters').insert({
         title: 'ポストへの手紙', 
         content: content,
@@ -149,17 +161,16 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
         user_id: currentUser.id,
         parent_id: post.id,
         is_official: false,
+        is_post: true, 
       }).select().single();
 
       if (letterError) throw letterError;
 
-      // ★ 2. 修正：投稿ログ（履歴）を保存。これで削除されても証拠が残る
       await supabase.from('post_logs').insert({
         user_id: currentUser.id,
         post_id: post.id
       });
 
-      // 3. 切手の付与
       if (post.attached_stamp_id) {
         const { data: existingEntry } = await supabase
           .from('user_stamps')
@@ -196,6 +207,27 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
     }
   };
 
+  // ★ 追加：手紙の削除（論理削除）
+  const handleDeleteLetter = async (letterId: string) => {
+    if (!confirm('この手紙を削除しますか？')) return;
+
+    try {
+      const { error } = await supabase
+        .from('letters')
+        .update({ is_deleted_from_map: true })
+        .eq('id', letterId);
+
+      if (error) throw error;
+
+      // ローカルの状態を更新
+      setLetters(prev => prev.filter(l => l.id !== letterId));
+      setTotalCount(prev => Math.max(0, prev - 1));
+    } catch (e) {
+      console.error(e);
+      alert('削除に失敗しました');
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
@@ -221,7 +253,9 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
             <div className="w-10 h-10 flex items-center justify-center bg-white/20 rounded-full"><IconPost className="w-6 h-6 text-white" /></div>
             <div>
               <h2 className="font-bold font-serif text-lg tracking-widest">{post.title}</h2>
-              <p className="text-[10px] opacity-80">これまでに {totalCount} 通の手紙が届いています</p>
+              <p className="text-[10px] opacity-80">
+                {isMyPage ? `あなたの手紙: ${totalCount} 通` : `これまでに ${totalCount} 通の手紙が届いています`}
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="text-white/70 hover:text-white text-xl font-sans">✕</button>
@@ -229,7 +263,9 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
 
         <div className="flex border-b border-gray-200 shrink-0 bg-white">
           <button onClick={() => setActiveTab('read')} className={`flex-1 py-3 text-sm font-bold ${activeTab === 'read' ? 'text-red-600 border-b-2 border-red-600' : 'text-gray-400'}`}>手紙を見る</button>
-          {isReachable && (<button onClick={() => setActiveTab('write')} className={`flex-1 py-3 text-sm font-bold ${activeTab === 'write' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}>投函する</button>)}
+          {!isMyPage && isReachable && (
+            <button onClick={() => setActiveTab('write')} className={`flex-1 py-3 text-sm font-bold ${activeTab === 'write' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-400'}`}>投函する</button>
+          )}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 bg-[#fdfcf5]" onScroll={handleScroll} ref={scrollContainerRef}>
@@ -237,7 +273,6 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
             <div className="space-y-6">
               <div className="bg-white p-4 rounded border border-red-100 shadow-sm relative font-serif">
                 <div className="absolute -top-3 left-4 bg-red-50 text-red-600 text-[10px] font-bold px-2 py-0.5 rounded font-sans">{post.spot_name || post.title}の手紙</div>
-                {/* ★ 修正：スイッチで写真表示を隠す */}
                 {ENABLE_PHOTO_UPLOAD && post.image_url && (
                   <div className="mt-2 mb-4 flex justify-center">
                     <div className="relative">
@@ -256,18 +291,33 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
               </div>
 
               <div className="border-t border-dashed border-gray-300 pt-4">
-                <h3 className="text-xs font-bold text-gray-500 mb-3 text-center font-sans">届いた手紙のアーカイブ</h3>
+                <h3 className="text-xs font-bold text-gray-500 mb-3 text-center font-sans">
+                  {isMyPage ? 'あなたの投函履歴' : '届いた手紙のアーカイブ'}
+                </h3>
                 {!hasFetchedOnce ? (
                   <p className="text-center text-[10px] text-gray-400 py-8 italic animate-pulse">手紙を読み込んでいます...</p>
                 ) : letters.length === 0 ? (
-                  <p className="text-center text-xs text-gray-400 py-8">まだ手紙はありません。一番乗りで書きませんか？</p>
+                  <p className="text-center text-xs text-gray-400 py-8">
+                    {isMyPage ? 'まだこのポストへの投函履歴はありません。' : 'まだ手紙はありません。一番乗りで書きませんか？'}
+                  </p>
                 ) : (
                   <div className="space-y-3 pb-4">
                     {letters.map(l => (
-                      <div key={l.id} className="bg-white p-3 rounded shadow-sm border border-gray-100 animate-fadeIn">
+                      <div key={l.id} className="bg-white p-3 rounded shadow-sm border border-gray-100 animate-fadeIn relative">
                         <div className="flex justify-between items-end mb-2 border-b border-gray-50 pb-1 font-sans">
                           <span className="text-xs font-bold text-gray-600">{l.nickname || '名無し'}さんより</span>
-                          <span className="text-[10px] text-gray-400">{new Date(l.created_at).toLocaleDateString()}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-gray-400">{new Date(l.created_at).toLocaleDateString()}</span>
+                            {/* ★ 自分の手紙なら削除ボタンを表示 */}
+                            {currentUser && currentUser.id === l.user_id && (
+                              <button 
+                                onClick={() => handleDeleteLetter(l.id)}
+                                className="text-[10px] text-red-500 font-bold hover:underline"
+                              >
+                                削除
+                              </button>
+                            )}
+                          </div>
                         </div>
                         <p className="text-sm font-serif text-bunko-ink leading-relaxed whitespace-pre-wrap">{l.content}</p>
                       </div>
@@ -279,7 +329,7 @@ export default function PostModal({ post, currentUser, onClose, isReachable }: P
             </div>
           )}
 
-          {activeTab === 'write' && isReachable && (
+          {activeTab === 'write' && !isMyPage && isReachable && (
             <div className="h-full flex flex-col items-center justify-start pt-4 font-sans">
               {!currentUser ? (
                 <div className="text-center mt-10"><p className="text-sm text-gray-600 mb-4 font-bold">手紙を投函するにはログインが必要です。</p><Link href={`/login?next=${encodeURIComponent('/?open_post=' + post.id)}`} className="bg-red-600 text-white px-6 py-2 rounded-full text-xs font-bold shadow-md">ログインする</Link></div>
