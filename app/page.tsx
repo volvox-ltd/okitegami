@@ -813,7 +813,7 @@ function HomeContent() {
         }
         @media (orientation: landscape) {
           :root {
-            --nav-margin: 180px; /* 横向き時は180pxに変更 */
+            --nav-margin: 190px; /* 横向き時は180pxに変更 */
           }
           .mapboxgl-ctrl-bottom-right {
             /* コンテナ自体が浮き上がらないよう、下端に固定 */
