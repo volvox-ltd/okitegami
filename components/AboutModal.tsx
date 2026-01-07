@@ -13,7 +13,7 @@ export default function AboutModal({ onClose }: Props) {
   useEffect(() => {
     const container = scrollContainerRef.current;
     if (container) {
-      // 縦書き（vertical-rl）では一番右が始まりなので、スクロール位置を最大にする
+      // 縦書きでは一番右が始まりなので、スクロール位置を最大にする
       container.scrollLeft = container.scrollWidth;
       
       const handleScroll = () => {
@@ -36,10 +36,10 @@ export default function AboutModal({ onClose }: Props) {
         onClick={onClose}
       ></div>
 
-      {/* ボード本体：高さを dvh に対応させ、スマホ横向き時は画面いっぱいに広がるよう調整 */}
+      {/* ボード本体：dvhで高さを固定し、縦に突き抜けないようにする */}
       <div className="relative bg-[#fdfcf5] w-full max-w-5xl h-[92dvh] sm:h-[85vh] rounded-sm shadow-2xl flex flex-col overflow-hidden border border-gray-200 animate-fade-in">
         
-        {/* 閉じるボタン：横向き時は邪魔にならないよう少し小さく調整可能 */}
+        {/* 閉じるボタン */}
         <button 
           onClick={onClose}
           className="absolute top-4 right-4 z-50 text-gray-500 hover:text-black transition-colors p-2 tracking-widest text-xs font-serif border border-gray-300 rounded-full px-4 bg-white/80 hover:bg-white shadow-sm"
@@ -58,29 +58,29 @@ export default function AboutModal({ onClose }: Props) {
         )}
 
         {/* コンテンツエリア：
-          ★修正点：overflow-y-auto を追加。
-          画面の高さが足りない場合、縦書きの一行が画面を突き抜けても縦スクロールで読めるようになります。
+          ★修正点：overflow-y-hidden にし、縦方向の突き出しを禁止。
+          高さ（h-full）を維持することで、縦書きの改行を誘発させます。
         */}
         <div 
           ref={scrollContainerRef}
-          className="flex-1 overflow-x-auto overflow-y-auto relative py-12 sm:py-16 px-6 md:px-16 scroll-smooth custom-scrollbar"
+          className="flex-1 overflow-x-auto overflow-y-hidden relative py-12 sm:py-16 px-6 md:px-16 scroll-smooth custom-scrollbar h-full"
         >
           <div 
-            className="min-h-full flex flex-col items-start gap-12 sm:gap-16 text-bunko-ink font-serif"
+            className="h-full flex flex-col items-start gap-12 sm:gap-16 text-bunko-ink font-serif"
             style={{
               writingMode: 'vertical-rl',
               textOrientation: 'upright',
             }}
           >
             {/* 1. タイトルエリア */}
-            <div className="flex flex-col justify-start border-gray-400 pl-6 py-2 shrink-0 h-auto">
+            <div className="flex flex-col justify-start border-gray-400 pl-6 py-2 shrink-0 max-h-full">
                <h2 className="text-xl md:text-3xl text-black tracking-[0.2em] leading-normal font-normal">
                  「おきてがみ」とは
                </h2>
             </div>
 
-            {/* 2. 導入文 */}
-            <p className="text-sm sm:text-base md:text-lg text-gray-600 tracking-[0.15em] leading-[2.2] sm:leading-[2.5] whitespace-pre-wrap shrink-0 pt-2 font-light">
+            {/* 2. 導入文：max-h-fullにより、画面の下端に来たら自動で左の行へ改行されます */}
+            <p className="text-sm sm:text-base md:text-lg text-gray-600 tracking-[0.15em] leading-[2.2] sm:leading-[2.5] whitespace-pre-wrap shrink-0 pt-2 font-light max-h-full">
               この世界には、誰かが残した手紙が置かれています。
               
               地図を頼りにその場所を訪れ、誰かの物語を拾ったり、
@@ -90,8 +90,8 @@ export default function AboutModal({ onClose }: Props) {
             </p>
 
             {/* 3. セクション：探す・読む */}
-            {/* ★修正点：min-h を画面の高さに合わせてレスポンシブに (sm:min-h-[360px]) */}
-            <div className="p-6 sm:p-8 border border-gray-200 rounded-sm bg-white/40 shrink-0 h-auto min-h-0 sm:min-h-[360px]">
+            {/* ★修正点：横向きの低さに対応するため、min-h-0を指定し、sm以上のみ高さを確保 */}
+            <div className="p-6 sm:p-8 border border-gray-200 rounded-sm bg-white/40 shrink-0 h-auto sm:min-h-[360px] max-h-full overflow-hidden">
               <h3 className="text-base sm:text-lg md:text-xl mb-6 sm:mb-8 text-black tracking-[0.2em] font-normal h-auto inline-block pl-4">
                 手紙を 探す・読む
               </h3>
@@ -116,7 +116,7 @@ export default function AboutModal({ onClose }: Props) {
             </div>
 
             {/* 4. セクション：書く・置く */}
-            <div className="p-6 sm:p-8 border border-gray-200 rounded-sm bg-white/40 shrink-0 h-auto min-h-0 sm:min-h-[360px]">
+            <div className="p-6 sm:p-8 border border-gray-200 rounded-sm bg-white/40 shrink-0 h-auto sm:min-h-[360px] max-h-full overflow-hidden">
               <h3 className="text-base sm:text-lg md:text-xl mb-6 sm:mb-8 text-black tracking-[0.2em] font-normal h-auto inline-block pl-4">
                 手紙を 書く・置く
               </h3>
@@ -135,7 +135,7 @@ export default function AboutModal({ onClose }: Props) {
                 </div>
                 <div>
                   <span className="block ml-3 text-gray-400 text-[10px] sm:text-xs mb-1 tracking-widest">二、手紙を書く</span>
-                  便箋に書いたり、その場所の風景を撮ってポストカードも作れます。<br/>
+                  便箋に書いたり、ポストカードも作れます。<br/>
                   合言葉で鍵をかけることも可能です。
                 </div>
                 <div>
@@ -147,13 +147,13 @@ export default function AboutModal({ onClose }: Props) {
             </div>
 
             {/* 5. 署名 */}
-            <div className="flex flex-col justify-end pb-2 shrink-0 ml-8">
-              <p className="text-xs sm:text-sm text-gray-400 tracking-[0.3em]">
+            <div className="flex flex-col justify-end pb-2 shrink-0 ml-8 h-full">
+              <p className="text-xs sm:text-sm text-gray-400 tracking-[0.3em] whitespace-nowrap">
                 木林文庫 庵主
               </p>
             </div>
             
-            {/* 右端の余白 */}
+            {/* 右端（縦書きの終着点）の余白 */}
             <div className="w-16 shrink-0"></div>
 
           </div>
@@ -173,10 +173,8 @@ export default function AboutModal({ onClose }: Props) {
           writing-mode: vertical-rl;
           text-orientation: upright;
         }
-        /* スクロールバーを見やすく、かつデザインを損なわないよう調整 */
         .custom-scrollbar::-webkit-scrollbar {
           height: 4px;
-          width: 4px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
           background: transparent;
