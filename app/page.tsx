@@ -618,7 +618,7 @@ function HomeContent() {
             position="bottom-right" 
             showCompass={true} 
             style={{ 
-              marginBottom: '180px', 
+              marginBottom: '220px', 
               marginRight: '16px' 
             }} 
           />
