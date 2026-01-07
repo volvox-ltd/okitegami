@@ -90,9 +90,10 @@ function HomeContent() {
   });
 
   const [hasCentered, setHasCentered] = useState(false);
+  const hasCenteredRef = useRef(false); // ★ 点滅防止用：初回移動判定
   const [showPwaPrompt, setShowPwaPrompt] = useState(false);
 
-  // ★ 修正：自動追従フラグ。点滅を防ぐため Ref で同期管理
+  // ★ 修正：点滅と引き戻しを防止するため、追従フラグを Ref で完全管理
   const [isFollowingUser, setIsFollowingUser] = useState(true);
   const isFollowingUserRef = useRef(true);
   useEffect(() => {
@@ -126,7 +127,7 @@ function HomeContent() {
     return isRainy ? "mapbox://styles/mapbox/light-v11" : "mapbox://styles/mapbox/streets-v12";
   }, [isRainy]);
 
-  // ★ 日本語化を強制適用する関数（割愛なし・完全版）
+  // ★ 日本語化を強制適用する関数
   const applyLocalization = useCallback((map: any) => {
     if (!map) return;
     const style = map.getStyle();
@@ -170,14 +171,12 @@ function HomeContent() {
   // ★ 自動天気取得ロジック
   useEffect(() => {
     const checkWeather = async () => {
-      // 1. 管理画面での「強制雨モード」設定があるか確認
       const { data: settings } = await supabase.from('system_settings').select('value').eq('key', 'force_rain').maybeSingle();
       
       if (settings?.value === 'true') {
         setIsRainy(true);
         setShowRainNotice(true);
       } else if (userLocation) {
-        // 2. 設定がない場合は現在地からAPI取得
         const rainy = await fetchIsRainy(userLocation.lat, userLocation.lng);
         if (rainy) {
           setIsRainy(true);
@@ -197,7 +196,7 @@ function HomeContent() {
   }, [showRainNotice]);
 
   useEffect(() => {
-    setIsMounted(true); // マウント完了通知
+    setIsMounted(true); 
     const checkUser = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       setCurrentUser(user);
@@ -231,13 +230,11 @@ function HomeContent() {
 
   const fetchLettersAndShelves = useCallback(async () => {
     try {
-      // 手紙と本棚の両方を取得
       const [lettersRes, shelvesRes] = await Promise.all([
         supabase
         .from('letters')
         .select('id, title, spot_name, lat, lng, is_official, user_id, created_at, attached_stamp_id, is_post, parent_id, password, is_postcard')
-        .eq('is_deleted_from_map', false) // ★ ここを追加！ 削除フラグが立っていないものだけ地図に出す
-        ,
+        .eq('is_deleted_from_map', false),
         supabase.from('bookshelves').select('*')
       ]);
       
@@ -266,7 +263,6 @@ function HomeContent() {
     } catch (err) { console.error(err); }
   }, []);
 
-  // ★ 追加：タイムラグ解消のためのリアルタイム通信設定
   useEffect(() => {
     const channel = supabase
       .channel('realtime-bookshelves')
@@ -275,7 +271,7 @@ function HomeContent() {
         schema: 'public', 
         table: 'bookshelves' 
       }, () => {
-        fetchLettersAndShelves(); // 本棚データに更新があれば再取得
+        fetchLettersAndShelves();
       })
       .subscribe();
 
@@ -284,7 +280,7 @@ function HomeContent() {
     };
   }, [fetchLettersAndShelves]);
 
-  // ★ 位置情報取得を開始する関数を定義
+  // ★ 修正：点滅防止のため監視ロジックを命令ベースに変更し、依存配列を空に
   const startTracking = useCallback(() => {
     if (!navigator.geolocation) return;
 
@@ -293,16 +289,21 @@ function HomeContent() {
         const { latitude, longitude } = position.coords;
         const newLoc = { lat: latitude, lng: longitude };
         setUserLocation(newLoc);
-        sessionStorage.setItem('last_user_location', JSON.stringify(newLoc)); // 一時保存
+        sessionStorage.setItem('last_user_location', JSON.stringify(newLoc));
         setLocationError(false);
 
-        // ★ 修正：Refを参照して追従するか判定。これで再レンダリング時のチカチカや引き戻しを防止
-        if (isFollowingUserRef.current || !hasCentered) {
-          setViewState(prev => ({ 
-            ...prev, 
-            latitude: latitude, 
-            longitude: longitude
-          }));
+        // 追従モードの時だけカメラをスムーズに移動（ステートリセット不要）
+        if (isFollowingUserRef.current && mapRef.current) {
+          mapRef.current.easeTo({
+            center: [longitude, latitude],
+            duration: 1000
+          });
+        }
+        
+        // 初回のみ中心合わせ
+        if (!hasCenteredRef.current) {
+          setViewState(prev => ({ ...prev, latitude, longitude }));
+          hasCenteredRef.current = true;
           setHasCentered(true);
         }
       },
@@ -313,7 +314,7 @@ function HomeContent() {
       { enableHighAccuracy: true }
     );
     return watchId;
-  }, [hasCentered]);
+  }, []); // 空の配列で固定。これによりGPS位置更新ごとの再起動＝点滅を防ぎます
 
   useEffect(() => {
     let watchId: any;
@@ -346,16 +347,15 @@ function HomeContent() {
       return;
     }
 
-    // ★ 修正：現在地ボタンを押したときは、追従モードをONにする
+    // ★ 追従モードをONに戻す
     setIsFollowingUser(true);
+    isFollowingUserRef.current = true;
 
-    setViewState(prev => ({
-      ...prev,
-      latitude: userLocation.lat,
-      longitude: userLocation.lng,
+    mapRef.current?.flyTo({
+      center: [userLocation.lng, userLocation.lat],
       zoom: 15,
-      transitionDuration: 1000
-    }));
+      duration: 1500
+    });
 
     const count = letters.reduce((acc, letter) => {
       if (letter.is_post || (currentUser && letter.user_id === currentUser.id)) return acc;
@@ -419,7 +419,7 @@ function HomeContent() {
           setTimeout(() => {
             if (targetPost.is_post) setReadingLetterPost(targetPost);
             else setReadingLetter(targetPost);
-            setViewState(prev => ({ ...prev, latitude: targetPost.lat, longitude: targetPost.lng, zoom: 16 }));
+            mapRef.current?.flyTo({ center: [targetPost.lng, targetPost.lat], zoom: 16 });
             window.history.replaceState(null, '', '/');
           }, 500);
         }
@@ -556,7 +556,7 @@ function HomeContent() {
       {showNotification && nearestNotificationLetter && !popupInfo && (
         <div className="fixed right-4 top-32 z-30 animate-slideInRight" onClick={() => {
           setPopupInfo(nearestNotificationLetter);
-          setViewState(prev => ({ ...prev, latitude: nearestNotificationLetter.lat, longitude: nearestNotificationLetter.lng, zoom: 16 }));
+          mapRef.current?.flyTo({ center: [nearestNotificationLetter.lng, nearestNotificationLetter.lat], zoom: 16 });
           setShowNotification(false);
         }}>
            <div className="bg-white/80 backdrop-blur-sm px-3 py-2 rounded-full shadow-sm border border-gray-200 flex items-center gap-2 cursor-pointer hover:bg-white">
@@ -575,11 +575,10 @@ function HomeContent() {
         )}
         
         <Map
-          {...viewState}
+          {...viewState} // ★ 修正：Snap-backを防ぐため、常に viewState と同期させます
           ref={mapRef} 
-          onMove={evt => setViewState(evt.viewState)}
-          // ★ 修正：ユーザーが地図を動かし始めたら、自動追従をOFFにする
-          onMoveStart={() => setIsFollowingUser(false)}
+          onMove={evt => setViewState(evt.viewState)} // ★ 重要：スワイプ位置を常に保持。これで現在地に引き戻されなくなります。
+          onMoveStart={() => { isFollowingUserRef.current = false; setIsFollowingUser(false); }}
           onLoad={handleMapLoad}
           onStyleData={(evt: any) => applyLocalization(evt.target)} 
           style={{ width: '100%', height: '100%' }}
@@ -594,8 +593,8 @@ function HomeContent() {
             "horizon-blend": 0.7
           } : undefined}
         >
-          
-          <div className="absolute bottom-[465px] right-[16px] z-10 landscape:bottom-[285px] transition-all duration-300">
+          {/* 現在地に戻るボタン */}
+          <div className="absolute bottom-[325px] right-[16px] z-10 landscape:bottom-[125px] transition-all duration-300">
             <div className="mapboxgl-ctrl mapboxgl-ctrl-group" style={{ margin: 0, background: '#fff', borderRadius: '4px', boxShadow: '0 0 0 2px rgba(0,0,0,0.1)' }}>
               <button 
                 className="flex items-center justify-center transition-colors hover:bg-gray-50" 
@@ -606,25 +605,21 @@ function HomeContent() {
               >
                 <svg className="w-7 h-5" viewBox="0 0 427.17 709.4" xmlns="http://www.w3.org/2000/svg">
                   <path fill="#2196f3" d="M427.17,213.59c0,175.06-213.59,397.25-213.59,397.25,0,0-213.59-222.19-213.59-397.25C0,95.62,95.62,0,213.59,0s213.59,95.62,213.59,213.59Z"/>
-                  <circle fill="#fff" cx="213.59" cy="213.59" r="102.43"/>
-                  <path fill="#2196f3" d="M358.72,635.71c0,40.7-64.98,73.69-145.13,73.69s-145.13-32.99-145.13-73.69c0-29.53,34.21-55,83.61-66.75,28.47,34.97,49.36,56.8,50.74,58.23l10.79,11.22,10.79-11.22c1.38-1.44,22.27-23.27,50.74-58.23,49.4,11.75,83.61,37.23,83.61,66.75Z"/>
+                  <circle fill="#fff" cx="213.59" cy="213.59" r="102.43"/><path fill="#2196f3" d="M358.72,635.71c0,40.7-64.98,73.69-145.13,73.69s-145.13-32.99-145.13-73.69c0-29.53,34.21-55,83.61-66.75,28.47,34.97,49.36,56.8,50.74,58.23l10.79,11.22,10.79-11.22c1.38-1.44,22.27-23.27,50.74-58.23,49.4,11.75,83.61,37.23,83.61,66.75Z"/>
                 </svg>
               </button>
             </div>
           </div>
 
-          {/* 2. 拡大縮小ボタン */}
           <NavigationControl 
             position="bottom-right" 
             showCompass={true} 
             style={{ 
-              // 横向き時は CSS で定義した値（180px）、それ以外は 220px を使用
-              marginBottom: 'var(--nav-margin, 320px)', 
+              marginBottom: '180px', 
               marginRight: '16px' 
             }} 
           />
 
-          {/* 現在地の青いドット（これはボタンとは別に、地図上の座標に固定） */}
           {userLocation && (
             <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
               <div className="relative">
@@ -738,22 +733,17 @@ function HomeContent() {
             onClose={() => setViewingBookshelf(null)} 
             currentUser={currentUser}
             onSelectMemory={async (letterId) => {
-              // 1. クリックされた「お返事」のデータを取得
               const replyDetail = await fetchLetterDetail(letterId);
               if (!replyDetail) return;
-
               if (replyDetail.parent_id) {
-                // 2. 「元の手紙（親）」のデータを取得
                 const parentDetail = await fetchLetterDetail(replyDetail.parent_id);
                 if (parentDetail) {
-                  // 3. 元の手紙をメインに据え、お返事レイヤー（Layer 1）を初期表示に設定
                   setModalInitialLayer(1); 
                   if (parentDetail.is_post) setReadingLetterPost(parentDetail);
                   else setReadingLetter(parentDetail);
                   setViewingBookshelf(null);
                 }
               } else {
-                // 親がいない場合（通常はありませんが念のため）
                 setModalInitialLayer(0);
                 setReadingLetter(replyDetail);
                 setViewingBookshelf(null);
@@ -807,17 +797,9 @@ function HomeContent() {
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
         .animate-slideUp { animation: slideUp 0.4s ease-out forwards; }
         .mapboxgl-ctrl-geolocate { display: none !important; }
-        /* 拡大縮小ボタンの位置を制御する変数の初期化 */
-        :root {
-          --nav-margin: 220px;
-        }
         @media (orientation: landscape) {
-          :root {
-            --nav-margin: 200px; /* 横向き時は200pxに変更 */
-          }
           .mapboxgl-ctrl-bottom-right {
-            /* コンテナ自体が浮き上がらないよう、下端に固定 */
-            bottom: 0px !important;
+            bottom: 20px !important;
           }
         }
       `}</style>
