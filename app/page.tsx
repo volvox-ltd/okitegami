@@ -613,12 +613,13 @@ function HomeContent() {
             </div>
           </div>
 
-          {/* 2. 拡大縮小ボタン（変更なし） */}
+          {/* 2. 拡大縮小ボタン */}
           <NavigationControl 
             position="bottom-right" 
             showCompass={true} 
             style={{ 
-              marginBottom: '220px', 
+              // 横向き時は CSS で定義した値（180px）、それ以外は 220px を使用
+              marginBottom: 'var(--nav-margin, 220px)', 
               marginRight: '16px' 
             }} 
           />
@@ -806,10 +807,17 @@ function HomeContent() {
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
         .animate-slideUp { animation: slideUp 0.4s ease-out forwards; }
         .mapboxgl-ctrl-geolocate { display: none !important; }
-        /* 横向き（landscape）の時だけ、Mapboxの右下コントロールをさらに下へ移動させる */
+        /* 拡大縮小ボタンの位置を制御する変数の初期化 */
+        :root {
+          --nav-margin: 220px;
+        }
         @media (orientation: landscape) {
+          :root {
+            --nav-margin: 180px; /* 横向き時は180pxに変更 */
+          }
           .mapboxgl-ctrl-bottom-right {
-            bottom: 20px !important;
+            /* コンテナ自体が浮き上がらないよう、下端に固定 */
+            bottom: 0px !important;
           }
         }
       `}</style>
