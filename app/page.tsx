@@ -594,7 +594,8 @@ function HomeContent() {
             "horizon-blend": 0.7
           } : undefined}
         >
-          <div className="absolute bottom-[350px] right-[16px] z-10">
+          {/* 1. 現在地に戻るボタン（独立した絶対位置で配置） */}
+          <div className="absolute bottom-[325px] right-[16px] z-10 landscape:bottom-[125px] transition-all duration-300">
             <div className="mapboxgl-ctrl mapboxgl-ctrl-group" style={{ margin: 0, background: '#fff', borderRadius: '4px', boxShadow: '0 0 0 2px rgba(0,0,0,0.1)' }}>
               <button 
                 className="flex items-center justify-center transition-colors hover:bg-gray-50" 
@@ -605,14 +606,25 @@ function HomeContent() {
               >
                 <svg className="w-7 h-5" viewBox="0 0 427.17 709.4" xmlns="http://www.w3.org/2000/svg">
                   <path fill="#2196f3" d="M427.17,213.59c0,175.06-213.59,397.25-213.59,397.25,0,0-213.59-222.19-213.59-397.25C0,95.62,95.62,0,213.59,0s213.59,95.62,213.59,213.59Z"/>
-                  <circle fill="#fff" cx="213.59" cy="213.59" r="102.43"/><path fill="#2196f3" d="M358.72,635.71c0,40.7-64.98,73.69-145.13,73.69s-145.13-32.99-145.13-73.69c0-29.53,34.21-55,83.61-66.75,28.47,34.97,49.36,56.8,50.74,58.23l10.79,11.22,10.79-11.22c1.38-1.44,22.27-23.27,50.74-58.23,49.4,11.75,83.61,37.23,83.61,66.75Z"/>
+                  <circle fill="#fff" cx="213.59" cy="213.59" r="102.43"/>
+                  <path fill="#2196f3" d="M358.72,635.71c0,40.7-64.98,73.69-145.13,73.69s-145.13-32.99-145.13-73.69c0-29.53,34.21-55,83.61-66.75,28.47,34.97,49.36,56.8,50.74,58.23l10.79,11.22,10.79-11.22c1.38-1.44,22.27-23.27,50.74-58.23,49.4,11.75,83.61,37.23,83.61,66.75Z"/>
                 </svg>
               </button>
             </div>
           </div>
 
-          <NavigationControl position="bottom-right" style={{ marginBottom: '200px', marginRight: '16px' }} />
+          {/* 2. 拡大縮小ボタン（Mapbox標準のコントロールとして配置） */}
+          {/* position="bottom-right" を指定し、styleで高さを調整します */}
+          <NavigationControl 
+            position="bottom-right" 
+            showCompass={true} 
+            style={{ 
+              marginBottom: '180px', // 手書きボタンを避ける高さ
+              marginRight: '16px' 
+            }} 
+          />
 
+          {/* 現在地の青いドット */}
           {userLocation && (
             <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
               <div className="relative">
@@ -795,6 +807,12 @@ function HomeContent() {
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
         .animate-slideUp { animation: slideUp 0.4s ease-out forwards; }
         .mapboxgl-ctrl-geolocate { display: none !important; }
+        /* 横向き（landscape）の時だけ、Mapboxの右下コントロールをさらに下へ移動させる */
+        @media (orientation: landscape) {
+          .mapboxgl-ctrl-bottom-right {
+            bottom: 20px !important;
+          }
+        }
       `}</style>
     </main>
   );
