@@ -797,8 +797,18 @@ function HomeContent() {
         @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
         .animate-slideUp { animation: slideUp 0.4s ease-out forwards; }
         .mapboxgl-ctrl-geolocate { display: none !important; }
+        /* 拡大縮小ボタンの初期位置（縦向き） */
+        :root {
+          --nav-margin: 280px;
+        }
+
         @media (orientation: landscape) {
+          :root {
+            /* 横向き時はボタンの浮きを 40px まで下げる */
+            --nav-margin: 40px;
+          }
           .mapboxgl-ctrl-bottom-right {
+            /* コンテナ自体を底に固定 */
             bottom: 20px !important;
           }
         }
