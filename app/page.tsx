@@ -92,8 +92,12 @@ function HomeContent() {
   const [hasCentered, setHasCentered] = useState(false);
   const [showPwaPrompt, setShowPwaPrompt] = useState(false);
 
-  // ★ 修正：現在地を自動追従するかどうかのフラグ
+  // ★ 修正：自動追従フラグ。点滅を防ぐため Ref で同期管理
   const [isFollowingUser, setIsFollowingUser] = useState(true);
+  const isFollowingUserRef = useRef(true);
+  useEffect(() => {
+    isFollowingUserRef.current = isFollowingUser;
+  }, [isFollowingUser]);
 
   // ★ カウント通知用のステート
   const [showCounts, setShowCounts] = useState(false);
@@ -291,15 +295,13 @@ function HomeContent() {
         setUserLocation(newLoc);
         sessionStorage.setItem('last_user_location', JSON.stringify(newLoc)); // 一時保存
         setLocationError(false);
-        
-        // ★ 修正：追従モードがON、または初回のセンタリングがまだの場合のみ地図を動かす
-        if (isFollowingUser || !hasCentered) {
+
+        // ★ 修正：Refを参照して追従するか判定。これで再レンダリング時のチカチカや引き戻しを防止
+        if (isFollowingUserRef.current || !hasCentered) {
           setViewState(prev => ({ 
             ...prev, 
             latitude: latitude, 
-            longitude: longitude, 
-            // ズーム値はリセットせず、現在の値を維持する
-            zoom: prev.zoom 
+            longitude: longitude
           }));
           setHasCentered(true);
         }
@@ -311,15 +313,19 @@ function HomeContent() {
       { enableHighAccuracy: true }
     );
     return watchId;
-  }, [hasCentered, isFollowingUser]); // 追従フラグを依存配列に追加
+  }, [hasCentered]);
 
   useEffect(() => {
+    let watchId: any;
     if (!localStorage.getItem('hasSeenTutorial')) {
       setShowTutorial(true);
     } else {
-      startTracking();
+      watchId = startTracking();
     }
     fetchLettersAndShelves();
+    return () => {
+      if (watchId) navigator.geolocation.clearWatch(watchId);
+    };
   }, [fetchLettersAndShelves, startTracking]);
 
   const fetchLetterDetail = async (id: string) => {
@@ -571,9 +577,9 @@ function HomeContent() {
         <Map
           {...viewState}
           ref={mapRef} 
+          onMove={evt => setViewState(evt.viewState)}
           // ★ 修正：ユーザーが地図を動かし始めたら、自動追従をOFFにする
           onMoveStart={() => setIsFollowingUser(false)}
-          onMove={evt => setViewState(evt.viewState)}
           onLoad={handleMapLoad}
           onStyleData={(evt: any) => applyLocalization(evt.target)} 
           style={{ width: '100%', height: '100%' }}
