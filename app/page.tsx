@@ -595,7 +595,7 @@ function HomeContent() {
           } : undefined}
         >
           
-          <div className="absolute bottom-[465px] right-[16px] z-10 landscape:bottom-[185px] transition-all duration-300">
+          <div className="absolute bottom-[465px] right-[16px] z-10 landscape:bottom-[285px] transition-all duration-300">
             <div className="mapboxgl-ctrl mapboxgl-ctrl-group" style={{ margin: 0, background: '#fff', borderRadius: '4px', boxShadow: '0 0 0 2px rgba(0,0,0,0.1)' }}>
               <button 
                 className="flex items-center justify-center transition-colors hover:bg-gray-50" 
