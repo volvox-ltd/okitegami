@@ -594,7 +594,7 @@ function HomeContent() {
           } : undefined}
         >
           {/* 現在地に戻るボタン */}
-          <div className="absolute bottom-[425px] right-[16px] z-10 landscape:bottom-[160px] transition-all duration-300">
+          <div className="absolute bottom-[425px] right-[16px] z-10 landscape:bottom-[260px] transition-all duration-300">
             <div className="mapboxgl-ctrl mapboxgl-ctrl-group" style={{ margin: 0, background: '#fff', borderRadius: '4px', boxShadow: '0 0 0 2px rgba(0,0,0,0.1)' }}>
               <button 
                 className="flex items-center justify-center transition-colors hover:bg-gray-50" 
@@ -805,7 +805,7 @@ function HomeContent() {
         @media (orientation: landscape) {
           :root {
             /* 横向き時はボタンの浮きを 40px まで下げる */
-            --nav-margin: 40px;
+            --nav-margin: 140px;
           }
           .mapboxgl-ctrl-bottom-right {
             /* コンテナ自体を底に固定 */
