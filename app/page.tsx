@@ -595,8 +595,7 @@ function HomeContent() {
           } : undefined}
         >
           
-          {/* 1. 現在地に戻るボタン：bottom を 275 -> 285、landscape を 105 -> 125 に微調整 */}
-          <div className="absolute bottom-[325px] right-[16px] z-10 landscape:bottom-[125px] transition-all duration-300">
+          <div className="absolute bottom-[365px] right-[16px] z-10 landscape:bottom-[185px] transition-all duration-300">
             <div className="mapboxgl-ctrl mapboxgl-ctrl-group" style={{ margin: 0, background: '#fff', borderRadius: '4px', boxShadow: '0 0 0 2px rgba(0,0,0,0.1)' }}>
               <button 
                 className="flex items-center justify-center transition-colors hover:bg-gray-50" 
