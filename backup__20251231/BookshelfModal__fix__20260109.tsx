@@ -16,9 +16,9 @@ type Memory = {
   created_at: string;
   originalSender: string;
   originalSenderId: string;
+  replySender: string;
+  replySenderId: string;
   color: string;
-  parentTitle: string;
-  thankedReplySenders: string[];
 };
 
 type BookStyle = {
@@ -40,20 +40,6 @@ type Cluster =
   | { type: 'vertical'; books: BookStyle[] }
   | { type: 'stack'; books: BookStyle[] };
 
-// 46文字の五十音リスト（重複と空欄を排除）
-const JP_CHART = [
-  'あ','い','う','え','お',
-  'か','き','く','け','こ',
-  'さ','し','す','せ','そ',
-  'た','ち','つ','て','と',
-  'な','に','ぬ','ね','の',
-  'は','ひ','ふ','へ','ほ',
-  'ま','み','む','め','も',
-  'や','ゆ','よ',
-  'ら','り','る','れ','ろ',
-  'わ','を','ん'
-];
-
 export default function BookshelfModal({ areaKey, displayName, onClose, currentUser, onSelectMemory }: Props) {
   const [memories, setMemories] = useState<Memory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,40 +49,25 @@ export default function BookshelfModal({ areaKey, displayName, onClose, currentU
     const fetchMemories = async () => {
       setLoading(true);
       try {
-        // 1. このエリアで「ありがとう」された返信をすべて取得
         const { data: replies } = await supabase
-          .from('letters').select('id, user_id, parent_id, created_at')
-          .eq('area_key', areaKey).eq('is_thanked', true);
+          .from('letters').select('id, created_at, user_id, parent_id')
+          .eq('area_key', areaKey).eq('is_thanked', true).order('created_at', { ascending: false });
 
         if (replies && replies.length > 0) {
-          // 2. 重複を除いた親ID（元手紙）のリストを作成
-          const parentIds = Array.from(new Set(replies.map(r => r.parent_id).filter(Boolean)));
-          
-          // 3. 親手紙の詳細を取得
-          const { data: parents } = await supabase.from('letters').select('id, user_id, title').in('id', parentIds);
-          
-          // 4. 全員のプロフィールを取得
+          const parentIds = replies.map(r => r.parent_id).filter(Boolean);
+          const { data: parents } = await supabase.from('letters').select('id, user_id').in('id', parentIds);
           const allUserIds = Array.from(new Set([...replies.map(r => r.user_id), ...(parents?.map(p => p.user_id) || [])]));
           const { data: profiles } = await supabase.from('profiles').select('id, nickname').in('id', allUserIds);
 
           const colors = ['bg-[#5d4037]', 'bg-[#8c4b4b]', 'bg-[#4a6d5a]', 'bg-[#a67c52]', 'bg-[#554a6d]'];
-
-          // 5. 親手紙ごとにグループ化
-          // ★ 修正：Memory型の定義と、戻り値のオブジェクトを完全に一致させる
-          const formatted: Memory[] = (parents || []).map((p: any, i: number) => {
-            const oSender = profiles?.find((prof: any) => prof.id === p.user_id);
-            const rSenders = replies
-              .filter((r: any) => r.parent_id === p.id)
-              .map((r: any) => profiles?.find((prof: any) => prof.id === r.user_id)?.nickname || '誰か');
-
+          const formatted = replies.map((r: any, i: number) => {
+            const rSender = profiles?.find(p => p.id === r.user_id);
+            const parent = parents?.find(p => p.id === r.parent_id);
+            const oSender = profiles?.find(p => p.id === parent?.user_id);
             return {
-              id: p.id,
-              created_at: new Date().toLocaleDateString('ja-JP').replace(/\//g, '.'),
-              originalSender: oSender?.nickname || '誰か',
-              originalSenderId: p.user_id,
-              parentTitle: p.title || '無題',
-              color: colors[i % colors.length],
-              thankedReplySenders: Array.from(new Set(rSenders))
+              id: r.id, created_at: new Date(r.created_at).toLocaleDateString('ja-JP').replace(/\//g, '.'),
+              originalSender: oSender?.nickname || '誰か', originalSenderId: parent?.user_id || '',
+              replySender: rSender?.nickname || '誰か', replySenderId: r.user_id, color: colors[i % colors.length]
             };
           });
           setMemories(formatted);
@@ -106,37 +77,16 @@ export default function BookshelfModal({ areaKey, displayName, onClose, currentU
     fetchMemories();
   }, [areaKey]);
 
-  const getIndexFromTitle = (title: string): number => {
-    if (!title) return 49;
-    const firstChar = title.charAt(0);
-    const firstUpper = firstChar.toUpperCase();
-
-    if (/[A-Z]/.test(firstUpper)) return 47; // アルファベット
-    if (/[0-9]/.test(firstChar)) return 48;  // 数字
-
-    const code = firstChar.charCodeAt(0);
-    if ((code >= 12353 && code <= 12438) || (code >= 12449 && code <= 12538)) {
-      const hiraCode = code >= 12449 ? code - 96 : code;
-      const hiraChar = String.fromCharCode(hiraCode);
-      const jpIndex = JP_CHART.indexOf(hiraChar);
-      if (jpIndex !== -1) return jpIndex + 1; // 1-46番
-    }
-    return 49; // その他（漢字、記号）
-  };
-
-  const getBookLabel = (index: number) => {
-    if (index <= 46) return JP_CHART[index - 1];
-    if (index === 47) return "A-Z";
-    if (index === 48) return "0-9";
-    return "#";
-  };
+  const getBookLabel = (index: number) => (index <= 26 ? String.fromCharCode(64 + index) : index === 27 ? "0-9" : "#");
 
   const shelfClusters = useMemo(() => {
     const grouped: Record<number, Memory[]> = {};
-    for (let i = 1; i <= 49; i++) grouped[i] = [];
-    
+    for (let i = 1; i <= 28; i++) grouped[i] = [];
     memories.forEach(m => {
-      const idx = getIndexFromTitle(m.parentTitle);
+      const char = m.replySender.charAt(0).toUpperCase();
+      let idx = 28;
+      if (/[A-Z]/.test(char)) idx = char.charCodeAt(0) - 64;
+      else if (/[0-9]/.test(char)) idx = 27;
       grouped[idx].push(m);
     });
 
@@ -145,16 +95,17 @@ export default function BookshelfModal({ areaKey, displayName, onClose, currentU
       hasData: grouped[idx].length > 0,
       baseColor: grouped[idx].length > 0 ? ['bg-[#5d4037]', 'bg-[#8c4b4b]', 'bg-[#4a6d5a]', 'bg-[#a67c52]', 'bg-[#554a6d]'][idx % 5] : 'bg-[#b0aaa4]',
       width: [20, 24, 18, 22][idx % 4], height: [100, 115, 130, 105][idx % 4],
-      rotation: 0, marginLeft: 0, marginRight: 0, transformOrigin: 'bottom center', zIndex: grouped[idx].length > 0 ? 100 + idx : 10 + idx
+      rotation: 0, marginLeft: 0, marginRight: 0, transformOrigin: 'bottom center', zIndex: 10 + idx
     });
 
     const res: Cluster[] = [];
     let i = 1;
 
-    while (i <= 49) {
-      const remains = 50 - i;
+    while (i <= 28) {
+      const remains = 29 - i;
 
-      if (Math.random() < 0.3 && i <= 45 && remains >= 2) { 
+      if (Math.random() < 0.3 && i <= 24 && remains >= 2) { 
+        // 平積み
         const size = Math.min(2 + Math.floor(Math.random() * 3), remains);
         const stack = [];
         for (let j = 0; j < size; j++) {
@@ -165,25 +116,36 @@ export default function BookshelfModal({ areaKey, displayName, onClose, currentU
         res.push({ type: 'stack', books: stack.reverse() });
         i += size;
       } else { 
+        // 縦置き（最低4冊ルール）
         const size = remains < 8 ? remains : Math.max(4, Math.min(4 + Math.floor(Math.random() * 3), remains));
         const group: BookStyle[] = [];
+        
+        // どちらか片方だけ傾ける (1:左が右に, 2:右が左に)
         const tiltMode = size >= 4 ? (Math.random() > 0.5 ? 1 : 2) : 0;
-        const angle = 6 + Math.random() * 3; 
+        const angle = 6 + Math.random() * 3; // 角度をさらに抑制
         const rad = angle * (Math.PI / 180);
 
         for (let j = 0; j < size; j++) {
           const b = createStyle(i + j);
+          
           if (tiltMode === 1 && j === 0) {
+            // 左端：右下を軸に右へ（右下角が床に、右上角が隣に）
             b.rotation = angle;
             b.transformOrigin = 'bottom right';
-            b.marginRight = b.height * Math.sin(rad);
+            // 右上の角の突き出し量 = 高さ * sin(θ)
+            const protrusion = b.height * Math.sin(rad);
+            b.marginRight = protrusion; 
             b.marginLeft = 0;
           } else if (tiltMode === 2 && j === size - 1) {
+            // 右端：左下を軸に左へ（左下角が床に、左上角が隣に）
             b.rotation = -angle;
             b.transformOrigin = 'bottom left';
-            b.marginLeft = b.height * Math.sin(rad);
+            // 左上の角の突き出し量
+            const protrusion = b.height * Math.sin(rad);
+            b.marginLeft = protrusion;
             b.marginRight = 0;
           } else {
+            // 中間の本
             b.rotation = 0;
             b.transformOrigin = 'bottom center';
             b.marginLeft = 0;
@@ -220,10 +182,12 @@ export default function BookshelfModal({ areaKey, displayName, onClose, currentU
           ) : selectedBookIndex === null ? (
             
             <div className="overflow-x-auto custom-scrollbar-x px-4 pt-20 pb-8 flex items-end h-full">
+              {/* 棚板 */}
               <div className="flex items-end border-b-[16px] border-[#6d4629] pb-0 min-w-max relative px-8">
                 <div className="absolute inset-x-0 bottom-[-16px] h-[16px] bg-[#5c3a21] z-10"></div>
 
                 {shelfClusters.map((cluster, cIdx) => (
+                  /* クラスター間の距離を mx-1 に短縮して密度をアップ */
                   <div key={cIdx} className="flex items-end shrink-0 mx-1 relative">
                     {cluster.type === 'vertical' ? (
                       <div className="flex items-end">
@@ -236,7 +200,7 @@ export default function BookshelfModal({ areaKey, displayName, onClose, currentU
                               transformOrigin: b.transformOrigin,
                               marginLeft: `${b.marginLeft}px`, 
                               marginRight: `${b.marginRight}px`,
-                              zIndex: b.hasData ? 100 + b.index : b.index
+                              zIndex: b.zIndex
                             }}
                             className={`relative transition-all duration-300 shadow-md border-[0.5px] border-black/15 rounded-[1px]
                               ${b.hasData ? 'cursor-pointer hover:brightness-110 hover:-translate-y-1 hover:z-[200]' : 'grayscale opacity-90 pointer-events-none'}
@@ -244,11 +208,11 @@ export default function BookshelfModal({ areaKey, displayName, onClose, currentU
                           >
                             <div className="absolute inset-0 flex flex-col py-2 justify-between bg-gradient-to-r from-black/5 via-transparent to-black/5">
                               <div className="flex-1 flex items-center justify-center overflow-hidden px-1">
-                                <span className={`text-[9px] font-bold text-[#e8dec7]/90 whitespace-nowrap tracking-tighter ${b.label.length > 1 ? '' : '-rotate-90'}`}>{b.label}</span>
+                                <span className="text-[9px] font-bold text-[#e8dec7]/90 -rotate-90 whitespace-nowrap tracking-tighter">{b.label}</span>
                               </div>
                             </div>
                             {b.hasData && (
-                              <div className="absolute -top-3 -right-2 bg-[#9a3412] text-white text-[7px] min-w-[14px] h-3.5 flex items-center justify-center rounded-full border border-[#f2e9d5] shadow-sm font-bold z-50">{b.memories.length}</div>
+                              <div className="absolute -top-3 -right-2 bg-[#9a3412] text-white text-[7px] min-w-[14px] h-3.5 flex items-center justify-center rounded-full border border-[#f2e9d5] shadow-sm font-bold z-30">{b.memories.length}</div>
                             )}
                           </div>
                         ))}
@@ -267,9 +231,7 @@ export default function BookshelfModal({ areaKey, displayName, onClose, currentU
                               <span className="text-[8px] font-bold text-[#e8dec7]/90 whitespace-nowrap tracking-tighter">{b.label}</span>
                             </div>
                             {b.hasData && sIdx === cluster.books.length - 1 && (
-                              <div className="absolute -top-1 -right-2 bg-[#9a3412] text-white text-[7px] min-w-[14px] h-3.5 flex items-center justify-center rounded-full border border-[#f2e9d5] shadow-sm font-bold z-[210]">
-                                {b.memories.length}
-                              </div>
+                              <div className="absolute -top-2 -right-3 bg-[#9a3412] text-white text-[7px] min-w-[14px] h-3.5 flex items-center justify-center rounded-full border border-[#f2e9d5] shadow-sm font-bold z-30">{b.memories.length}</div>
                             )}
                           </div>
                         ))}
@@ -285,20 +247,15 @@ export default function BookshelfModal({ areaKey, displayName, onClose, currentU
               <button onClick={() => setSelectedBookIndex(null)} className="text-[#8b5e3c] text-xs font-bold mb-4 flex items-center gap-1">← 図書館へ戻る</button>
               <div className="space-y-3 pb-4">
                 {filteredMemories.map((m) => {
-                  // ★ 修正：isParticipant 判定を削除し、誰でもクリックできるようにする
+                  const isParticipant = currentUser && (currentUser.id === m.originalSenderId || currentUser.id === m.replySenderId);
                   return (
-                    <div key={m.id} onClick={() => onSelectMemory(m.id)}
+                    <div key={m.id} onClick={() => isParticipant && onSelectMemory(m.id)}
                       className={`flex items-center gap-3 p-4 rounded-lg shadow-sm border-l-8 ${m.color} bg-white transition-all 
-                        cursor-pointer active:scale-[0.98] hover:bg-stone-50 border-r border-orange-100`}
+                        ${isParticipant ? 'cursor-pointer active:scale-[0.98] hover:bg-stone-50 border-r border-orange-100' : 'cursor-default opacity-90'}`}
                     >
                       <div className="flex-1 flex justify-between items-center">
-                        <span className="text-[10px] font-mono text-gray-400">{m.created_at}</span>
-                        <div className="flex flex-col items-end">
-                          <span className="text-[12px] font-serif font-bold text-[#4a2e1b]">{m.parentTitle}</span>
-                          <span className="text-[10px] font-serif text-[#5d4037]/70 italic">
-                            {m.originalSender} さんの手紙
-                          </span>
-                        </div>
+                        <span className="text-[10px] font-mono text-gray-500">{m.created_at}</span>
+                        <span className="text-[11px] font-serif text-[#5d4037] tracking-wider text-right">{m.originalSender} ↔ {m.replySender}{isParticipant && <span className="ml-2 text-[8px] text-orange-600 font-sans font-bold italic">VIEW</span>}</span>
                       </div>
                     </div>
                   );

@@ -193,7 +193,7 @@ function PostcardModalContent({
     } finally { setIsSubmitting(false); }
   };
 
-  // ★ 修正：お返事ありがとうの数値連動解除対応版
+  // ★ 修正：お返事ありがとうの連動強化版
   const toggleThank = async () => {
     const currentReply = replies[currentReplyIndex];
     if (!currentReply) return;
@@ -201,23 +201,37 @@ function PostcardModalContent({
     const newStatus = !currentReply.is_thanked;
     
     // 1. 本棚の数値を更新 (+1 または -1)
-    // 解除時 (newStatus が false) は -1 を渡します
-    const cityKey = await updateBookshelf(letter.lat, letter.lng, newStatus ? 1 : -1);
+    // 成功すると正しい市町村名（小川町など）が返ってきます
+    // toggleThank 関数内の updateBookshelf 呼び出し箇所を以下に修正
+    const cityKey = await updateBookshelf(
+      letter.lat, 
+      letter.lng, 
+      newStatus ? 1 : -1, 
+      (letter.parent_id || letter.id) as string // ★ 修正：確実にstringとして渡す
+    );
+    // エラーで cityKey が取得できなかった場合は、DB更新を中断する（新規追加時のみ）
+    if (newStatus && !cityKey) {
+      alert('図書館の特定に失敗しました。もう一度お試しください。');
+      return;
+    }
 
-    // 2. 手紙データの更新
+    // 2. 手紙（返信ハガキ）データの更新
     const { error } = await supabase
       .from('letters')
       .update({ 
         is_thanked: newStatus,
-        area_key: newStatus ? cityKey : null // 解除時はタグも消す
+        // 成功した時だけ cityKey（小川町）を保存し、解除時は null にする
+        area_key: newStatus ? cityKey : null 
       })
       .eq('id', currentReply.id);
 
     if (!error) {
+      // ローカルの状態を更新して即座にUI（ピンク色）に反映
       const updatedReplies = [...replies];
       updatedReplies[currentReplyIndex] = { ...currentReply, is_thanked: newStatus };
       setReplies(updatedReplies);
     } else {
+      console.error('Update error:', error);
       alert('更新に失敗しました');
     }
   };
@@ -273,7 +287,7 @@ function PostcardModalContent({
   const hasReply = replies.length > 0;
 
   return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
+    <div className={`fixed inset-0 z-[110] flex items-center justify-center p-4 transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose}></div>
       
       <div className="relative w-full max-w-[380px] aspect-[1/1.48] perspective-1000 overflow-visible" onClick={e => e.stopPropagation()}>

@@ -72,6 +72,7 @@ function HomeContent() {
   const [readingPost, setReadingLetterPost] = useState<Letter | null>(null);
   // ★ 本棚の詳細表示用ステート
   const [viewingBookshelf, setViewingBookshelf] = useState<Bookshelf | null>(null);
+  const [isFromLibrary, setIsFromLibrary] = useState(false); // ★ 追加：図書館から開いたかどうかのフラグ
   const [readLetterIds, setReadLetterIds] = useState<string[]>([]);
   const [showAbout, setShowAbout] = useState(false);
   const [showUserPosts, setShowUserPosts] = useState(true);
@@ -498,7 +499,7 @@ function HomeContent() {
       <Marker key={shelf.id} latitude={shelf.lat} longitude={shelf.lng} anchor="bottom" onClick={(e) => { e.originalEvent.stopPropagation(); setPopupInfo(shelf); }} style={{ zIndex: 5 }}>
         <div className="flex flex-col items-center group cursor-pointer">
           <div className="bg-white/95 backdrop-blur px-3 py-2 rounded-lg shadow-md text-[10px] mb-2 opacity-0 group-hover:opacity-100 transition-opacity font-serif border border-[#8a776a] text-[#5d4037] whitespace-nowrap">
-             <span className="font-bold">{shelf.display_name}の書架</span>
+             <span className="font-bold">{shelf.display_name}の図書館</span>
           </div>
           {/* 絵文字 📚 の代わりに成長する IconBookshelf コンポーネントを適用 */}
           <IconBookshelf thankCount={shelf.thank_count} />
@@ -634,18 +635,47 @@ function HomeContent() {
           {popupInfo && (
             <Popup latitude={popupInfo.lat} longitude={popupInfo.lng} anchor="bottom" offset={[0, -40]} onClose={() => setPopupInfo(null)} closeOnClick={false} className="z-50">
               <div className="p-2 min-w-[160px] text-center pt-4 font-sans"> 
-                {popupInfo.area_key ? (
-                  // ★ 本棚（Bookshelf）用の表示
-                  <>
-                    <h3 className="font-bold text-sm mb-1 text-[#5d4037] font-serif">{popupInfo.display_name}の書架</h3>
-                    <p className="text-[10px] text-gray-500 mb-2 font-sans">📍 {popupInfo.landmark_name}</p>
-                    <div className="bg-orange-50 p-2 rounded-lg border border-orange-100">
-                      <p className="text-[9px] text-orange-700 font-bold tracking-widest">{popupInfo.thank_count}個の想いが積もっています</p>
-                    </div>
-                    {/* ★ ボタンで本棚詳細（地層）を開く */}
-                    <button onClick={() => { setViewingBookshelf(popupInfo); setPopupInfo(null); }} className="mt-2 w-full bg-orange-700 text-white text-[10px] py-1.5 rounded-full font-bold shadow-sm">記憶を覗く</button>
-                  </>
-                ) : (
+                  {popupInfo.area_key ? (
+                    // ★ 本棚（Bookshelf）用の表示：距離制限を追加
+                    <>
+                      <h3 className="font-bold text-sm mb-1 text-[#5d4037] font-serif">{popupInfo.display_name}の図書館</h3>
+                      <p className="text-[10px] text-gray-400 mb-2 font-sans">📍 {popupInfo.landmark_name}</p>
+                      
+                      {(() => {
+                        const dist = calculateDistance(popupInfo.lat, popupInfo.lng);
+                        const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
+                        const isReachable = (dist !== null && dist <= UNLOCK_DISTANCE) || isAdmin;
+
+                        if (dist === null) return <p className="text-[10px] text-gray-400">位置情報を取得中...</p>;
+
+                        if (isReachable) {
+                          return (
+                            <>
+                              <div className="bg-orange-50 p-2 rounded-lg border border-orange-100 mb-2">
+                                <p className="text-[9px] text-orange-700 font-bold tracking-widest">{popupInfo.thank_count}つの手紙が置かれてます</p>
+                              </div>
+                              <button 
+                                onClick={() => { setViewingBookshelf(popupInfo); setPopupInfo(null); }} 
+                                className="mt-1 w-full bg-orange-700 text-white text-[10px] py-1.5 rounded-full font-bold shadow-sm active:scale-95 transition-transform"
+                              >
+                                図書館に入る
+                              </button>
+                            </>
+                          );
+                        }
+
+                        // 30m以上離れている場合
+                        return (
+                          <div className="flex flex-col items-center gap-2 mt-1">
+                            <div className="bg-gray-100 text-gray-500 text-[10px] py-2 px-3 rounded-full border border-gray-200 font-sans w-full text-center">
+                              🔒 あと {dist}m で開館します
+                            </div>
+                            <p className="text-[8px] text-gray-400 italic">近づくと、収納された手紙を閲覧できます</p>
+                          </div>
+                        );
+                      })()}
+                    </>
+                  ) : (
                   // 手紙（Letter）用の表示
                   <>
                     <h3 className="font-bold text-sm mb-1 text-bunko-ink font-serif">{popupInfo.title}</h3>
@@ -735,18 +765,22 @@ function HomeContent() {
             onSelectMemory={async (letterId) => {
               const replyDetail = await fetchLetterDetail(letterId);
               if (!replyDetail) return;
+              
+              // ★ 修正：図書館を閉じずに、フラグを立てて手紙を開く
+              setIsFromLibrary(true); 
+              
               if (replyDetail.parent_id) {
                 const parentDetail = await fetchLetterDetail(replyDetail.parent_id);
                 if (parentDetail) {
                   setModalInitialLayer(1); 
                   if (parentDetail.is_post) setReadingLetterPost(parentDetail);
                   else setReadingLetter(parentDetail);
-                  setViewingBookshelf(null);
+                  // setViewingBookshelf(null); // ★ 削除：後ろに図書館を残すため閉じない
                 }
               } else {
                 setModalInitialLayer(0);
                 setReadingLetter(replyDetail);
-                setViewingBookshelf(null);
+                // setViewingBookshelf(null); // ★ 削除
               }
             }}
           />

@@ -236,7 +236,7 @@ function LetterModalContent({
     } catch (e) { alert('送信に失敗しました'); } finally { setIsSubmitting(false); }
   };
 
-  // ★ 修正：お返事ありがとうの数値連動解除対応版
+// ★ 修正：お返事ありがとうの処理（デバッグ情報を追加）
   const toggleThank = async () => {
     const currentReply = replies[currentReplyIndex];
     if (!currentReply) return;
@@ -244,7 +244,14 @@ function LetterModalContent({
     const newStatus = !currentReply.is_thanked;
 
     // 1. 本棚の数値を更新 (+1 または -1)
-    const cityKey = await updateBookshelf(letter.lat, letter.lng, newStatus ? 1 : -1);
+    // ここで地域名（cityKey）が正しく取れているか確認するためのログ
+    const cityKey = await updateBookshelf(
+    letter.lat, 
+    letter.lng, 
+    newStatus ? 1 : -1, 
+    (letter.parent_id || letter.id) as string // ★ 修正：確実にstringとして渡す
+    );
+    console.log("デバッグ - 取得されたCityKey:", cityKey);
 
     // 2. 手紙データの更新
     const { error } = await supabase
@@ -260,7 +267,9 @@ function LetterModalContent({
       updatedReplies[currentReplyIndex] = { ...currentReply, is_thanked: newStatus };
       setReplies(updatedReplies);
     } else {
-      alert('更新に失敗しました');
+      // ★ ここを書き換えてエラーの詳細を表示させます
+      alert(`更新に失敗しました\nエラー詳細: ${error.message}\nコード: ${error.code}`);
+      console.error("DB更新エラーの詳細:", error);
     }
   };
 
@@ -333,7 +342,7 @@ function LetterModalContent({
   const currentReply = replies[currentReplyIndex];
 
   return (
-    <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
+    <div className={`fixed inset-0 z-[110] flex items-center justify-center p-4 transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'}`}>
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={handleClose}></div>
       <div className="relative w-full max-w-[380px] aspect-[1/1.48] perspective-1000 overflow-visible" onClick={e => e.stopPropagation()}>
         

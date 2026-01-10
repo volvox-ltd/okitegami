@@ -1,33 +1,13 @@
 import { supabase } from './supabase';
 import { getDistance } from 'geolib';
 
-export async function updateBookshelf(lat: number, lng: number, delta: number = 1, parentId: string) {
+export async function updateBookshelf(lat: number, lng: number, delta: number = 1) {
   const mapboxToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   
   // place(市町村), locality(町丁), district(区・郡) を広めに取得
   const geoUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${mapboxToken}&types=place,district,locality,region&language=ja&country=jp`;
 
   try {
-    // --- 【追加ロジック】重複カウントの防止 ---
-    // その元手紙（parentId）に紐づく「ありがとう」済みの手紙が他に何通あるか確認
-    // 既存の updateBookshelf 内のカウントロジック部分
-    const { count } = await supabase
-      .from('letters')
-      .select('*', { count: 'exact', head: true })
-      .eq('parent_id', parentId)
-      .eq('is_thanked', true);
-
-    let effectiveDelta = delta;
-
-    // 加算時：既に1通以上あれば増分を0にする
-    if (delta > 0 && count && count > 0) {
-      effectiveDelta = 0;
-    } 
-    // 減算時：他にお礼済みが1通でも残っていれば減分を0にする
-    else if (delta < 0 && count && count > 1) {
-      effectiveDelta = 0;
-    }
-
     const geoRes = await fetch(geoUrl);
     const geoData = await geoRes.json();
     
@@ -75,7 +55,7 @@ export async function updateBookshelf(lat: number, lng: number, delta: number = 
     const { data: shelf } = await supabase.from('bookshelves').select('*').eq('area_key', areaKey).maybeSingle();
     
     if (shelf) {
-      const newCount = Math.max(0, shelf.thank_count + effectiveDelta);
+      const newCount = Math.max(0, shelf.thank_count + delta);
       await supabase.from('bookshelves').update({ thank_count: newCount }).eq('id', shelf.id);
       return areaKey;
     }
