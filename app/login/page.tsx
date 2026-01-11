@@ -3,8 +3,8 @@ import { useState, useEffect, Suspense } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import Logo from '@/components/Logo';
 import FooterLinks from '@/components/FooterLinks';
+import BrandLogo from '@/components/BrandLogo';
 
 function LoginContent() {
   const supabase = createBrowserClient(
@@ -124,9 +124,9 @@ function LoginContent() {
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-12">
         <div className="mb-6 flex flex-col items-center">
           <Link href="/">
-            <Logo className="w-16 h-16 text-bunko-ink mb-2 hover:opacity-80 transition-opacity" />
+            {/* h-32（128px）で指定。w-auto を入れることで、縦横比を保ったまま横幅が決まります */}
+            <BrandLogo className="h-32 w-auto mb-4 hover:opacity-80 transition-opacity" />
           </Link>
-          <h1 className="text-m font-serif tracking-widest text-bunko-ink">おきてがみ</h1>
         </div>
 
         <div className="bg-white p-6 md:p-8 rounded-3xl shadow-xl w-full max-w-md border border-gray-100">
