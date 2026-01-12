@@ -15,6 +15,7 @@ import AddToHomeScreen from '@/components/AddToHomeScreen';
 import { supabase } from '@/utils/supabase';
 // ★ 有効期限の設定と写真スイッチをインポート
 import { LETTER_EXPIRATION_HOURS, ENABLE_PHOTO_UPLOAD } from '@/utils/constants';
+import { addAcorns } from '@/utils/acorn';
 
 const PAGE_DELIMITER = '<<<PAGE>>>';
 const MAX_CHARS_LETTER = 140; // 通常の便箋の制限
@@ -31,6 +32,7 @@ function PostForm() {
 
   // ★ 投稿タイプを管理するステート (letter = 便箋, postcard = 絵葉書)
   const [postType, setPostType] = useState<'letter' | 'postcard'>('letter');
+  const [acornCount, setAcornCount] = useState<number>(0);
 
   const [user, setUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -53,9 +55,32 @@ function PostForm() {
   const [viewState, setViewState] = useState({ latitude: 35.6288, longitude: 139.6842, zoom: 16 });
   const [pinLocation, setPinLocation] = useState({ lat: 35.6288, lng: 139.6842 });
 
+  const [isRainy, setIsRainy] = useState(false);
+
   // 認証状態の取得
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user));
+    supabase.auth.getUser().then(({ data }) => {
+      if (data.user) {
+        setUser(data.user);
+        
+        // ★ 追加：ログインユーザーのどんぐり数を取得
+        supabase.from('profiles')
+          .select('acorn_count')
+          .eq('id', data.user.id)
+          .single()
+          .then(({ data: profile }) => {
+            if (profile) setAcornCount(profile.acorn_count || 0);
+          });
+      }
+    });
+
+    // ★ 追加：雨判定の取得
+    const fetchRain = async () => {
+      const { data } = await supabase.from('system_settings').select('value').eq('key', 'force_rain').maybeSingle();
+      if (data?.value === 'true') setIsRainy(true);
+    };
+    fetchRain();
+
   }, []);
 
   useEffect(() => {
@@ -210,6 +235,10 @@ function PostForm() {
 
       if (insertError) throw insertError;
 
+      // ★ どんぐり加算：雨の日なら2、晴れなら1
+      const acornAmount = isRainy ? 2 : 1;
+      await addAcorns(latestUser.id, acornAmount, 'letter_written');
+
       setShareUrl(`${window.location.origin}/?lat=${pinLocation.lat}&lng=${pinLocation.lng}`);
       setIsCompleted(true);
       setTimeout(() => setShowPwaPrompt(true), 2000);
@@ -263,13 +292,28 @@ function PostForm() {
             >
               便箋
             </button>
-            <button 
-              onClick={() => { if(IS_POSTCARD_RELEASED) { setPostType('postcard'); setPages(['']); } }} 
-              className={`flex-1 py-2 text-sm font-bold border-b-2 transition-colors flex items-center justify-center gap-2 ${postType === 'postcard' ? 'border-orange-600 text-orange-700' : 'border-transparent text-gray-300'} ${!IS_POSTCARD_RELEASED ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              葉書 
-              {!IS_POSTCARD_RELEASED && <span className="text-[8px] bg-gray-100 text-gray-400 px-1 rounded font-normal">近日公開</span>}
-            </button>
+            {/* ★ 修正：葉書ボタンのロック判定 */}
+            {(() => {
+              const isUnlocked = acornCount >= 100;
+              return (
+                <button 
+                  onClick={() => { 
+                    if(isUnlocked) { setPostType('postcard'); setPages(['']); } 
+                    else { alert('どんぐりが100個貯まると、ハガキが解放されます。'); }
+                  }} 
+                  className={`flex-1 py-2 text-sm font-bold border-b-2 transition-colors flex items-center justify-center gap-2 
+                    ${postType === 'postcard' ? 'border-orange-600 text-orange-700' : 'border-transparent text-gray-300'} 
+                    ${!isUnlocked ? 'opacity-50 grayscale' : ''}`}
+                >
+                  葉書 
+                  {!isUnlocked && (
+                    <span className="text-[8px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5">
+                      🌰 100
+                    </span>
+                  )}
+                </button>
+              );
+            })()}
           </div>
           
           <div className="flex-1 overflow-y-auto px-6 pb-8">

@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/utils/supabase';
 import { User } from '@supabase/supabase-js';
+import { addAcorns } from '@/utils/acorn';
 
 type Props = {
   areaKey: string;
@@ -100,6 +101,10 @@ export default function BookshelfModal({ areaKey, displayName, onClose, currentU
             };
           });
           setMemories(formatted);
+          // ★ どんぐり加算：初めてこの図書館を開いた時に3つ
+          if (currentUser) {
+            await addAcorns(currentUser.id, 3, 'first_library_open', { area_key: areaKey });
+          }
         }
       } catch (err) { console.error(err); } finally { setLoading(false); }
     };
@@ -108,13 +113,18 @@ export default function BookshelfModal({ areaKey, displayName, onClose, currentU
 
   const getIndexFromTitle = (title: string): number => {
     if (!title) return 49;
-    const firstChar = title.charAt(0);
-    const firstUpper = firstChar.toUpperCase();
+    
+    // 1. 最初の1文字を取得し、濁点・半濁点を除去して正規化する
+    const rawFirstChar = title.charAt(0);
+    const normalizedFirstChar = rawFirstChar.normalize('NFD').replace(/[\u3099\u309a]/g, ''); 
+
+    // 2. 以降の判定はすべて「正規化後の文字」を使う
+    const firstUpper = normalizedFirstChar.toUpperCase();
 
     if (/[A-Z]/.test(firstUpper)) return 47; // アルファベット
-    if (/[0-9]/.test(firstChar)) return 48;  // 数字
+    if (/[0-9]/.test(normalizedFirstChar)) return 48; // 数字
 
-    const code = firstChar.charCodeAt(0);
+    const code = normalizedFirstChar.charCodeAt(0); // 正規化後の文字コード
     if ((code >= 12353 && code <= 12438) || (code >= 12449 && code <= 12538)) {
       const hiraCode = code >= 12449 ? code - 96 : code;
       const hiraChar = String.fromCharCode(hiraCode);

@@ -65,8 +65,11 @@ export default function MyPage() {
   const isExpired = (createdAt: string) => {
     return (new Date().getTime() - new Date(createdAt).getTime()) / (1000 * 60 * 60) > LETTER_EXPIRATION_HOURS;
   };
+  const [acornCount, setAcornCount] = useState<number>(0);
 
   useEffect(() => {
+    let channel: any; // クリーンアップ用に変数を用意
+
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
@@ -79,6 +82,28 @@ export default function MyPage() {
       const { data: settings } = await supabase.from('system_settings').select('value').eq('key', 'force_rain').maybeSingle();
       if (settings?.value === 'true') setIsRainy(true);
 
+      // 1. プロフィールのどんぐり数を初期取得
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('acorn_count')
+        .eq('id', user.id)
+        .maybeSingle();
+  
+      if (profile) setAcornCount(profile.acorn_count || 0);
+
+      // 2. リアルタイム購読の設定
+      channel = supabase
+        .channel('acorn-realtime')
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` },
+          (payload) => {
+            // DBが更新されたら即座に反映
+            setAcornCount(payload.new.acorn_count);
+          }
+        )
+        .subscribe();
+
       await Promise.all([
         fetchMyPosts(user.id),
         fetchFavorites(user.id),
@@ -87,7 +112,15 @@ export default function MyPage() {
       
       setIsLoading(false);
     };
+
     init();
+
+    // 3. クリーンアップ：コンポーネントが閉じられる時に購読を解除する
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel);
+      }
+    };
   }, [router]);
 
   const fetchMyPosts = async (userId: string) => {
@@ -247,6 +280,14 @@ export default function MyPage() {
         </Link>
         <h1 className="text-lg font-bold font-serif text-bunko-ink tracking-widest">マイページ</h1>
         {user && <p className="text-[10px] text-gray-400 mt-1 font-sans">{user.email}</p>}
+
+        {/* ★ 修正箇所：mx-auto w-fit を追加して中央配置・幅を中身に合わせる */}
+        <div className="flex items-center gap-1.5 bg-amber-50/50 px-3 py-0.5 rounded-full border border-amber-100 shadow-sm mt-2 mx-auto w-fit">
+          <span className="text-sm">🌰</span>
+          <span className="text-[11px] font-bold text-amber-900 font-mono">{acornCount || 0}</span>
+          <span className="text-[8px] text-amber-700 font-serif tracking-tighter">どんぐり</span>
+        </div>
+
       </div>
 
       <div className="flex border-b border-gray-200 bg-white">
@@ -373,7 +414,9 @@ export default function MyPage() {
                   const expired = !letter.is_official && !letter.is_post && isExpired(letter.created_at);
                   const isSubmittedToPost = !!letter.parent_id && letter.is_post === true;
                   const isReply = !!letter.parent_id && !letter.is_post;
-                  const displayTitle = isSubmittedToPost ? `${letter.spot_name}への手紙` : isReply ? `Re: ${letter.title}` : letter.title;
+                  const displayTitle = isSubmittedToPost 
+                    ? `${letter.spot_name}への手紙` 
+                    : letter.title;
                   
                   return (
                     <div key={letter.id} onClick={() => handleItemClick(letter)}

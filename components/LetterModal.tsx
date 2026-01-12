@@ -5,6 +5,7 @@ import { User } from '@supabase/supabase-js';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { updateBookshelf } from '@/utils/bookshelf';
+import { addAcorns } from '@/utils/acorn';
 
 type Letter = {
   id: string; title: string; spot_name: string; content: string;
@@ -215,6 +216,7 @@ function LetterModalContent({
     if (!currentUser) return alert('ログインが必要です');
     setIsSubmitting(true);
     try {
+      if (!currentUser) return;
       const { data, error } = await supabase.from('letters').insert({
         title: `Re: ${letter.title}`,
         content: replyContent,
@@ -229,6 +231,10 @@ function LetterModalContent({
       }).select('id, content, created_at, user_id, is_thanked').single();
 
       if (error) throw error;
+      // ★ どんぐり加算：雨の日なら2、晴れなら1
+      const acornAmount = isRainy ? 2 : 1;
+      await addAcorns(currentUser.id, acornAmount, 'reply_sent');
+
       const newReply = { ...data, nickname: myNickname };
       setReplies([newReply as any, ...replies]);
       setMode('read');
@@ -263,6 +269,17 @@ function LetterModalContent({
       .eq('id', currentReply.id);
 
     if (!error) {
+      // ★ 修正：newStatus かつ currentUser が存在する場合のみ実行
+      if (newStatus && currentUser) {
+        const parentId = (letter.parent_id || letter.id) as string;
+        // 1. お礼を押した人（自分）に1つ
+        await addAcorns(currentUser.id, 1, 'thank_received', { parent_id: parentId });
+        // 2. お返事を書いた人（相手）に1つ（自分の返信でない場合）
+        if (currentReply.user_id !== currentUser.id) {
+          await addAcorns(currentReply.user_id, 1, 'thank_received', { parent_id: parentId });
+        }
+      }
+
       const updatedReplies = [...replies];
       updatedReplies[currentReplyIndex] = { ...currentReply, is_thanked: newStatus };
       setReplies(updatedReplies);

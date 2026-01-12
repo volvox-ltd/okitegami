@@ -4,7 +4,8 @@ import { supabase } from '@/utils/supabase';
 import { User } from '@supabase/supabase-js';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
-import { updateBookshelf } from '@/utils/bookshelf'; // インポートを追加
+import { updateBookshelf } from '@/utils/bookshelf';
+import { addAcorns } from '@/utils/acorn';
 
 type Letter = {
   id: string; title: string; spot_name: string; content: string;
@@ -170,6 +171,7 @@ function PostcardModalContent({
     if (!currentUser) return alert('ログインが必要です');
     setIsSubmitting(true);
     try {
+      if (!currentUser) return;
       const { data, error } = await supabase.from('letters').insert({
         title: `Re: ${letter.title}`,
         content: replyContent,
@@ -184,6 +186,10 @@ function PostcardModalContent({
       }).select('id, content, created_at, user_id, is_thanked').single();
 
       if (error) throw error;
+      // ★ どんぐり加算
+      const acornAmount = isRainy ? 2 : 1;
+      await addAcorns(currentUser.id, acornAmount, 'reply_sent');
+
       const newReply = { ...data, nickname: myNickname };
       setReplies([newReply as any, ...replies]);
       setMode('read');
@@ -226,6 +232,16 @@ function PostcardModalContent({
       .eq('id', currentReply.id);
 
     if (!error) {
+
+      // ★ 修正：currentUser の存在チェックを追加
+      if (newStatus && currentUser) {
+        const parentId = (letter.parent_id || letter.id) as string;
+        await addAcorns(currentUser.id, 1, 'thank_received', { parent_id: parentId });
+        if (currentReply.user_id !== currentUser.id) {
+          await addAcorns(currentReply.user_id, 1, 'thank_received', { parent_id: parentId });
+        }
+      }
+
       // ローカルの状態を更新して即座にUI（ピンク色）に反映
       const updatedReplies = [...replies];
       updatedReplies[currentReplyIndex] = { ...currentReply, is_thanked: newStatus };
