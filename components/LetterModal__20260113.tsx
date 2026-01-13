@@ -271,13 +271,12 @@ function LetterModalContent({
     if (!error) {
       // ★ 修正：newStatus かつ currentUser が存在する場合のみ実行
       if (newStatus && currentUser) {
-        const userId = currentUser?.id;
-        if (newStatus && userId) {
-          const parentId = (letter.parent_id || letter.id) as string;
-          await addAcorns(userId, 1, 'thank_received', { parent_id: parentId });
-          if (currentReply.user_id && currentReply.user_id !== userId) {
-            await addAcorns(currentReply.user_id, 1, 'thank_received', { parent_id: parentId });
-          }
+        const parentId = (letter.parent_id || letter.id) as string;
+        // 1. お礼を押した人（自分）に1つ
+        await addAcorns(currentUser.id, 1, 'thank_received', { parent_id: parentId });
+        // 2. お返事を書いた人（相手）に1つ（自分の返信でない場合）
+        if (currentReply.user_id !== currentUser.id) {
+          await addAcorns(currentReply.user_id, 1, 'thank_received', { parent_id: parentId });
         }
       }
 

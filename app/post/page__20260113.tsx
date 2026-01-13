@@ -147,6 +147,43 @@ function PostForm() {
     }
 
     try {
+      // --- 重複チェック ---
+      const now = new Date();
+      const expirationLimit = new Date(now.getTime() - LETTER_EXPIRATION_HOURS * 60 * 60 * 1000).toISOString();
+
+      // ★ 修正：地図から論理削除されていないものだけを取得対象にする
+      const { data: existingMarkers } = await supabase
+        .from('letters')
+        .select('lat, lng, created_at, is_post, is_official')
+        .is('parent_id', null)
+        .eq('is_deleted_from_map', false); // 地図上に存在するものだけをチェック
+
+      if (existingMarkers) {
+        const isTooClose = existingMarkers.some(marker => {
+          // 1. 距離を計算
+          const dist = getDistance(
+            { latitude: marker.lat, longitude: marker.lng },
+            { latitude: pinLocation.lat, longitude: pinLocation.lng }
+          );
+          if (dist >= MIN_DISTANCE) return false;
+
+          // 2. 距離が30m以内の場合、それが現在「表示されている」かどうかを再判定
+          // 常設ポスト(is_post)や公式手紙(is_official)は常に有効
+          const isPermanent = marker.is_post === true || marker.is_official === true;
+          // 通常の手紙は、期限内であれば有効（ブロック対象）とする
+          // 地図上の表示条件と一致させることで、消えた場所には置けるようになります
+          const isActive = isPermanent || (new Date(marker.created_at).toISOString() > expirationLimit);
+          
+          return isActive;
+        });
+
+        if (isTooClose) {
+          alert(`近くに手紙やポストがあります。${MIN_DISTANCE}mほど離れた場所に移動してください。`);
+          setIsLoading(false);
+          return; 
+        }
+      }
+
       // --- 画像アップロード処理 ---
       let publicUrl = null;
       if ((postType === 'postcard' || ENABLE_PHOTO_UPLOAD) && imageFile) {

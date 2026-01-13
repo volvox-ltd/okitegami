@@ -233,14 +233,14 @@ function PostcardModalContent({
 
     if (!error) {
 
-      const userId = currentUser?.id; // ★ここを修正
-        if (newStatus && userId) {
-          const parentId = (letter.parent_id || letter.id) as string;
-          await addAcorns(userId, 1, 'thank_received', { parent_id: parentId });
-          if (currentReply.user_id && currentReply.user_id !== userId) {
-            await addAcorns(currentReply.user_id, 1, 'thank_received', { parent_id: parentId });
-          }
+      // ★ 修正：currentUser の存在チェックを追加
+      if (newStatus && currentUser) {
+        const parentId = (letter.parent_id || letter.id) as string;
+        await addAcorns(currentUser.id, 1, 'thank_received', { parent_id: parentId });
+        if (currentReply.user_id !== currentUser.id) {
+          await addAcorns(currentReply.user_id, 1, 'thank_received', { parent_id: parentId });
         }
+      }
 
       // ローカルの状態を更新して即座にUI（ピンク色）に反映
       const updatedReplies = [...replies];
