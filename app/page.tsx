@@ -424,7 +424,7 @@ function HomeContent() {
 
           {/* オリジナルの現在地青ドットアイコン（波紋付き） */}
           {userLocation && (
-            <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center" style={{ zIndex: 9999, pointerEvents: 'none' }}>
+            <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center" style={{ zIndex: 10, pointerEvents: 'none' }}>
               <div className="relative">
                 <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-md z-10 relative"></div>
                 <div className="w-4 h-4 bg-blue-500 rounded-full absolute top-0 left-0 animate-ping opacity-50"></div>
