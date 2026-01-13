@@ -8,7 +8,9 @@ import { supabase } from '@/utils/supabase';
 import { getDistance } from 'geolib';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import useSupercluster from 'use-supercluster';
+import useSupercluster from 'use-supercluster'; // ※ npm install use-supercluster
+
+// コンポーネントのインポート
 import Header from '@/components/Header';
 import IconUserLetter from '@/components/IconUserLetter';
 import IconAdminLetter from '@/components/IconAdminLetter';
@@ -26,10 +28,6 @@ import TutorialModal from '@/components/TutorialModal';
 import AddToHomeScreen from '@/components/AddToHomeScreen';
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
 import MapMarkers from '@/components/MapMarkers';
-import MapOverlayUI from '@/components/MapOverlayUI';
-import ClusterListModal from '@/components/ClusterListModal';
-import MapPopup from '@/components/MapPopup';
-import MapCustomButtons from '@/components/MapCustomButtons';
 
 // 天候判定・劣化ロジックのインポート
 import { calculateEffectiveHours, fetchIsRainy } from '@/utils/weather';
@@ -59,7 +57,7 @@ type Bookshelf = {
 };
 
 const UNLOCK_DISTANCE = 30;      
-const NOTIFICATION_DISTANCE = 100;
+const NOTIFICATION_DISTANCE = 100; 
 
 function HomeContent() {
   const ADMIN_EMAILS = ["marei.suyama@gmail.com", "contact@volvox-ltd.com"];
@@ -342,8 +340,10 @@ function HomeContent() {
     });
   }, [letters, isRainy]);
 
+  // ★ ランドマーク（絶対に集約させない）
   const landmarkLetters = useMemo(() => letters.filter(l => l.is_official || l.is_post), [letters]);
 
+  // ★ クラスター計算
   const points = useMemo(() => validLetters.map(letter => ({
     type: "Feature" as const,
     properties: { cluster: false, letterId: letter.id, ...letter },
@@ -357,6 +357,93 @@ function HomeContent() {
     options: { radius: 70, maxZoom: 17 }
   });
 
+  const renderedMarkers = useMemo(() => {
+    // 1. クラスター & 一般手紙
+    const userAndClusterMarkers = clusters.map((item: any) => {
+      const [longitude, latitude] = item.geometry.coordinates;
+      const { cluster: isCluster, point_count: pointCount, letterId } = item.properties;
+
+      if (isCluster) {
+        // ★ アイコン指定：5通まで/5通以上
+        const iconSrc = pointCount > 5 ? "/many-letters.svg" : "/letters.svg";
+        return (
+          <Marker key={`cluster-${item.id}`} latitude={latitude} longitude={longitude}>
+            <div className="flex flex-col items-center cursor-pointer group" onClick={() => {
+              if (supercluster) {
+                const leaves = supercluster.getLeaves(item.id);
+                setSelectedClusterLetters(leaves.map((l: any) => l.properties));
+                setShowClusterList(true);
+              }
+            }}>
+              <div className="bg-orange-600 text-white text-[10px] px-2 py-0.5 rounded-full shadow-lg font-bold mb-1 z-20">{pointCount}通</div>
+              <img src={iconSrc} className="w-12 h-12 drop-shadow-md transition-transform hover:scale-110" alt="cluster" />
+            </div>
+          </Marker>
+        );
+      }
+
+      const letter = letters.find(l => l.id === letterId);
+      if (!letter || !showUserPosts) return null;
+      
+      const distance = calculateDistance(letter.lat, letter.lng);
+      const isMyPost = currentUser && currentUser.id === letter.user_id;
+      const isReachable = (distance !== null && distance <= UNLOCK_DISTANCE) || isMyPost;
+      const isRead = readLetterIds.includes(letter.id);
+      const shouldBounce = isReachable && !isRead && !isMyPost;
+
+      return (
+        <Marker key={letter.id} latitude={letter.lat} longitude={letter.lng} anchor="bottom" onClick={(e) => { e.originalEvent.stopPropagation(); setPopupInfo(letter); }} style={{ zIndex: isReachable ? 10 : 1 }}>
+          <div className={`flex flex-col items-center group cursor-pointer ${isRead ? 'opacity-70' : ''}`}>
+            <div className={`bg-white/95 backdrop-blur px-3 py-2 rounded-lg shadow-md text-[10px] mb-2 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border flex flex-col items-center ${isReachable ? 'border-orange-500 text-orange-600' : 'border-gray-200 text-gray-500'}`}>
+               <span className="font-bold">{letter.nickname ? `${letter.nickname}さんの手紙` : '誰かの手紙'}</span>
+               {isReachable && <span className="block text-[8px] font-bold text-orange-500 text-center mt-1 font-sans">読めます！</span>}
+            </div>
+            <div className={`transition-transform duration-300 drop-shadow-md relative ${shouldBounce ? 'animate-bounce' : 'hover:scale-110'}`} style={{ filter: (isRainy && !letter.is_official) ? 'grayscale(0.7) blur(0.9px) brightness(0.85)' : 'none' }}>
+               {letter.is_postcard ? <IconPostcard className="w-12 h-12" /> : <IconUserLetter className="w-10 h-10" />}
+               {isRead && !isMyPost && <div className="absolute -bottom-1 -right-1 bg-white rounded-full w-4 h-4 flex items-center justify-center shadow-md border border-gray-100 z-30"><span className="text-[10px] text-green-600 font-bold">✔︎</span></div>}
+            </div>
+          </div>
+        </Marker>
+      );
+    });
+
+    // 2. ランドマーク（元の精密ロジックを完全復元）
+    const landmarkMarkers = landmarkLetters.map((letter) => {
+      const distance = calculateDistance(letter.lat, letter.lng);
+      const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
+      const isReachable = (distance !== null && distance <= UNLOCK_DISTANCE) || isAdmin;
+      const postHasLetters = allLetters.some(l => l.parent_id === letter.id);
+
+      return (
+        <Marker key={letter.id} latitude={letter.lat} longitude={letter.lng} anchor="bottom" onClick={(e) => { e.originalEvent.stopPropagation(); setPopupInfo(letter); }} style={{ zIndex: 40 }}>
+          <div className="flex flex-col items-center group cursor-pointer">
+            <div className={`bg-white/95 backdrop-blur px-3 py-2 rounded-lg shadow-md text-[10px] mb-2 opacity-0 group-hover:opacity-100 transition-opacity font-serif whitespace-nowrap border flex flex-col items-center ${isReachable ? 'border-orange-500 text-orange-600' : 'border-gray-200 text-gray-500'}`}>
+               <span className="font-bold">{letter.is_post ? (letter.spot_name ? `${letter.spot_name}のポスト` : 'ポスト') : (letter.spot_name ? `${letter.spot_name}の手紙` : '名も無き手紙')}</span>
+               {isReachable && <span className="block text-[8px] font-bold text-orange-500 text-center mt-1 font-sans">{letter.is_post ? '投函できます！' : '読めます！'}</span>}
+            </div>
+            <div className="transition-transform duration-300 drop-shadow-md hover:scale-110">
+               {letter.is_post ? <div className={isReachable ? "text-red-600" : "text-red-700"}><IconPost className="w-14 h-14" hasLetters={postHasLetters} /></div> : letter.is_postcard ? <div className={isReachable ? (letter.is_official ? "text-yellow-500" : "text-orange-500") : "text-bunko-ink"}>{letter.is_official ? <IconAdminPostcard className="w-12 h-12" /> : <IconPostcard className="w-12 h-12" />}</div> : <div className={isReachable ? (letter.is_official ? "text-yellow-500" : "text-orange-500") : "text-bunko-ink"}>{letter.is_official ? <IconAdminLetter className="w-10 h-10" /> : <IconUserLetter className="w-10 h-10" />}</div>}
+            </div>
+          </div>
+        </Marker>
+      );
+    });
+
+    // 3. 本棚マーカー
+    const shelfMarkers = bookshelves.map((shelf) => (
+      <Marker key={shelf.id} latitude={shelf.lat} longitude={shelf.lng} anchor="bottom" onClick={(e) => { e.originalEvent.stopPropagation(); setPopupInfo(shelf); }} style={{ zIndex: 5 }}>
+        <div className="flex flex-col items-center group cursor-pointer">
+          <div className="bg-white/95 backdrop-blur px-3 py-2 rounded-lg shadow-md text-[10px] mb-2 opacity-0 group-hover:opacity-100 transition-opacity font-serif border border-[#8a776a] text-[#5d4037] whitespace-nowrap">
+             <span className="font-bold">{shelf.display_name}の図書館</span>
+          </div>
+          <IconBookshelf thankCount={shelf.thank_count} />
+        </div>
+      </Marker>
+    ));
+
+    return [...userAndClusterMarkers, ...landmarkMarkers, ...shelfMarkers];
+  }, [clusters, supercluster, letters, landmarkLetters, allLetters, bookshelves, showUserPosts, calculateDistance, readLetterIds, currentUser, isRainy, points]);
+
   const mapToken = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
   if (!mapToken) return null;
 
@@ -367,14 +454,31 @@ function HomeContent() {
       )}
       <Header currentUser={currentUser} nickname={myNickname} onAboutClick={() => setShowAbout(true)} isHidden={false} />
 
-      <MapOverlayUI 
-        isRainy={isRainy}
-        showRainNotice={showRainNotice}
-        showCounts={showCounts}
-        unreadCount={unreadCount}
-        showUserPosts={showUserPosts}
-        onToggleUserPosts={setShowUserPosts}
-      />
+      {/* 雨 ＆ 通知ロジック（完全保持） */}
+      <div className="fixed top-[calc(env(safe-area-inset-top)+64px)] right-4 z-50 flex flex-col gap-2 pointer-events-none">
+        {showRainNotice && (
+          <div className="bg-blue-600/85 backdrop-blur-md text-white px-3 py-1 rounded-lg shadow-xl border border-white/10 text-right leading-relaxed animate-fadeInDown pointer-events-auto">
+            <p className="text-[10px] font-serif tracking-widest opacity-90">現在、雨が降っています</p>
+            <p className="text-[10px] font-serif tracking-wider whitespace-nowrap">手紙が痛みやすくなっています</p>
+          </div>
+        )}
+        {showCounts && (
+          <div className="bg-stone-500/85 backdrop-blur-md text-white px-3 py-1 rounded-lg shadow-xl border border-white/10 text-right leading-relaxed animate-fadeInDown pointer-events-auto">
+            <p className="text-[10px] font-serif tracking-widest opacity-90">半径3kmに未読の手紙が</p>
+            <p className="text-[10px] font-serif tracking-wider whitespace-nowrap"><span className="text-sm">{unreadCount}通</span>あります</p>
+          </div>
+        )}
+      </div>
+
+      <div className="absolute left-4 z-20 transition-all top-[calc(env(safe-area-inset-top)+64px)] md:top-[calc(env(safe-area-inset-top)+70px)]">
+        <div className="flex items-center bg-white/90 backdrop-blur px-3 py-2 rounded-full shadow-md border border-gray-100">
+          <span className="text-[10px] font-bold text-gray-600 mr-2 font-sans">みんなの手紙</span>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input type="checkbox" className="sr-only peer" checked={showUserPosts} onChange={() => setShowUserPosts(!showUserPosts)} />
+            <div className="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:bg-green-500 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full"></div>
+          </label>
+        </div>
+      </div>
 
       {showNotification && nearestNotificationLetter && !popupInfo && (
         <div className="fixed right-4 top-32 z-30 animate-slideInRight" onClick={() => { setPopupInfo(nearestNotificationLetter); mapRef.current?.getMap().flyTo({ center: [nearestNotificationLetter.lng, nearestNotificationLetter.lat], zoom: 16 }); setShowNotification(false); }}>
@@ -400,66 +504,63 @@ function HomeContent() {
           onClick={() => setPopupInfo(null)}
           fog={isRainy ? { "range": [0.2, 5], "color": "#94a3b8", "high-color": "#475569", "space-color": "#1e293b", "horizon-blend": 0.7 } : undefined}
         >
+          {/* オリジナルの現在地に戻るボタン */}
+          <div className="absolute bottom-[425px] right-[16px] z-10 landscape:bottom-[275px] transition-all duration-300">
+            <div className="mapboxgl-ctrl mapboxgl-ctrl-group" style={{ margin: 0, background: '#fff', borderRadius: '4px', boxShadow: '0 0 0 2px rgba(0,0,0,0.1)' }}>
+              <button className="flex items-center justify-center transition-colors hover:bg-gray-50" style={{ width: '29px', height: '29px', border: 0, padding: 0, cursor: 'pointer', background: 'transparent', outline: 'none' }} type="button" onClick={handleGeolocateClick} title="Find my location">
+                <svg className="w-7 h-5" viewBox="0 0 427.17 709.4" xmlns="http://www.w3.org/2000/svg"><path fill="#2196f3" d="M427.17,213.59c0,175.06-213.59,397.25-213.59,397.25,0,0-213.59-222.19-213.59-397.25C0,95.62,95.62,0,213.59,0s213.59,95.62,213.59,213.59Z"/><circle fill="#fff" cx="213.59" cy="213.59" r="102.43"/><path fill="#2196f3" d="M358.72,635.71c0,40.7-64.98,73.69-145.13,73.69s-145.13-32.99-145.13-73.69c0-29.53,34.21-55,83.61-66.75,28.47,34.97,49.36,56.8,50.74,58.23l10.79,11.22,10.79-11.22c1.38-1.44,22.27-23.27,50.74-58.23,49.4,11.75,83.61,37.23,83.61,66.75Z"/></svg>
+              </button>
+            </div>
+          </div>
 
           <NavigationControl position="bottom-right" showCompass={true} style={{ marginBottom: 'var(--nav-margin, 280px)', marginRight: '16px' }} />
-          
-          <MapMarkers 
-            clusters={clusters}
-            supercluster={supercluster}
-            letters={letters}
-            landmarkLetters={landmarkLetters}
-            allLetters={allLetters}
-            bookshelves={bookshelves}
-            showUserPosts={showUserPosts}
-            calculateDistance={calculateDistance}
-            readLetterIds={readLetterIds}
-            currentUser={currentUser}
-            isRainy={isRainy}
-            onMarkerClick={(item) => setPopupInfo(item)}
-            onClusterClick={(leaves) => {
-              setSelectedClusterLetters(leaves);
-              setShowClusterList(true);
-            }}
-          />
 
           {/* オリジナルの現在地青ドットアイコン（波紋付き） */}
           {userLocation && (
-            <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center" style={{ zIndex: 9999, pointerEvents: 'none' }}>
+            <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
               <div className="relative">
                 <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-md z-10 relative"></div>
                 <div className="w-4 h-4 bg-blue-500 rounded-full absolute top-0 left-0 animate-ping opacity-50"></div>
               </div>
             </Marker>
           )}
+          
+          {renderedMarkers}
 
-          <MapPopup 
-            popupInfo={popupInfo}
-            userLocation={userLocation}
-            UNLOCK_DISTANCE={UNLOCK_DISTANCE}
-            ADMIN_EMAILS={ADMIN_EMAILS}
-            currentUser={currentUser}
-            calculateDistance={calculateDistance}
-            onClose={() => setPopupInfo(null)}
-            onOpenDetail={async (item) => {
-              const detail = await fetchLetterDetail(item.id);
-              if (item.area_key) {
-                setViewingBookshelf(item);
-              } else if (item.is_post) {
-                setReadingLetterPost(detail);
-              } else {
-                setReadingLetter(detail);
-              }
-              setPopupInfo(null);
-            }}
-          />
-
-          {/* ★ 独自ボタン類を呼び出し */}
-          <MapCustomButtons 
-            onGeolocate={handleGeolocateClick}
-            postUrl={getPostUrl()}
-            currentUser={currentUser}
-            isMounted={isMounted}
-          />
+          {popupInfo && (
+            <Popup latitude={Number(popupInfo.lat)} longitude={Number(popupInfo.lng)} anchor="bottom" offset={[0, -40]} onClose={() => setPopupInfo(null)} closeOnClick={false} className="z-50">
+              <div className="p-2 min-w-[160px] text-center pt-4 font-sans"> 
+                  {popupInfo.area_key ? (
+                    <>
+                      <h3 className="font-bold text-sm mb-1 text-[#5d4037] font-serif">{popupInfo.display_name}の図書館</h3>
+                      <p className="text-[10px] text-gray-400 mb-2 font-sans">📍 {popupInfo.landmark_name}</p>
+                      {(() => {
+                        const dist = calculateDistance(popupInfo.lat, popupInfo.lng);
+                        const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
+                        const isReachable = (dist !== null && dist <= UNLOCK_DISTANCE) || isAdmin;
+                        if (dist === null) return <p className="text-[10px] text-gray-400">位置情報を取得中...</p>;
+                        if (isReachable) return (<><div className="bg-orange-50 p-2 rounded-lg border border-orange-100 mb-2"><p className="text-[9px] text-orange-700 font-bold tracking-widest">{popupInfo.thank_count}つの手紙が置かれてます</p></div><button onClick={() => { setViewingBookshelf(popupInfo); setPopupInfo(null); }} className="mt-1 w-full bg-orange-700 text-white text-[10px] py-1.5 rounded-full font-bold shadow-sm active:scale-95 transition-transform">図書館に入る</button></>);
+                        return (<div className="flex flex-col items-center gap-2 mt-1"><div className="bg-gray-100 text-gray-500 text-[10px] py-2 px-3 rounded-full border border-gray-200 font-sans w-full text-center">🔒 あと {dist}m で開館します</div><p className="text-[8px] text-gray-400 italic">近づくと、収納された手紙を閲覧できます</p></div>);
+                      })()}
+                    </>
+                  ) : (
+                  <>
+                    <h3 className="font-bold text-sm mb-1 text-bunko-ink font-serif">{popupInfo.title}</h3>
+                    <p className="text-[10px] text-gray-500 mb-1 font-sans">{popupInfo.is_post ? (popupInfo.spot_name || 'ポスト') : (popupInfo.spot_name || '')}</p>
+                    {(() => {
+                      const dist = calculateDistance(Number(popupInfo.lat), Number(popupInfo.lng));
+                      const isMyPost = currentUser && currentUser.id === popupInfo.user_id;
+                      const isAdmin = currentUser?.email && ADMIN_EMAILS.includes(currentUser.email);
+                      const isReachable = (dist !== null && dist <= UNLOCK_DISTANCE) || isAdmin || isMyPost;
+                      if (dist === null) return <p className="text-[10px] text-gray-400 font-sans">位置情報を取得中...</p>;
+                      if (isReachable) return (<button onClick={async () => { const detail = await fetchLetterDetail(popupInfo.id); if (!detail) return; if (popupInfo.is_post) setReadingLetterPost(detail); else setReadingLetter(detail); }} className={`w-full text-white text-xs py-2 px-4 rounded-full transition-colors shadow-sm font-bold font-sans ${popupInfo.is_post ? 'bg-red-600 hover:bg-red-700' : (popupInfo.is_official ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-700 hover:bg-green-800')}`}>{popupInfo.is_post ? 'ポストを開く' : (popupInfo.is_postcard ? 'ハガキを読む' : '手紙を読む')}</button>);
+                      return <div className="bg-gray-100 text-gray-500 text-xs py-2 px-2 rounded-full border border-gray-200 font-sans">🔒 あと {dist}m</div>;
+                    })()}
+                  </>
+                )}
+              </div>
+            </Popup>
+          )}
         </Map>
       </div>
 
@@ -471,21 +572,37 @@ function HomeContent() {
               {locationError ? (<><div className="flex items-center gap-2"><div className="text-red-500 text-lg">⚠️</div><span className="text-xs font-bold text-gray-600 font-sans tracking-widest leading-relaxed text-center">位置情報が取得できません。<br/>ブラウザの設定を確認してください。</span></div><button onClick={() => window.location.reload()} className="bg-gray-800 text-white text-[10px] font-bold px-6 py-2 rounded-full shadow-md active:scale-95 transition-transform tracking-widest">再読み込みする</button></>) : (<div className="flex items-center justify-center gap-4"><div className="w-4 h-4 border-2 border-green-700 border-t-transparent rounded-full animate-spin"></div><span className="text-xs font-bold text-gray-600 font-sans tracking-widest">現在地を特定しています...</span></div>)}
             </div>
           )}
+          <div className="fixed bottom-8 right-4 z-40 flex flex-col items-end gap-2 font-sans">
+            <div className="bg-white/90 p-2 rounded-lg shadow-sm text-[10px] text-gray-600 font-bold animate-bounce cursor-pointer relative" onClick={() => router.push(getPostUrl())}>{currentUser ? '手紙を書く' : 'ログインして手紙を書く'}<div className="absolute right-4 top-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white/90"></div></div>
+            <Link href={getPostUrl()}><button className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-105 active:scale-95 border-2 border-white ${currentUser ? 'bg-green-700 text-white' : 'bg-gray-400 text-white'}`}><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg></button></Link>
+          </div>
         </>
       )}
 
       {/* 密集リスト表示 */}
-      <ClusterListModal 
-        isOpen={showClusterList}
-        onClose={() => setShowClusterList(false)}
-        selectedLetters={selectedClusterLetters}
-        onSelectLetter={async (id) => {
-          const d = await fetchLetterDetail(id);
-          if (!d) return;
-          setShowClusterList(false); // リストを閉じる
-          setReadingLetter(d);       // 手紙を開く
-        }}
-      />
+      {showClusterList && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-[#f7f4ea] w-full max-w-sm rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[70vh]">
+            <div className="p-4 bg-white border-b flex justify-between items-center"><h3 className="font-serif font-bold text-stone-700">この場所に集まった手紙</h3><button onClick={() => setShowClusterList(false)} className="text-stone-400 text-xl px-2">✕</button></div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+              {selectedClusterLetters.map(l => (
+                <div key={l.id} onClick={async () => { const d = await fetchLetterDetail(l.id); if(!d) return; setShowClusterList(false); setReadingLetter(d); }} className="bg-white p-3 rounded-xl border border-stone-100 shadow-sm flex items-center gap-3 cursor-pointer hover:bg-stone-50 transition-colors">
+                  {/* ★ 絵文字 ✉️ の代わりにコンポーネントを表示 */}
+                  <div className="w-10 h-10 flex items-center justify-center flex-shrink-0">
+                    {l.is_postcard ? (
+                      <IconPostcard className="w-8 h-8" />
+                    ) : (
+                      /* 便箋（通常の手紙）の場合は IconUserLetter を表示 */
+                      <IconUserLetter className="w-8 h-8" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0"><p className="font-bold text-sm text-stone-800 truncate">{l.title}</p><p className="text-[10px] text-stone-400">置かれた場所：{l.spot_name}</p></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {viewingBookshelf && (<BookshelfModal areaKey={viewingBookshelf.area_key} displayName={viewingBookshelf.display_name} onClose={() => setViewingBookshelf(null)} currentUser={currentUser} onSelectMemory={async (id) => { const d = await fetchLetterDetail(id); if(d) setReadingLetter(d); }} />)}
       {readingLetter && (readingLetter.is_postcard ? (<PostcardModal letter={readingLetter} currentUser={currentUser} isRainy={isRainy} onClose={() => { setReadingLetter(null); setPopupInfo(null); setModalInitialLayer(0); }} onRead={markAsRead} isMyPage={false} initialLayer={modalInitialLayer} />) : (<LetterModal letter={readingLetter} currentUser={currentUser} isRainy={isRainy} onClose={() => { setReadingLetter(null); setPopupInfo(null); setModalInitialLayer(0); }} onRead={markAsRead} isMyPage={false} initialLayer={modalInitialLayer} />))}   

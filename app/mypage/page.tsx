@@ -7,15 +7,16 @@ import Link from 'next/link';
 import LetterModal from '@/components/LetterModal';
 import PostcardModal from '@/components/PostcardModal'; 
 import PostModal from '@/components/PostModal'; 
-import IconUserLetter from '@/components/IconUserLetter';
-import IconAdminLetter from '@/components/IconAdminLetter';
-// ★ アイコンのインポート追加
-import IconAdminPostcard from '@/components/IconAdminPostcard'; 
-import IconPost from '@/components/IconPost'; 
-import IconPostcard from '@/components/IconPostcard'; 
 import FooterLinks from '@/components/FooterLinks';
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
 import SkeletonLetter from '@/components/SkeletonLetter';
+import AcornModal from '@/components/mypage/AcornModal'
+
+// ★ 全てのコンポーネントをインポート
+import MypageHeader from '@/components/mypage/MypageHeader';
+import MypageLetterList from '@/components/mypage/MypageLetterList';
+import MypageStampGrid from '@/components/mypage/MypageStampGrid';
+import MypageSettings from '@/components/mypage/MypageSettings';
 
 type Letter = {
   id: string; title: string; spot_name: string; content: string;
@@ -271,192 +272,77 @@ export default function MyPage() {
     window.location.href = '/';
   };
 
+  const [showAcornModal, setShowAcornModal] = useState(false);
+
   return (
     <div className="min-h-screen bg-[#fdfcf5] pb-10 font-sans text-gray-800 relative">
+
+      {/* 1. ヘッダー */}
+      <MypageHeader 
+        email={user?.email} 
+        acornCount={acornCount} 
+        onAcornClick={() => setShowAcornModal(true)} 
+      />
       
-      <div className="bg-white/90 backdrop-blur-sm px-6 py-4 shadow-sm text-center relative sticky top-0 z-10">
-        <Link href="/" className="absolute top-1/2 -translate-y-1/2 left-4 w-9 h-9 flex items-center justify-center rounded-full bg-white border border-gray-200 shadow-sm text-gray-600 hover:text-black transition-colors">
-           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>
-        </Link>
-        <h1 className="text-lg font-bold font-serif text-bunko-ink tracking-widest">マイページ</h1>
-        {user && <p className="text-[10px] text-gray-400 mt-1 font-sans">{user.email}</p>}
-
-        {/* ★ 修正箇所：mx-auto w-fit を追加して中央配置・幅を中身に合わせる */}
-        <div className="flex items-center gap-1.5 bg-amber-50/50 px-3 py-0.5 rounded-full border border-amber-100 shadow-sm mt-2 mx-auto w-fit">
-          <span className="text-sm">🌰</span>
-          <span className="text-[11px] font-bold text-amber-900 font-mono">{acornCount || 0}</span>
-          <span className="text-[8px] text-amber-700 font-serif tracking-tighter">どんぐり</span>
-        </div>
-
-      </div>
-
+      {/* 2. タブバー */}
       <div className="flex border-b border-gray-200 bg-white">
-        <button onClick={() => setActiveTab('posts')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'posts' ? 'text-green-700' : 'text-gray-400'}`}>手紙の記録 {activeTab === 'posts' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-green-700"></div>}</button>
-        <button onClick={() => setActiveTab('favorites')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'favorites' ? 'text-pink-500' : 'text-gray-400'}`}>お気に入り {activeTab === 'favorites' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-pink-500"></div>}</button>
-        <button onClick={() => setActiveTab('stamps')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'stamps' ? 'text-orange-600' : 'text-gray-400'}`}>切手帳 {activeTab === 'stamps' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-orange-600"></div>}</button>
-        <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'settings' ? 'text-gray-800' : 'text-gray-400'}`}>設定 {activeTab === 'settings' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-gray-800"></div>}</button>
+        <button onClick={() => setActiveTab('posts')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'posts' ? 'text-green-700' : 'text-gray-400'}`}>
+          手紙の記録 {activeTab === 'posts' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-green-700"></div>}
+        </button>
+        <button onClick={() => setActiveTab('favorites')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'favorites' ? 'text-pink-500' : 'text-gray-400'}`}>
+          お気に入り {activeTab === 'favorites' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-pink-500"></div>}
+        </button>
+        <button onClick={() => setActiveTab('stamps')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'stamps' ? 'text-orange-600' : 'text-gray-400'}`}>
+          切手帳 {activeTab === 'stamps' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-orange-600"></div>}
+        </button>
+        <button onClick={() => setActiveTab('settings')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'settings' ? 'text-gray-800' : 'text-gray-400'}`}>
+          設定 {activeTab === 'settings' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-gray-800"></div>}
+        </button>
       </div>
 
+      {/* 3. フィルタボタン（手紙タブの時のみ） */}
       {activeTab === 'posts' && (
         <div className="flex justify-center gap-1.5 py-3 bg-[#fdfcf5] px-2 overflow-x-auto">
-          <button onClick={() => setPostFilter('written')} className={`shrink-0 px-6 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'written' ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>書いた手紙</button>
-          <button onClick={() => setPostFilter('submitted')} className={`shrink-0 px-6 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'submitted' ? 'bg-red-600 text-white border-red-600 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>投函した手紙</button>
-          <button onClick={() => setPostFilter('replies')} className={`shrink-0 px-6 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${postFilter === 'replies' ? 'bg-orange-500 text-white border-orange-500 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'}`}>手紙の返事</button>
+          {(['written', 'submitted', 'replies'] as const).map((f) => (
+            <button 
+              key={f}
+              onClick={() => setPostFilter(f)} 
+              className={`shrink-0 px-6 py-1.5 text-[10px] rounded-full font-bold border transition-all font-sans ${
+                postFilter === f ? 'bg-green-700 text-white border-green-700 shadow-sm' : 'bg-white text-gray-400 border border-gray-200'
+              }`}
+            >
+              {f === 'written' ? '書いた手紙' : f === 'submitted' ? '投函した手紙' : '手紙の返事'}
+            </button>
+          ))}
         </div>
       )}
 
+      {/* 4. メインコンテンツエリア */}
       <div className="p-4 space-y-3 min-h-[50vh]">
-        {isLoading && activeTab !== 'stamps' && activeTab !== 'settings' && (
+        {isLoading && activeTab !== 'stamps' && activeTab !== 'settings' ? (
           <div className="space-y-3 max-w-3xl mx-auto"><SkeletonLetter /><SkeletonLetter /><SkeletonLetter /></div>
-        )}
-
-        {!isLoading && (
+        ) : (
           <>
             {activeTab === 'settings' && (
-              <div className="animate-fadeIn max-w-md mx-auto space-y-8 pt-4">
-                <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-6">
-                  <h2 className="font-bold text-sm font-serif border-b pb-2">アカウント設定</h2>
-                  
-                  {settingsMessage && (
-                    <div className={`p-3 rounded-lg text-[10px] font-bold ${settingsMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
-                      {settingsMessage.text}
-                    </div>
-                  )}
-
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-400 mb-1">メールアドレスの変更</label>
-                      <div className="flex gap-2">
-                        <input 
-                          type="email" 
-                          value={newEmail}
-                          onChange={(e) => setNewEmail(e.target.value)}
-                          className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-green-700"
-                        />
-                        <button 
-                          onClick={handleUpdateEmail}
-                          disabled={isUpdating || newEmail === user?.email}
-                          className="bg-green-700 text-white px-4 py-2 rounded-lg text-[10px] font-bold disabled:bg-gray-200 transition-colors"
-                        >
-                          更新
-                        </button>
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-400 mb-1">パスワードの変更</label>
-                      <div className="flex gap-2">
-                        <input 
-                          type="password" 
-                          placeholder="新しいパスワード"
-                          value={newPassword}
-                          onChange={(e) => setNewPassword(e.target.value)}
-                          className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-green-700"
-                        />
-                        <button 
-                          onClick={handleUpdatePassword}
-                          disabled={isUpdating || !newPassword}
-                          className="bg-green-700 text-white px-4 py-2 rounded-lg text-[10px] font-bold disabled:bg-gray-200 transition-colors"
-                        >
-                          更新
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="text-center">
-                   <button onClick={handleLogout} className="text-xs text-red-400 underline hover:text-red-600 font-sans">ログアウト</button>
-                </div>
-              </div>
+              <MypageSettings 
+                newEmail={newEmail} setNewEmail={setNewEmail}
+                newPassword={newPassword} setNewPassword={setNewPassword}
+                settingsMessage={settingsMessage} isUpdating={isUpdating}
+                userEmail={user?.email} onUpdateEmail={handleUpdateEmail}
+                onUpdatePassword={handleUpdatePassword} onLogout={handleLogout}
+              />
             )}
 
             {activeTab === 'stamps' && (
-              <div className="animate-fadeIn">
-                {userStampRecords.length === 0 ? (
-                  <div className="text-center py-20 text-gray-400 text-xs font-sans">まだ切手はありません。</div>
-                ) : (
-                  <div className="grid grid-cols-3 md:grid-cols-6 gap-6 px-2 max-w-5xl mx-auto pt-4">
-                    {userStampRecords.map(record => (
-                    <div key={record.id} className="flex flex-col items-center group cursor-pointer" onClick={() => record.post && handleItemClick(record.post)}>
-                      <div className="relative w-full aspect-[3/4]">
-                        {record.count >= 3 && (<div className="absolute inset-0 bg-white border border-gray-200 rounded shadow-sm transform rotate-6 translate-x-1.5 translate-y-1 scale-100 origin-bottom-right opacity-60 z-0" />)}
-                        {record.count >= 2 && (<div className="absolute inset-0 bg-white border border-gray-200 rounded shadow-sm transform rotate-3 translate-x-0.5 translate-y-0.5 scale-100 origin-bottom-right z-0" />)}
-                        
-                        <div className="absolute inset-0 w-full h-full rounded border border-gray-200 bg-white shadow-sm p-1 flex items-center justify-center transition-transform group-hover:scale-105 z-10">
-                          <img src={record.stamp.image_url} alt={record.stamp.name} className="w-full h-full object-contain" />
-                        </div>
-
-                        {record.count > 1 && (
-                          <div className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-lg border-2 border-white z-20 font-sans">
-                            {record.count}
-                          </div>
-                        )}
-                      </div>
-                      <p className="text-[10px] font-bold text-center text-bunko-ink truncate w-full mt-2 font-sans">{record.stamp.name}</p>
-                    </div>
-                    ))}
-                  </div>
-                )}
-                <div className="text-center mt-12 mb-8">
-                   <button onClick={handleLogout} className="text-xs text-red-400 underline hover:text-red-600 font-sans">ログアウト</button>
-                </div>
-              </div>
+              <MypageStampGrid records={userStampRecords} onItemClick={handleItemClick} onLogout={handleLogout} />
             )}
 
-            {activeTab !== 'stamps' && activeTab !== 'settings' && (
-              <div className="animate-fadeIn space-y-3 max-w-3xl mx-auto">
-                {(activeTab === 'posts' ? filteredMyPosts : favorites).length === 0 && (
-                  <div className="text-center py-12 text-gray-400 text-xs font-sans">データがありません。</div>
-                )}
-
-                {(activeTab === 'posts' ? filteredMyPosts : favorites).map((letter) => {
-                  const expired = !letter.is_official && !letter.is_post && isExpired(letter.created_at);
-                  const isSubmittedToPost = !!letter.parent_id && letter.is_post === true;
-                  const isReply = !!letter.parent_id && !letter.is_post;
-                  const displayTitle = isSubmittedToPost 
-                    ? `${letter.spot_name}への手紙` 
-                    : letter.title;
-                  
-                  return (
-                    <div key={letter.id} onClick={() => handleItemClick(letter)}
-                      className={`bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex items-center gap-4 cursor-pointer transition-transform hover:scale-[1.01] active:scale-[0.99] ${expired && !isSubmittedToPost && !isReply ? 'opacity-70 saturate-[0.3] bg-gray-50' : ''}`}
-                    >
-                      <div className="shrink-0 relative">
-                        {/* ★ アイコン出し分けの修正：ハガキ・便箋・ポスト・運営 */}
-                        {isSubmittedToPost ? (
-                          <div className="text-red-600"><IconPost className="w-10 h-10" /></div>
-                        ) : letter.is_postcard ? (
-                          <div className={`${(expired && (postFilter === 'written' || activeTab === 'favorites')) ? 'opacity-30 grayscale' : ''}`}>
-                             {letter.is_official ? <IconAdminPostcard className="w-10 h-10" /> : <IconPostcard className="w-10 h-10" />}
-                          </div>
-                        ) : letter.is_official ? (
-                          <IconAdminLetter className="w-10 h-10" />
-                        ) : (
-                          <IconUserLetter className="w-10 h-10" />
-                        )}
-                        {isReply && <div className="absolute -bottom-1 -right-1 text-[10px]">💬</div>}
-                      </div>
-                      
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between">
-                          <h3 className="font-bold text-gray-800 text-sm truncate font-serif">{displayTitle}</h3>
-                          {expired && !isSubmittedToPost && !isReply && <span className="text-[9px] bg-gray-100 text-gray-400 px-2 py-0.5 rounded-full border border-gray-200 font-sans">消印済</span>}
-                        </div>
-                        <p className="text-xs text-gray-400 truncate mt-1 italic font-sans">📍 {letter.spot_name}</p>
-                        <div className="flex justify-between items-end mt-1">
-                          <p className="text-[10px] text-gray-300 font-sans">{new Date(letter.created_at).toLocaleDateString()}</p>
-                          {activeTab === 'posts' && !expired && !isSubmittedToPost && !isReply && letter.read_count !== undefined && letter.read_count > 0 && (
-                            <div className="flex items-center gap-1 bg-orange-50 px-2 py-0.5 rounded-full border border-orange-100">
-                              <span className="text-[9px] font-bold text-orange-600 font-sans">開封されました</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-
+            {(activeTab === 'posts' || activeTab === 'favorites') && (
+              <div className="max-w-3xl mx-auto">
+                <MypageLetterList 
+                  letters={activeTab === 'posts' ? filteredMyPosts : favorites} 
+                  activeTab={activeTab} postFilter={postFilter} onItemClick={handleItemClick}
+                />
                 <div className="text-center py-10 border-t border-gray-100 mt-6">
                   <button onClick={handleLogout} className="text-xs text-red-400 underline hover:text-red-600 font-sans tracking-widest">ログアウト</button>
                 </div>
@@ -465,6 +351,12 @@ export default function MyPage() {
           </>
         )}
       </div>
+
+      {/* ★ return文の最後の方（ FooterLinks の上あたりなど）に追加 */}
+      <AcornModal 
+        isOpen={showAcornModal} 
+        onClose={() => setShowAcornModal(false)} 
+      />
 
       <FooterLinks />
 

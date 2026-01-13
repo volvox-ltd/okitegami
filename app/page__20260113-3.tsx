@@ -59,7 +59,7 @@ type Bookshelf = {
 };
 
 const UNLOCK_DISTANCE = 30;      
-const NOTIFICATION_DISTANCE = 100;
+const NOTIFICATION_DISTANCE = 100; 
 
 function HomeContent() {
   const ADMIN_EMAILS = ["marei.suyama@gmail.com", "contact@volvox-ltd.com"];
@@ -402,6 +402,16 @@ function HomeContent() {
         >
 
           <NavigationControl position="bottom-right" showCompass={true} style={{ marginBottom: 'var(--nav-margin, 280px)', marginRight: '16px' }} />
+
+          {/* オリジナルの現在地青ドットアイコン（波紋付き） */}
+          {userLocation && (
+            <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center">
+              <div className="relative">
+                <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-md z-10 relative"></div>
+                <div className="w-4 h-4 bg-blue-500 rounded-full absolute top-0 left-0 animate-ping opacity-50"></div>
+              </div>
+            </Marker>
+          )}
           
           <MapMarkers 
             clusters={clusters}
@@ -421,16 +431,6 @@ function HomeContent() {
               setShowClusterList(true);
             }}
           />
-
-          {/* オリジナルの現在地青ドットアイコン（波紋付き） */}
-          {userLocation && (
-            <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center" style={{ zIndex: 9999, pointerEvents: 'none' }}>
-              <div className="relative">
-                <div className="w-4 h-4 bg-blue-500 rounded-full border-2 border-white shadow-md z-10 relative"></div>
-                <div className="w-4 h-4 bg-blue-500 rounded-full absolute top-0 left-0 animate-ping opacity-50"></div>
-              </div>
-            </Marker>
-          )}
 
           <MapPopup 
             popupInfo={popupInfo}
@@ -471,6 +471,10 @@ function HomeContent() {
               {locationError ? (<><div className="flex items-center gap-2"><div className="text-red-500 text-lg">⚠️</div><span className="text-xs font-bold text-gray-600 font-sans tracking-widest leading-relaxed text-center">位置情報が取得できません。<br/>ブラウザの設定を確認してください。</span></div><button onClick={() => window.location.reload()} className="bg-gray-800 text-white text-[10px] font-bold px-6 py-2 rounded-full shadow-md active:scale-95 transition-transform tracking-widest">再読み込みする</button></>) : (<div className="flex items-center justify-center gap-4"><div className="w-4 h-4 border-2 border-green-700 border-t-transparent rounded-full animate-spin"></div><span className="text-xs font-bold text-gray-600 font-sans tracking-widest">現在地を特定しています...</span></div>)}
             </div>
           )}
+          <div className="fixed bottom-8 right-4 z-40 flex flex-col items-end gap-2 font-sans">
+            <div className="bg-white/90 p-2 rounded-lg shadow-sm text-[10px] text-gray-600 font-bold animate-bounce cursor-pointer relative" onClick={() => router.push(getPostUrl())}>{currentUser ? '手紙を書く' : 'ログインして手紙を書く'}<div className="absolute right-4 top-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white/90"></div></div>
+            <Link href={getPostUrl()}><button className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-105 active:scale-95 border-2 border-white ${currentUser ? 'bg-green-700 text-white' : 'bg-gray-400 text-white'}`}><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6"><path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /></svg></button></Link>
+          </div>
         </>
       )}
 
