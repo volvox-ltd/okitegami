@@ -264,7 +264,7 @@ export default function BookshelfModal({ areaKey, displayName, onClose, currentU
                         ))}
                       </div>
                     ) : (
-                      <div className="flex flex-col-reverse items-center justify-end px-1">
+                    <div className="flex flex-col-reverse items-center justify-end px-1">
                         {cluster.books.map((b, sIdx) => (
                           <div key={b.index}
                             onClick={() => b.hasData && setSelectedBookIndex(b.index)}
@@ -276,8 +276,8 @@ export default function BookshelfModal({ areaKey, displayName, onClose, currentU
                             <div className="absolute inset-0 flex flex-row items-center px-2 justify-between bg-gradient-to-b from-white/10 to-black/20">
                               <span className="text-[8px] font-bold text-[#e8dec7]/90 whitespace-nowrap tracking-tighter">{b.label}</span>
                             </div>
-                            {b.hasData && sIdx === cluster.books.length - 1 && (
-                              <div className="absolute -top-1 -right-2 bg-[#9a3412] text-white text-[7px] min-w-[14px] h-3.5 flex items-center justify-center rounded-full border border-[#f2e9d5] shadow-sm font-bold z-[210]">
+                            {b.hasData && (
+                              <div className="absolute -top-2 -right-2 bg-[#9a3412] text-white text-[7px] min-w-[14px] h-3.5 flex items-center justify-center rounded-full border border-[#f2e9d5] shadow-sm font-bold z-[210]">
                                 {b.memories.length}
                               </div>
                             )}

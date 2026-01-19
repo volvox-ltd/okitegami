@@ -30,6 +30,7 @@ import MapOverlayUI from '@/components/MapOverlayUI';
 import ClusterListModal from '@/components/ClusterListModal';
 import MapPopup from '@/components/MapPopup';
 import MapCustomButtons from '@/components/MapCustomButtons';
+import BookstoreModal from '@/components/BookstoreModal';
 
 // 天候判定・劣化ロジックのインポート
 import { calculateEffectiveHours, fetchIsRainy } from '@/utils/weather';
@@ -69,10 +70,12 @@ function HomeContent() {
   const [letters, setLetters] = useState<Letter[]>([]);
   const [allLetters, setAllLetters] = useState<Letter[]>([]);
   const [bookshelves, setBookshelves] = useState<Bookshelf[]>([]); 
+  const [bookstores, setBookstores] = useState<any[]>([]);
   const [popupInfo, setPopupInfo] = useState<any>(null); 
   const [readingLetter, setReadingLetter] = useState<Letter | null>(null);
   const [readingPost, setReadingLetterPost] = useState<Letter | null>(null);
   const [viewingBookshelf, setViewingBookshelf] = useState<Bookshelf | null>(null);
+  const [viewingBookstore, setViewingBookstore] = useState<any | null>(null);
   const [isFromLibrary, setIsFromLibrary] = useState(false); 
   const [readLetterIds, setReadLetterIds] = useState<string[]>([]);
   const [showAbout, setShowAbout] = useState(false);
@@ -197,12 +200,14 @@ function HomeContent() {
 
   const fetchLettersAndShelves = useCallback(async () => {
     try {
-      const [lettersRes, shelvesRes] = await Promise.all([
+      // 3つのテーブルからデータを取得
+      const [lettersRes, shelvesRes, bookstoresRes] = await Promise.all([
         supabase
         .from('letters')
         .select('id, title, spot_name, lat, lng, is_official, user_id, created_at, attached_stamp_id, is_post, parent_id, password, is_postcard')
         .eq('is_deleted_from_map', false),
-        supabase.from('bookshelves').select('*')
+        supabase.from('bookshelves').select('*'),
+        supabase.from('bookstores').select('*') // ここで本屋データを呼んでいます
       ]);
       
       if (lettersRes.data) {
@@ -218,7 +223,10 @@ function HomeContent() {
         const mergedLetters = rootLetters.map((l: any) => ({ ...l, nickname: nicknameMap[l.user_id] || null }));
         setLetters(mergedLetters as Letter[]);
       }
+      
+      // 各ステートにデータをセット
       if (shelvesRes.data) { setBookshelves(shelvesRes.data as Bookshelf[]); }
+      if (bookstoresRes.data) { setBookstores(bookstoresRes.data); } // bookstoresRes を正しく受け取ります
     } catch (err) { console.error(err); }
   }, []);
 
@@ -269,28 +277,67 @@ function HomeContent() {
     setIsFollowingUser(true);
     isFollowingUserRef.current = true;
     mapRef.current?.getMap().flyTo({ center: [userLocation.lng, userLocation.lat], zoom: 15, duration: 1500 });
-    const count = letters.reduce((acc, letter) => {
-      if (letter.is_post || (currentUser && letter.user_id === currentUser.id)) return acc;
-      const dist = getDistance({ latitude: userLocation.lat, longitude: userLocation.lng }, { latitude: letter.lat, longitude: letter.lng });
-      if (dist <= 3000 && !readLetterIds.includes(letter.id)) acc++;
-      return acc;
-    }, 0);
+  // ★ 修正箇所：letters ではなく validLetters を使う
+  const count = validLetters.reduce((acc, letter) => {
+    // 1. ポスト（常設）や自分の手紙はカウントしない
+    if (letter.is_post || (currentUser && letter.user_id === currentUser.id)) return acc;
+
+    // 2. 距離計算（3km以内か）
+    const dist = getDistance(
+      { latitude: userLocation.lat, longitude: userLocation.lng },
+      { latitude: letter.lat, longitude: letter.lng }
+    );
+
+    // 3. 3km以内で、かつ未読リストに入っていないものだけカウント
+    if (dist <= 3000 && !readLetterIds.includes(letter.id)) acc++;
+    return acc;
+  }, 0);
     setUnreadCount(count);
     setShowCounts(true);
     setTimeout(() => setShowCounts(false), 5000);
   };
 
+    // ★ 有効な一般手紙だけを抽出 (48時間以内)
+  const validLetters = useMemo(() => {
+    const expirationHours = LETTER_EXPIRATION_HOURS || 48;
+    return letters.filter(letter => {
+      if (letter.is_official || letter.is_post) return false; // ここでは除外
+      if (letter.created_at) {
+        return calculateEffectiveHours(letter.created_at, isRainy) <= expirationHours;
+      }
+      return true;
+    });
+  }, [letters, isRainy]);
+
+  const landmarkLetters = useMemo(() => letters.filter(l => l.is_official || l.is_post), [letters]);
+
+  // 273行目付近の validLetters と 282行目付近の landmarkLetters よりも下に移動して貼り付けてください
   const nearestNotificationLetter = useMemo<Letter | null>(() => {
     if (!userLocation) return null;
+
+    // ★ 修正：地図上にアイコンが出ている「有効な手紙」だけを対象にする
+    const visibleLetters = [...validLetters, ...landmarkLetters];
+
     let nearest: Letter | null = null;
     let minDist = Infinity;
-    letters.forEach(letter => {
-      if (!letter.is_official && !showUserPosts) return;
+
+    visibleLetters.forEach(letter => {
+      // 1. 表示設定のチェック（一般の手紙で、かつ「みんなの手紙」スイッチがオフなら除外）
+      if (!letter.is_official && !letter.is_post && !showUserPosts) return;
+
+      // 2. 距離計算
       const dist = calculateDistance(letter.lat, letter.lng);
-      if (dist !== null && dist <= NOTIFICATION_DISTANCE && dist > UNLOCK_DISTANCE && dist < minDist) { minDist = dist; nearest = letter; }
+      
+      // 3. 通知条件（100m以内、かつ30mより外、かつ最も近いもの）
+      if (dist !== null && dist <= NOTIFICATION_DISTANCE && dist > UNLOCK_DISTANCE && dist < minDist) {
+        minDist = dist;
+        nearest = letter;
+      }
     });
+
     return nearest;
-  }, [userLocation, letters, showUserPosts, calculateDistance]);
+    // ★ 依存配列に validLetters と landmarkLetters を指定
+  }, [userLocation, validLetters, landmarkLetters, showUserPosts, calculateDistance]);
 
   useEffect(() => {
     const nid = nearestNotificationLetter?.id;
@@ -329,20 +376,6 @@ function HomeContent() {
     };
     handleOpenPostParam();
   }, [currentUser]); 
-
-  // ★ 有効な一般手紙だけを抽出 (48時間以内)
-  const validLetters = useMemo(() => {
-    const expirationHours = LETTER_EXPIRATION_HOURS || 48;
-    return letters.filter(letter => {
-      if (letter.is_official || letter.is_post) return false; // ここでは除外
-      if (letter.created_at) {
-        return calculateEffectiveHours(letter.created_at, isRainy) <= expirationHours;
-      }
-      return true;
-    });
-  }, [letters, isRainy]);
-
-  const landmarkLetters = useMemo(() => letters.filter(l => l.is_official || l.is_post), [letters]);
 
   const points = useMemo(() => validLetters.map(letter => ({
     type: "Feature" as const,
@@ -410,6 +443,7 @@ function HomeContent() {
             landmarkLetters={landmarkLetters}
             allLetters={allLetters}
             bookshelves={bookshelves}
+            bookstores={bookstores}
             showUserPosts={showUserPosts}
             calculateDistance={calculateDistance}
             readLetterIds={readLetterIds}
@@ -441,13 +475,22 @@ function HomeContent() {
             calculateDistance={calculateDistance}
             onClose={() => setPopupInfo(null)}
             onOpenDetail={async (item) => {
-              const detail = await fetchLetterDetail(item.id);
-              if (item.area_key) {
+              // 1. 本屋の判定：'name' というプロパティがある場合
+              if (item.name) {
+                setViewingBookstore(item);
+              } 
+              // 2. 図書館の判定：'area_key' というプロパティがある場合
+              else if (item.area_key) {
                 setViewingBookshelf(item);
-              } else if (item.is_post) {
-                setReadingLetterPost(detail);
-              } else {
-                setReadingLetter(detail);
+              } 
+              // 3. 手紙・ポストの判定：それ以外
+              else {
+                const detail = await fetchLetterDetail(item.id);
+                if (item.is_post) {
+                  setReadingLetterPost(detail);
+                } else {
+                  setReadingLetter(detail);
+                }
               }
               setPopupInfo(null);
             }}
@@ -488,6 +531,13 @@ function HomeContent() {
       />
 
       {viewingBookshelf && (<BookshelfModal areaKey={viewingBookshelf.area_key} displayName={viewingBookshelf.display_name} onClose={() => setViewingBookshelf(null)} currentUser={currentUser} onSelectMemory={async (id) => { const d = await fetchLetterDetail(id); if(d) setReadingLetter(d); }} />)}
+      {viewingBookstore && (
+        <BookstoreModal 
+          bookstore={viewingBookstore} 
+          onClose={() => setViewingBookstore(null)} 
+          currentUser={currentUser} 
+        />
+      )}
       {readingLetter && (readingLetter.is_postcard ? (<PostcardModal letter={readingLetter} currentUser={currentUser} isRainy={isRainy} onClose={() => { setReadingLetter(null); setPopupInfo(null); setModalInitialLayer(0); }} onRead={markAsRead} isMyPage={false} initialLayer={modalInitialLayer} />) : (<LetterModal letter={readingLetter} currentUser={currentUser} isRainy={isRainy} onClose={() => { setReadingLetter(null); setPopupInfo(null); setModalInitialLayer(0); }} onRead={markAsRead} isMyPage={false} initialLayer={modalInitialLayer} />))}   
       {readingPost && (<PostModal post={readingPost} currentUser={currentUser} isRainy={isRainy} onClose={() => { setReadingLetterPost(null); setPopupInfo(null); }} isReachable={true} />)}
       {showAbout && <AboutModal onClose={() => setShowAbout(false)} />}

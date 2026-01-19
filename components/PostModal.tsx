@@ -1,10 +1,8 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
-// 共通クライアントを使用
 import { supabase } from '@/utils/supabase'; 
 import { User } from '@supabase/supabase-js';
 import Link from 'next/link';
-// Next.jsの画像最適化コンポーネント
 import Image from 'next/image';
 import IconPost from '@/components/IconPost';
 import { ENABLE_PHOTO_UPLOAD } from '@/utils/constants';
@@ -20,7 +18,7 @@ type Props = {
   onClose: () => void;
   isReachable: boolean; 
   isRainy?: boolean;
-  isMyPage?: boolean; // ★ 追加：マイページからの呼び出し判定
+  isMyPage?: boolean;
 };
 
 export default function PostModal({ post, currentUser, onClose, isReachable, isMyPage = false }: Props) {
@@ -207,7 +205,6 @@ export default function PostModal({ post, currentUser, onClose, isReachable, isM
     }
   };
 
-  // ★ 追加：手紙の削除（論理削除）
   const handleDeleteLetter = async (letterId: string) => {
     if (!confirm('この手紙を削除しますか？')) return;
 
@@ -219,7 +216,6 @@ export default function PostModal({ post, currentUser, onClose, isReachable, isM
 
       if (error) throw error;
 
-      // ローカルの状態を更新
       setLetters(prev => prev.filter(l => l.id !== letterId));
       setTotalCount(prev => Math.max(0, prev - 1));
     } catch (e) {

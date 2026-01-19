@@ -17,6 +17,7 @@ import MypageHeader from '@/components/mypage/MypageHeader';
 import MypageLetterList from '@/components/mypage/MypageLetterList';
 import MypageStampGrid from '@/components/mypage/MypageStampGrid';
 import MypageSettings from '@/components/mypage/MypageSettings';
+import DeleteAccountModal from '@/components/mypage/DeleteAccountModal';
 
 type Letter = {
   id: string; title: string; spot_name: string; content: string;
@@ -67,6 +68,8 @@ export default function MyPage() {
     return (new Date().getTime() - new Date(createdAt).getTime()) / (1000 * 60 * 60) > LETTER_EXPIRATION_HOURS;
   };
   const [acornCount, setAcornCount] = useState<number>(0);
+
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   useEffect(() => {
     let channel: any; // クリーンアップ用に変数を用意
@@ -269,7 +272,51 @@ export default function MyPage() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
+    // ★ ログアウト時に既読リストも削除する
+    localStorage.removeItem('read_letter_ids'); 
     window.location.href = '/';
+  };
+
+  // ★ 追加：アカウント削除ロジック
+  const handleDeleteAccount = async (keepLetters: boolean) => {
+    if (!user) return;
+    setIsUpdating(true);
+
+    try {
+      if (keepLetters) {
+        // パターンA: 手紙を残す（プロフィールを匿名化して維持）
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .update({ 
+            email: null,        // 再登録を可能にするため
+            is_retired: true,    // 退会済みフラグ
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', user.id);
+
+        if (profileError) throw profileError;
+      } else {
+        // パターンB: すべて削除（CASCADE設定により手紙も消える）
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .delete()
+          .eq('id', user.id);
+
+        if (profileError) throw profileError;
+      }
+
+      // 共通の事後処理
+      await supabase.auth.signOut();
+      localStorage.removeItem('read_letter_ids');
+      alert(keepLetters ? 'あなたの手紙を街に残しました。ご利用ありがとうございました。' : 'すべてのデータを削除しました。');
+      window.location.href = '/';
+
+    } catch (err: any) {
+      alert('エラーが発生しました: ' + err.message);
+    } finally {
+      setIsUpdating(false);
+      setIsDeleteModalOpen(false);
+    }
   };
 
   const [showAcornModal, setShowAcornModal] = useState(false);
@@ -330,6 +377,7 @@ export default function MyPage() {
                 settingsMessage={settingsMessage} isUpdating={isUpdating}
                 userEmail={user?.email} onUpdateEmail={handleUpdateEmail}
                 onUpdatePassword={handleUpdatePassword} onLogout={handleLogout}
+                onDeleteAccount={() => setIsDeleteModalOpen(true)}
               />
             )}
 
@@ -356,6 +404,14 @@ export default function MyPage() {
       <AcornModal 
         isOpen={showAcornModal} 
         onClose={() => setShowAcornModal(false)} 
+      />
+
+      {/* ★ 追加：退会確認モーダル */}
+      <DeleteAccountModal 
+        isOpen={isDeleteModalOpen}
+        onClose={() => setIsDeleteModalOpen(false)}
+        onConfirm={handleDeleteAccount}
+        isUpdating={isUpdating}
       />
 
       <FooterLinks />

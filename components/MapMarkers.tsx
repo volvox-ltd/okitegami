@@ -9,6 +9,7 @@ import IconPostcard from './IconPostcard';
 import IconBookshelf from './IconBookshelf';
 import { calculateEffectiveHours } from '@/utils/weather';
 import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
+import IconBookstore from './IconBookstore';
 
 type MapMarkersProps = {
   clusters: any[];
@@ -24,6 +25,7 @@ type MapMarkersProps = {
   isRainy: boolean;
   onMarkerClick: (letter: any) => void;
   onClusterClick: (leaves: any[]) => void;
+  bookstores: any[];
 };
 
 const UNLOCK_DISTANCE = 30;
@@ -43,6 +45,7 @@ export default function MapMarkers({
   isRainy,
   onMarkerClick,
   onClusterClick,
+  bookstores,
 }: MapMarkersProps) {
   return (
     <>
@@ -126,6 +129,18 @@ export default function MapMarkers({
                <span className="font-bold">{shelf.display_name}の図書館</span>
             </div>
             <IconBookshelf thankCount={shelf.thank_count} />
+          </div>
+        </Marker>
+      ))}
+
+      {/* 4. 本屋マーカー ★ここから追加 */}
+      {bookstores.map((store) => (
+        <Marker key={store.id} latitude={store.lat} longitude={store.lng} anchor="bottom" onClick={(e) => { e.originalEvent.stopPropagation(); onMarkerClick(store); }} style={{ zIndex: 45 }}>
+          <div className="flex flex-col items-center group cursor-pointer">
+            <div className="bg-white/95 backdrop-blur px-3 py-2 rounded-lg shadow-md text-[10px] mb-2 opacity-0 group-hover:opacity-100 transition-opacity font-serif border border-rose-200 text-rose-800 whitespace-nowrap">
+               <span className="font-bold">{store.name}</span>
+            </div>
+            <IconBookstore name={store.name} iconPath={store.icon_path} />
           </div>
         </Marker>
       ))}

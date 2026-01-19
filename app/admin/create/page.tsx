@@ -9,10 +9,10 @@ import Link from 'next/link';
 
 // アイコンのインポート
 import IconAdminLetter from '@/components/IconAdminLetter';
-import IconAdminPostcard from '@/components/IconAdminPostcard'; // ★ 追加
+import IconAdminPostcard from '@/components/IconAdminPostcard';
 import IconUserLetter from '@/components/IconUserLetter';
-import IconPostcard from '@/components/IconPostcard'; // ★ 追加
-import IconPost from '@/components/IconPost'; // ★ 追加
+import IconPostcard from '@/components/IconPostcard';
+import IconPost from '@/components/IconPost';
 // ★ 有効期限の設定と写真スイッチをインポート
 import { LETTER_EXPIRATION_HOURS, ENABLE_PHOTO_UPLOAD } from '@/utils/constants';
 
@@ -35,11 +35,11 @@ type Letter = {
   password?: string | null;
   attached_stamp_id?: number | null;
   is_post?: boolean;
-  is_postcard?: boolean; // ★ 追加
+  is_postcard?: boolean;
   user_id?: string;
-  parent_id?: string | null; // ★ 重なり防止判定用に追加
-  created_at: string; // ★ 期限判定用に追加
-  spot_name?: string; // 型定義の補完
+  parent_id?: string | null;
+  created_at: string;
+  spot_name?: string;
 };
 
 export default function AdminCreatePage() {

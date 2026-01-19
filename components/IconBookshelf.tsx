@@ -11,25 +11,25 @@ export default function IconBookshelf({ thankCount, className = "w-14 h-14" }: P
   const getStage = () => {
     // 101以上：図書館
     if (thankCount >= 101) return { 
-      src: '/library.png', 
+      src: '/library-l.svg', 
       label: '街の図書館', 
       scale: 'scale-125' 
     };
     // 51〜100：大きな本棚（複数の本棚）
     if (thankCount >= 51) return { 
-      src: '/shelves.png', 
+      src: '/library.svg', 
       label: '重厚な書架', 
       scale: 'scale-115' 
     };
     // 6〜50：本棚
     if (thankCount >= 6) return { 
-      src: '/shelf.png', 
+      src: '/library-m.svg', 
       label: '立派な本棚', 
       scale: 'scale-105' 
     };
     // 1〜5：本（または小さな木箱）
     return { 
-      src: '/books.png', 
+      src: '/library-s.svg', 
       label: '小さな本', 
       scale: 'scale-100' 
     };

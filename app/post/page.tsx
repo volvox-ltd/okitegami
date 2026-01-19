@@ -1,5 +1,4 @@
 'use client';
-// ★ 修正：processPostcardImage と compressImage を使用
 import { compressImage, processPostcardImage } from '@/utils/imageControl';
 import { useState, useEffect, Suspense, useCallback } from 'react';
 import Map, { Marker, NavigationControl, GeolocateControl } from 'react-map-gl';
@@ -134,6 +133,23 @@ function PostForm() {
     const { data: { user: latestUser } } = await supabase.auth.getUser();
     if (!latestUser) {
       alert('セッションが切れました。再読み込みしてください。');
+      setIsLoading(false);
+      return;
+    }
+
+    // 15分以内の連投制限チェック
+    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const { data: recentLetters, error: rateLimitError } = await supabase
+      .from('letters')
+      .select('created_at')
+      .eq('user_id', latestUser.id)
+      .gt('created_at', fifteenMinutesAgo)
+      .limit(1);
+
+    if (rateLimitError) throw rateLimitError;
+
+    if (recentLetters && recentLetters.length > 0) {
+      alert('手紙は15分に一回しか置けません。少し時間をおいてから投稿してください。');
       setIsLoading(false);
       return;
     }
