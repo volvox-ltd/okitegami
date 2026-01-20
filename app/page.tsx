@@ -32,10 +32,8 @@ import MapPopup from '@/components/MapPopup';
 import MapCustomButtons from '@/components/MapCustomButtons';
 import BookstoreModal from '@/components/BookstoreModal';
 
-// 天候判定・劣化ロジックのインポート
 import { calculateEffectiveHours, fetchIsRainy } from '@/utils/weather';
 
-// react-map-gl は SSR を無効化
 const Map = dynamic(() => import('react-map-gl').then(mod => mod.Map), { 
   ssr: false,
   loading: () => <div className="w-full h-screen bg-[#f7f4ea] animate-pulse" /> 
@@ -108,7 +106,6 @@ function HomeContent() {
   const [showNotification, setShowNotification] = useState(false); 
   const [lastNotifiedId, setLastNotifiedId] = useState<string | null>(null); 
 
-  // ★ 新規追加：クラスター制御用
   const [bounds, setBounds] = useState<any>(null);
   const [selectedClusterLetters, setSelectedClusterLetters] = useState<any[]>([]);
   const [showClusterList, setShowClusterList] = useState(false);
@@ -147,7 +144,6 @@ function HomeContent() {
 
   const handleMapLoad = (evt: any) => {
     applyLocalization(evt.target);
-    // 初回の境界線を取得
     setBounds(evt.target.getBounds().toArray().flat());
   };
 
@@ -200,14 +196,13 @@ function HomeContent() {
 
   const fetchLettersAndShelves = useCallback(async () => {
     try {
-      // 3つのテーブルからデータを取得
       const [lettersRes, shelvesRes, bookstoresRes] = await Promise.all([
         supabase
         .from('letters')
         .select('id, title, spot_name, lat, lng, is_official, user_id, created_at, attached_stamp_id, is_post, parent_id, password, is_postcard')
         .eq('is_deleted_from_map', false),
         supabase.from('bookshelves').select('*'),
-        supabase.from('bookstores').select('*') // ここで本屋データを呼んでいます
+        supabase.from('bookstores').select('*')
       ]);
       
       if (lettersRes.data) {
@@ -224,9 +219,8 @@ function HomeContent() {
         setLetters(mergedLetters as Letter[]);
       }
       
-      // 各ステートにデータをセット
       if (shelvesRes.data) { setBookshelves(shelvesRes.data as Bookshelf[]); }
-      if (bookstoresRes.data) { setBookstores(bookstoresRes.data); } // bookstoresRes を正しく受け取ります
+      if (bookstoresRes.data) { setBookstores(bookstoresRes.data); }
     } catch (err) { console.error(err); }
   }, []);
 
@@ -272,36 +266,11 @@ function HomeContent() {
     return getDistance({ latitude: userLocation.lat, longitude: userLocation.lng }, { latitude: targetLat, longitude: targetLng });
   }, [userLocation]);
 
-  const handleGeolocateClick = () => {
-    if (!userLocation) { startTracking(); return; }
-    setIsFollowingUser(true);
-    isFollowingUserRef.current = true;
-    mapRef.current?.getMap().flyTo({ center: [userLocation.lng, userLocation.lat], zoom: 15, duration: 1500 });
-  // ★ 修正箇所：letters ではなく validLetters を使う
-  const count = validLetters.reduce((acc, letter) => {
-    // 1. ポスト（常設）や自分の手紙はカウントしない
-    if (letter.is_post || (currentUser && letter.user_id === currentUser.id)) return acc;
-
-    // 2. 距離計算（3km以内か）
-    const dist = getDistance(
-      { latitude: userLocation.lat, longitude: userLocation.lng },
-      { latitude: letter.lat, longitude: letter.lng }
-    );
-
-    // 3. 3km以内で、かつ未読リストに入っていないものだけカウント
-    if (dist <= 3000 && !readLetterIds.includes(letter.id)) acc++;
-    return acc;
-  }, 0);
-    setUnreadCount(count);
-    setShowCounts(true);
-    setTimeout(() => setShowCounts(false), 5000);
-  };
-
-    // ★ 有効な一般手紙だけを抽出 (48時間以内)
+  // --- 変数宣言の順序を修正： handleGeolocateClick の前に validLetters を置く ---
   const validLetters = useMemo(() => {
     const expirationHours = LETTER_EXPIRATION_HOURS || 48;
     return letters.filter(letter => {
-      if (letter.is_official || letter.is_post) return false; // ここでは除外
+      if (letter.is_official || letter.is_post) return false;
       if (letter.created_at) {
         return calculateEffectiveHours(letter.created_at, isRainy) <= expirationHours;
       }
@@ -311,32 +280,50 @@ function HomeContent() {
 
   const landmarkLetters = useMemo(() => letters.filter(l => l.is_official || l.is_post), [letters]);
 
-  // 273行目付近の validLetters と 282行目付近の landmarkLetters よりも下に移動して貼り付けてください
-  const nearestNotificationLetter = useMemo<Letter | null>(() => {
-    if (!userLocation) return null;
+  // --- 構文エラーを修正した handleGeolocateClick ---
+  const handleGeolocateClick = () => {
+    if (!userLocation) { 
+      startTracking(); 
+      return; 
+    }
 
-    // ★ 修正：地図上にアイコンが出ている「有効な手紙」だけを対象にする
-    const visibleLetters = [...validLetters, ...landmarkLetters];
-
-    let nearest: Letter | null = null;
-    let minDist = Infinity;
-
-    visibleLetters.forEach(letter => {
-      // 1. 表示設定のチェック（一般の手紙で、かつ「みんなの手紙」スイッチがオフなら除外）
-      if (!letter.is_official && !letter.is_post && !showUserPosts) return;
-
-      // 2. 距離計算
-      const dist = calculateDistance(letter.lat, letter.lng);
-      
-      // 3. 通知条件（100m以内、かつ30mより外、かつ最も近いもの）
-      if (dist !== null && dist <= NOTIFICATION_DISTANCE && dist > UNLOCK_DISTANCE && dist < minDist) {
-        minDist = dist;
-        nearest = letter;
-      }
+    setIsFollowingUser(true);
+    isFollowingUserRef.current = true;
+    mapRef.current?.getMap().flyTo({ 
+      center: [userLocation.lng, userLocation.lat], 
+      zoom: 15, 
+      duration: 1500 
     });
 
+    const count = validLetters.reduce((acc, letter) => {
+      if (letter.is_post || (currentUser && letter.user_id === currentUser.id)) return acc;
+      const dist = getDistance(
+        { latitude: userLocation.lat, longitude: userLocation.lng },
+        { latitude: letter.lat, longitude: letter.lng }
+      );
+      if (dist <= 3000 && !readLetterIds.includes(letter.id)) acc++;
+      return acc;
+    }, 0);
+
+    setUnreadCount(count);
+    setShowCounts(true);
+    setTimeout(() => setShowCounts(false), 5000);
+  };
+
+  const nearestNotificationLetter = useMemo<Letter | null>(() => {
+    if (!userLocation) return null;
+    const visibleLetters = [...validLetters, ...landmarkLetters];
+    let nearest: Letter | null = null;
+    let minDist = Infinity;
+    visibleLetters.forEach(letter => {
+      if (!letter.is_official && !letter.is_post && !showUserPosts) return;
+      const dist = calculateDistance(letter.lat, letter.lng);
+      if (dist !== null && dist <= NOTIFICATION_DISTANCE && dist > UNLOCK_DISTANCE && dist < minDist) { 
+        minDist = dist; 
+        nearest = letter; 
+      }
+    });
     return nearest;
-    // ★ 依存配列に validLetters と landmarkLetters を指定
   }, [userLocation, validLetters, landmarkLetters, showUserPosts, calculateDistance]);
 
   useEffect(() => {
@@ -456,7 +443,6 @@ function HomeContent() {
             }}
           />
 
-          {/* オリジナルの現在地青ドットアイコン（波紋付き） */}
           {userLocation && (
             <Marker longitude={userLocation.lng} latitude={userLocation.lat} anchor="center" style={{ zIndex: 10, pointerEvents: 'none' }}>
               <div className="relative">
@@ -475,15 +461,12 @@ function HomeContent() {
             calculateDistance={calculateDistance}
             onClose={() => setPopupInfo(null)}
             onOpenDetail={async (item) => {
-              // 1. 本屋の判定：'name' というプロパティがある場合
               if (item.name) {
                 setViewingBookstore(item);
               } 
-              // 2. 図書館の判定：'area_key' というプロパティがある場合
               else if (item.area_key) {
                 setViewingBookshelf(item);
               } 
-              // 3. 手紙・ポストの判定：それ以外
               else {
                 const detail = await fetchLetterDetail(item.id);
                 if (item.is_post) {
@@ -496,7 +479,6 @@ function HomeContent() {
             }}
           />
 
-          {/* ★ 独自ボタン類を呼び出し */}
           <MapCustomButtons 
             onGeolocate={handleGeolocateClick}
             postUrl={getPostUrl()}
@@ -506,7 +488,6 @@ function HomeContent() {
         </Map>
       </div>
 
-      {/* 手紙を書く吹き出し ＆ ボタン（完全保持） */}
       {isMounted && (
         <>
           {!userLocation && !showTutorial && (
@@ -517,7 +498,6 @@ function HomeContent() {
         </>
       )}
 
-      {/* 密集リスト表示 */}
       <ClusterListModal 
         isOpen={showClusterList}
         onClose={() => setShowClusterList(false)}
@@ -525,8 +505,8 @@ function HomeContent() {
         onSelectLetter={async (id) => {
           const d = await fetchLetterDetail(id);
           if (!d) return;
-          setShowClusterList(false); // リストを閉じる
-          setReadingLetter(d);       // 手紙を開く
+          setShowClusterList(false); 
+          setReadingLetter(d);       
         }}
       />
 

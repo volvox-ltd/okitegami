@@ -12,7 +12,6 @@ import { LETTER_EXPIRATION_HOURS } from '@/utils/constants';
 import SkeletonLetter from '@/components/SkeletonLetter';
 import AcornModal from '@/components/mypage/AcornModal'
 
-// ★ 全てのコンポーネントをインポート
 import MypageHeader from '@/components/mypage/MypageHeader';
 import MypageLetterList from '@/components/mypage/MypageLetterList';
 import MypageStampGrid from '@/components/mypage/MypageStampGrid';
@@ -70,9 +69,10 @@ export default function MyPage() {
   const [acornCount, setAcornCount] = useState<number>(0);
 
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [showAcornModal, setShowAcornModal] = useState(false);
 
   useEffect(() => {
-    let channel: any; // クリーンアップ用に変数を用意
+    let channel: any;
 
     const init = async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -86,7 +86,6 @@ export default function MyPage() {
       const { data: settings } = await supabase.from('system_settings').select('value').eq('key', 'force_rain').maybeSingle();
       if (settings?.value === 'true') setIsRainy(true);
 
-      // 1. プロフィールのどんぐり数を初期取得
       const { data: profile } = await supabase
         .from('profiles')
         .select('acorn_count')
@@ -95,14 +94,12 @@ export default function MyPage() {
   
       if (profile) setAcornCount(profile.acorn_count || 0);
 
-      // 2. リアルタイム購読の設定
       channel = supabase
         .channel('acorn-realtime')
         .on(
           'postgres_changes',
           { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${user.id}` },
           (payload) => {
-            // DBが更新されたら即座に反映
             setAcornCount(payload.new.acorn_count);
           }
         )
@@ -119,7 +116,6 @@ export default function MyPage() {
 
     init();
 
-    // 3. クリーンアップ：コンポーネントが閉じられる時に購読を解除する
     return () => {
       if (channel) {
         supabase.removeChannel(channel);
@@ -202,12 +198,9 @@ export default function MyPage() {
     setIsUpdating(false);
   };
 
-  // ★ フィルタリングロジックの修正
   const filteredMyPosts = useMemo(() => {
     return myPosts.filter(letter => {
-      // 赤いポストへの返事、または赤いポスト自体の作成
       const isSubmittedToPost = !!letter.parent_id && letter.is_post === true; 
-      // ユーザーが書いた通常の手紙への返事
       const isReplyToUser = !!letter.parent_id && letter.is_post !== true; 
       
       if (postFilter === 'replies') return isReplyToUser;
@@ -227,9 +220,7 @@ export default function MyPage() {
     });
   }, [myPosts, postFilter]);
 
-  // ★ アイテムクリック時の挙動：ポスト関連ならPostModalを開く
   const handleItemClick = async (item: Letter) => {
-    // 赤いポストへの投函の場合、その親であるポストを取得
     if (item.is_post && item.parent_id) {
       const { data: parentPost } = await supabase
         .from('letters')
@@ -245,7 +236,6 @@ export default function MyPage() {
       return;
     }
 
-    // ユーザー間のお返事の場合
     if (!!item.parent_id && !item.is_post) {
       const { data: parentLetter } = await supabase
         .from('letters')
@@ -272,31 +262,27 @@ export default function MyPage() {
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    // ★ ログアウト時に既読リストも削除する
     localStorage.removeItem('read_letter_ids'); 
     window.location.href = '/';
   };
 
-  // ★ 追加：アカウント削除ロジック
   const handleDeleteAccount = async (keepLetters: boolean) => {
     if (!user) return;
     setIsUpdating(true);
 
     try {
       if (keepLetters) {
-        // パターンA: 手紙を残す（プロフィールを匿名化して維持）
         const { error: profileError } = await supabase
           .from('profiles')
           .update({ 
-            email: null,        // 再登録を可能にするため
-            is_retired: true,    // 退会済みフラグ
+            email: null,        
+            is_retired: true,    
             updated_at: new Date().toISOString()
           })
           .eq('id', user.id);
 
         if (profileError) throw profileError;
       } else {
-        // パターンB: すべて削除（CASCADE設定により手紙も消える）
         const { error: profileError } = await supabase
           .from('profiles')
           .delete()
@@ -305,7 +291,6 @@ export default function MyPage() {
         if (profileError) throw profileError;
       }
 
-      // 共通の事後処理
       await supabase.auth.signOut();
       localStorage.removeItem('read_letter_ids');
       alert(keepLetters ? 'あなたの手紙を街に残しました。ご利用ありがとうございました。' : 'すべてのデータを削除しました。');
@@ -319,19 +304,15 @@ export default function MyPage() {
     }
   };
 
-  const [showAcornModal, setShowAcornModal] = useState(false);
-
   return (
     <div className="min-h-screen bg-[#fdfcf5] pb-10 font-sans text-gray-800 relative">
 
-      {/* 1. ヘッダー */}
       <MypageHeader 
         email={user?.email} 
         acornCount={acornCount} 
         onAcornClick={() => setShowAcornModal(true)} 
       />
       
-      {/* 2. タブバー */}
       <div className="flex border-b border-gray-200 bg-white">
         <button onClick={() => setActiveTab('posts')} className={`flex-1 py-3 text-[10px] md:text-sm font-bold transition-colors relative font-sans ${activeTab === 'posts' ? 'text-green-700' : 'text-gray-400'}`}>
           手紙の記録 {activeTab === 'posts' && <div className="absolute bottom-0 left-0 w-full h-0.5 bg-green-700"></div>}
@@ -347,7 +328,6 @@ export default function MyPage() {
         </button>
       </div>
 
-      {/* 3. フィルタボタン（手紙タブの時のみ） */}
       {activeTab === 'posts' && (
         <div className="flex justify-center gap-1.5 py-3 bg-[#fdfcf5] px-2 overflow-x-auto">
           {(['written', 'submitted', 'replies'] as const).map((f) => (
@@ -364,7 +344,6 @@ export default function MyPage() {
         </div>
       )}
 
-      {/* 4. メインコンテンツエリア */}
       <div className="p-4 space-y-3 min-h-[50vh]">
         {isLoading && activeTab !== 'stamps' && activeTab !== 'settings' ? (
           <div className="space-y-3 max-w-3xl mx-auto"><SkeletonLetter /><SkeletonLetter /><SkeletonLetter /></div>
@@ -400,13 +379,12 @@ export default function MyPage() {
         )}
       </div>
 
-      {/* ★ return文の最後の方（ FooterLinks の上あたりなど）に追加 */}
       <AcornModal 
         isOpen={showAcornModal} 
         onClose={() => setShowAcornModal(false)} 
+        userId={user?.id || ''}
       />
 
-      {/* ★ 追加：退会確認モーダル */}
       <DeleteAccountModal 
         isOpen={isDeleteModalOpen}
         onClose={() => setIsDeleteModalOpen(false)}
@@ -459,7 +437,7 @@ export default function MyPage() {
           isRainy={isRainy}
           onClose={() => setSelectedPost(null)} 
           isReachable={false}
-          isMyPage={true} // ★ マイページモード：投函タブ非表示
+          isMyPage={true}
         />
       )}
 

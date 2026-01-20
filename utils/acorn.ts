@@ -53,13 +53,19 @@ export async function addAcorns(
     });
     if (rpcError) throw rpcError;
 
-    // --- 3. ログの保存（重複判定用の parent_id_check を含む） ---
-    await supabase.from('acorn_logs').insert({
+// --- 3. ログの保存（重複判定用の parent_id_check を含む） ---
+    const { error: logError } = await supabase.from('acorn_logs').insert({
       user_id: userId,
       amount: amount,
       reason: reason,
       parent_id_check: meta?.parent_id || null // ★重要
     });
+
+    // ログの保存に失敗した場合、コンソールに出力して追跡可能にする
+    if (logError) {
+      console.error('Acorn log insert error:', logError);
+      // 必要に応じて、ここで例外を投げて処理を中断させることも可能です
+    }
 
   } catch (err) {
     console.error('Acorn update error:', err);

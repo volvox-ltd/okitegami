@@ -420,7 +420,7 @@ function LetterModalContent({
                         onPointerDown={(e) => e.stopPropagation()} 
                         onClick={(e) => { e.stopPropagation(); handleFinish(); }} 
                         className="relative z-[60] bg-stone-500 text-white px-5 py-3 rounded-full text-[10px] font-bold shadow-md active:scale-95 tracking-widest"
-                      >読み終わる</button>
+                      ></button>
                       {letter.allow_reply && !isMyPost && replies.length === 0 && !hideReply && (
                         <button onClick={handleReplyClick} className="bg-orange-500 text-white px-4 py-2 rounded-full text-[10px] font-bold shadow-md active:scale-95 tracking-widest">返事を書く</button>
                       )}
