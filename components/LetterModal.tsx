@@ -343,10 +343,20 @@ function LetterModalContent({
 
     if (Math.abs(diffX) > Math.abs(diffY)) {
       if (activeLayer === 0 && mode === 'read') {
-        if (diffX > minSwipeDistance) handleNext();
-        if (diffX < -minSwipeDistance) handlePrev();
+        // ★ 修正：左から右へスワイプ（diffXがマイナス）で「次へ」
+        // かつ、画面の左端（0-20px程度）からのスワイプはブラウザの「戻る」を優先するため除外
+        const isFromEdge = touchStartX < 25; 
+
+        if (diffX < -minSwipeDistance && !isFromEdge) {
+          // 左から右へのスワイプで次のページへ
+          handleNext();
+        } else if (diffX > minSwipeDistance) {
+          // 右から左へのスワイプで前のページへ
+          handlePrev();
+        }
       }
     } else {
+      // 上下のスワイプ判定（返信地層への移動）
       if (replies.length > 0 && mode === 'read') {
         if (diffY > minSwipeDistance && activeLayer === 0) setActiveLayer(1);
         if (diffY < -minSwipeDistance && activeLayer === 1) setActiveLayer(0);
@@ -367,6 +377,7 @@ function LetterModalContent({
         <div 
           className={`absolute inset-0 bg-white shadow-2xl flex flex-col px-6 py-4 rounded-sm transition-all duration-500 ease-out ${activeLayer === 0 ? 'z-30 translate-y-0 scale-100' : 'z-10 -translate-y-[85%] scale-[0.92] opacity-60 blur-[0.5px]'}`}
           onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
+          style={{ touchAction: 'pan-y' }}
         >
           {isRainy && <div className="absolute inset-0 z-40 pointer-events-none rainy-overlay"></div>}
 
@@ -399,13 +410,17 @@ function LetterModalContent({
             )}
           </div>
 
-          <div className="h-16 flex items-center justify-between shrink-0 font-sans mt-auto z-[45]">
+            <div className="h-20 flex items-center justify-between shrink-0 font-sans mt-auto z-[50]">
             {!isLocked && activeLayer === 0 && (
               <>
                 <div className="flex items-center gap-2">
                   {currentPage === pages.length - 1 && (
                     <>
-                      <button onClick={(e) => { e.stopPropagation(); handleFinish(); }} className="bg-stone-500 text-white px-4 py-2 rounded-full text-[10px] font-bold shadow-md active:scale-95 tracking-widest">読み終わる</button>
+                      <button 
+                        onPointerDown={(e) => e.stopPropagation()} 
+                        onClick={(e) => { e.stopPropagation(); handleFinish(); }} 
+                        className="relative z-[60] bg-stone-500 text-white px-5 py-3 rounded-full text-[10px] font-bold shadow-md active:scale-95 tracking-widest"
+                      ></button>
                       {letter.allow_reply && !isMyPost && replies.length === 0 && !hideReply && (
                         <button onClick={handleReplyClick} className="bg-orange-500 text-white px-4 py-2 rounded-full text-[10px] font-bold shadow-md active:scale-95 tracking-widest">返事を書く</button>
                       )}
