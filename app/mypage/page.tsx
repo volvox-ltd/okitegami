@@ -103,6 +103,27 @@ export default function MyPage() {
             setAcornCount(payload.new.acorn_count);
           }
         )
+        // ★ 手紙の削除(DELETE)を監視
+        .on(
+          'postgres_changes',
+          { event: 'DELETE', schema: 'public', table: 'letters' },
+          (payload) => {
+            // 削除されたIDをリストから即座に除外する
+            setMyPosts(prev => prev.filter(l => l.id !== payload.old.id));
+            // お気に入りリストからも除外
+            setFavorites(prev => prev.filter(l => l.id !== payload.old.id));
+          }
+        )
+        // ★ 手紙の更新(UPDATE)を監視（「地図から削除」フラグなどを立てた場合用）
+        .on(
+          'postgres_changes',
+          { event: 'UPDATE', schema: 'public', table: 'letters', filter: `user_id=eq.${user.id}` },
+          (payload) => {
+            if (payload.new.is_deleted_from_map) {
+              setMyPosts(prev => prev.filter(l => l.id !== payload.new.id));
+            }
+          }
+        )
         .subscribe();
 
       await Promise.all([

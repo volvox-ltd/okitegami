@@ -25,12 +25,18 @@ export default function AcornModal({ isOpen, onClose, userId }: AcornModalProps)
     if (isOpen && view === 'history' && userId) {
       const fetchLogs = async () => {
         setLoading(true);
+
+        // ★ 1ヶ月前の日付を計算
+        const oneMonthAgo = new Date();
+        oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
         const { data } = await supabase
           .from('acorn_logs')
           .select('*')
           .eq('user_id', userId)
-          .order('created_at', { ascending: false })
-          .limit(20);
+        .gte('created_at', oneMonthAgo.toISOString()) 
+        .order('created_at', { ascending: false })
+        .limit(20);
         if (data) setLogs(data);
         setLoading(false);
       };

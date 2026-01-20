@@ -224,9 +224,44 @@ function HomeContent() {
     } catch (err) { console.error(err); }
   }, []);
 
+  // app/page.tsx の 180行目付近（fetchLettersAndShelves の下にある useEffect）
+
   useEffect(() => {
-    const channel = supabase.channel('realtime-bookshelves').on('postgres_changes', { event: '*', schema: 'public', table: 'bookshelves' }, () => fetchLettersAndShelves()).subscribe();
-    return () => { supabase.removeChannel(channel); };
+    const channel = supabase
+      .channel('map-realtime-updates')
+      // 1. 図書館（本棚）の更新を監視
+      .on(
+        'postgres_changes', 
+        { event: '*', schema: 'public', table: 'bookshelves' }, 
+        () => fetchLettersAndShelves()
+      )
+      // 2. 手紙の削除（DELETE）を監視
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'letters' },
+        (payload) => {
+          // 地図上の手紙リストから、削除されたIDを除外する
+          setLetters(prev => prev.filter(l => l.id !== payload.old.id));
+          setAllLetters(prev => prev.filter(l => l.id !== payload.old.id));
+        }
+      )
+      // 3. 手紙の更新（UPDATE）を監視
+      // 「地図から削除」フラグが立った時もリアルタイムで消す
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'letters' },
+        (payload) => {
+          if (payload.new.is_deleted_from_map === true) {
+            setLetters(prev => prev.filter(l => l.id !== payload.new.id));
+            setAllLetters(prev => prev.filter(l => l.id !== payload.new.id));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [fetchLettersAndShelves]);
 
   const startTracking = useCallback(() => {

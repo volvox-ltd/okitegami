@@ -58,7 +58,7 @@ export async function addAcorns(
       user_id: userId,
       amount: amount,
       reason: reason,
-      parent_id_check: meta?.parent_id || null // ★重要
+      parent_id_check: (meta?.parent_id && meta.parent_id !== "") ? meta.parent_id : null
     });
 
     // ログの保存に失敗した場合、コンソールに出力して追跡可能にする
