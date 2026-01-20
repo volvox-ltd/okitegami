@@ -289,6 +289,14 @@ function HomeContent() {
 
     setIsFollowingUser(true);
     isFollowingUserRef.current = true;
+
+    // ★ 修正ポイント：Mapboxの命令だけでなく、Reactの状態(viewState)も更新する
+    setViewState({
+      latitude: userLocation.lat,
+      longitude: userLocation.lng,
+      zoom: 15
+    });
+
     mapRef.current?.getMap().flyTo({ 
       center: [userLocation.lng, userLocation.lat], 
       zoom: 15, 

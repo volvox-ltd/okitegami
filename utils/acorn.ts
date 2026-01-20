@@ -63,8 +63,8 @@ export async function addAcorns(
 
     // ログの保存に失敗した場合、コンソールに出力して追跡可能にする
     if (logError) {
-      console.error('Acorn log insert error:', logError);
-      // 必要に応じて、ここで例外を投げて処理を中断させることも可能です
+      // ブラウザのコンソール（F12）で、なぜ保存できなかったか（RLSエラーなど）が見えるようになります
+      console.error('どんぐり履歴の保存に失敗しました:', logError.message, logError.details);
     }
 
   } catch (err) {
